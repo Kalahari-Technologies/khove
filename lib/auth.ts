@@ -4,13 +4,37 @@ import type { User } from "@prisma/client";
 
 /**
  * Get the current Prisma User from the Clerk session.
- * Returns null if not authenticated or user not yet synced to DB.
+ * Auto-creates the user record if Clerk session exists but DB record doesn't
+ * (handles the case where the Clerk webhook hasn't fired yet).
  */
 export async function getCurrentUser(): Promise<User | null> {
   const { userId: clerkId } = await auth();
   if (!clerkId) return null;
 
-  return db.user.findUnique({ where: { clerkId } });
+  const existing = await db.user.findUnique({ where: { clerkId } });
+  if (existing) return existing;
+
+  // User is authenticated in Clerk but not yet in DB — upsert from Clerk session
+  const clerkUser = await currentUser();
+  if (!clerkUser) return null;
+
+  const primaryEmail = clerkUser.emailAddresses.find(
+    (e) => e.id === clerkUser.primaryEmailAddressId
+  );
+  if (!primaryEmail) return null;
+
+  return db.user.upsert({
+    where: { clerkId },
+    create: {
+      clerkId,
+      email: primaryEmail.emailAddress,
+      name:
+        [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
+        null,
+      planTier: "FREE",
+    },
+    update: {},
+  });
 }
 
 /**
