@@ -1,0 +1,323 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum PlanTier {
+  FREE
+  PRO
+  TEAM
+  SMB
+  ENTERPRISE
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum Priority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TaskSource {
+  KHOVE
+  GITHUB
+  JIRA
+  AI
+}
+
+enum AssigneeRole {
+  OWNER
+  ASSIGNEE
+  REVIEWER
+  OBSERVER
+}
+
+// AI always works with categories, never status name strings directly.
+enum StatusCategory {
+  NOT_STARTED
+  IN_PROGRESS
+  IN_REVIEW
+  BLOCKED
+  DONE
+  CANCELLED
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  MULTI_SELECT
+  USER
+  URL
+  CHECKBOX
+}
+
+enum IntegrationProvider {
+  GITHUB
+  GOOGLE_CALENDAR
+  JIRA
+}
+
+enum BillingProvider {
+  STRIPE
+  PAYSTACK
+  FLUTTERWAVE
+}
+
+enum SubStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELLED
+  INCOMPLETE
+}
+
+// ─────────────────────────────────────────────
+// Core Tables
+// ─────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  planTier  PlanTier @default(FREE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  ownedWorkspaces  Workspace[]       @relation("WorkspaceOwner")
+  workspaceMember  WorkspaceMember[]
+  tasks            Task[]
+  taskAssignees    TaskAssignee[]    @relation("AssignedUser")
+  assignedBy       TaskAssignee[]    @relation("AssignedBy")
+  integrations     Integration[]
+  conversations    Conversation[]
+  aiUsageLogs      AiUsageLog[]
+  subscriptions    Subscription[]
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  ownerId   String
+  planTier  PlanTier @default(FREE)
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  owner             User                    @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members           WorkspaceMember[]
+  tasks             Task[]
+  workflowStatuses  WorkflowStatus[]
+  customFields      CustomFieldDefinition[]
+  integrations      Integration[]
+  conversations     Conversation[]
+  aiUsageLogs       AiUsageLog[]
+  subscriptions     Subscription[]
+}
+
+model WorkspaceMember {
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  statusId    String?
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  source      TaskSource @default(KHOVE)
+  externalId  String?
+  externalUrl String?
+  userId      String
+  workspaceId String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  user        User           @relation(fields: [userId], references: [id])
+  workspace   Workspace?     @relation(fields: [workspaceId], references: [id])
+  status      WorkflowStatus? @relation(fields: [statusId], references: [id])
+  assignees   TaskAssignee[]
+  fieldValues TaskFieldValue[]
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([source])
+  @@index([externalId])
+}
+
+// Multi-assignee junction table — never a single assigneeId on Task
+model TaskAssignee {
+  taskId     String
+  userId     String
+  role       AssigneeRole @default(ASSIGNEE)
+  assignedBy String?
+  assignedAt DateTime     @default(now())
+
+  task           Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user           User  @relation("AssignedUser", fields: [userId], references: [id])
+  assignedByUser User? @relation("AssignedBy", fields: [assignedBy], references: [id])
+
+  @@unique([taskId, userId])
+  @@index([userId])
+}
+
+// Flexible workflow statuses — null workspaceId = global system default
+model WorkflowStatus {
+  id          String         @id @default(cuid())
+  name        String
+  color       String         @default("#71717A")
+  category    StatusCategory
+  position    Int            @default(0)
+  isDefault   Boolean        @default(false)
+  isSystem    Boolean        @default(false)
+  workspaceId String?
+  source      String?
+  externalId  String?
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+  tasks     Task[]
+
+  @@index([workspaceId])
+  @@index([category])
+}
+
+model CustomFieldDefinition {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  fieldType   FieldType @default(TEXT)
+  options     Json      @default("[]")
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  fieldValues TaskFieldValue[]
+
+  @@index([workspaceId])
+}
+
+model TaskFieldValue {
+  taskId   String
+  fieldId  String
+  value    String
+
+  task  Task                  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  field CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, fieldId])
+}
+
+// OAuth tokens always encrypted — NEVER store plaintext
+model Integration {
+  id               String              @id @default(cuid())
+  provider         IntegrationProvider
+  userId           String
+  workspaceId      String?
+  accessTokenEnc   String              // AES-256-GCM encrypted via lib/encryption.ts
+  refreshTokenEnc  String?
+  tokenExpiresAt   DateTime?
+  metadata         Json                @default("{}")
+  isActive         Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@unique([provider, userId])
+  @@unique([provider, workspaceId])
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+// Conversation history as JSON — pruned at 40 messages
+model Conversation {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String?
+  messages    Json     @default("[]") // Array of { role, content, timestamp }
+  summary     String?
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+model AiUsageLog {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String?
+  model       String
+  tokensIn    Int      @default(0)
+  tokensOut   Int      @default(0)
+  costUsd     Float    @default(0)
+  feature     String?
+  timestamp   DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([timestamp])
+}
+
+// billingProvider NEVER exposed to client — frontend sees tier + status only
+model Subscription {
+  id                String          @id @default(cuid())
+  userId            String?
+  workspaceId       String?
+  billingProvider   BillingProvider @default(STRIPE)
+  externalCustomerId String?
+  externalSubId     String?
+  tier              PlanTier        @default(FREE)
+  status            SubStatus       @default(ACTIVE)
+  currency          String          @default("USD")
+  trialEnd          DateTime?
+  currentPeriodEnd  DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  user      User?      @relation(fields: [userId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([externalSubId])
+}

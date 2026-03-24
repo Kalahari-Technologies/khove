@@ -1,0 +1,66 @@
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./app/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./lib/**/*.{ts,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        // Khove Design System — Dark mode first
+        bg: {
+          base: "#09090B",
+          surface: "#111113",
+          elevated: "#18181B",
+          overlay: "#27272A",
+        },
+        brand: {
+          primary: "#6366F1",
+          primaryHover: "#818CF8",
+          secondary: "#8B5CF6",
+        },
+        accent: {
+          emerald: "#10B981",
+          amber: "#F59E0B",
+          rose: "#F43F5E",
+          sky: "#0EA5E9",
+        },
+        border: {
+          DEFAULT: "#27272A",
+          subtle: "#1F1F23",
+        },
+        text: {
+          primary: "#FAFAFA",
+          secondary: "#A1A1AA",
+          tertiary: "#71717A",
+          disabled: "#52525B",
+        },
+      },
+      fontFamily: {
+        sans: ["var(--font-geist-sans)", "Inter Variable", "system-ui", "sans-serif"],
+        mono: ["var(--font-geist-mono)", "Fira Code", "monospace"],
+        display: ["var(--font-cal-sans)", "var(--font-geist-sans)", "sans-serif"],
+      },
+      transitionTimingFunction: {
+        "khove": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "spring": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      },
+      transitionDuration: {
+        "fast": "120ms",
+        "normal": "200ms",
+        "slow": "300ms",
+      },
+      borderRadius: {
+        "sm": "6px",
+        "md": "8px",
+        "lg": "12px",
+        "xl": "16px",
+      },
+    },
+  },
+  plugins: [],
+};
+
+export default config;
