@@ -1,9 +1,28 @@
 import { Redis } from "@upstash/redis";
 import type { PlanTier } from "@prisma/client";
 
-export const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+// Lazy singleton — deferred until first use so the build phase never
+// instantiates the client with missing/placeholder env vars.
+let _redis: Redis | null = null;
+
+function getRedis(): Redis {
+  if (!_redis) {
+    _redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    });
+  }
+  return _redis;
+}
+
+// Proxy forwards all calls to the lazily-created client while preserving
+// the full Redis type (including generics) for callers.
+export const redis = new Proxy({} as Redis, {
+  get(_target, prop) {
+    const client = getRedis();
+    const value = client[prop as keyof Redis];
+    return typeof value === "function" ? value.bind(client) : value;
+  },
 });
 
 // ─────────────────────────────────────────────
