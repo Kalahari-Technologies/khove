@@ -110,6 +110,7 @@ export async function runAIConversation(
     });
     responseText = result.text;
   } catch (error) {
+    console.error("[AI] generateText failed:", error);
     return {
       blocked: false,
       error: `AI request failed: ${String(error)}`,

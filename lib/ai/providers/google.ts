@@ -11,7 +11,7 @@ const google = createGoogleGenerativeAI({
  */
 export function getFlashModel(): ProviderConfig {
   return {
-    model: google("gemini-2.0-flash"),
+    model: google("gemini-2.0-flash-lite"),
     tier: "flash",
   };
 }
