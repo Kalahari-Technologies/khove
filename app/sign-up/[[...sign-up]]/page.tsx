@@ -2,30 +2,27 @@ import { SignUp } from "@clerk/nextjs";
 
 export default function SignUpPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-base">
+    <div className="min-h-screen flex items-center justify-center bg-black">
       <div className="flex flex-col items-center gap-8">
         {/* Logo */}
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-secondary flex items-center justify-center">
-            <span className="text-white font-bold text-sm">K</span>
-          </div>
-          <span className="text-text-primary font-semibold text-xl tracking-tight">Khove</span>
+          <span className="font-display font-semibold text-white text-2xl tracking-tighter select-none">Khove</span>
         </div>
 
         <SignUp
           appearance={{
             elements: {
               rootBox: "w-full",
-              card: "bg-bg-surface border border-border shadow-2xl",
-              headerTitle: "text-text-primary",
-              headerSubtitle: "text-text-secondary",
-              socialButtonsBlockButton: "bg-bg-elevated border border-border text-text-primary hover:bg-bg-overlay",
-              dividerLine: "bg-border",
-              dividerText: "text-text-tertiary",
-              formFieldLabel: "text-text-secondary",
-              formFieldInput: "bg-bg-elevated border-border text-text-primary focus:border-brand-primary",
-              formButtonPrimary: "bg-brand-primary hover:bg-brand-primaryHover",
-              footerActionLink: "text-brand-primary hover:text-brand-primaryHover",
+              card: "bg-white/[0.04] border border-white/[0.08] shadow-2xl",
+              headerTitle: "text-white",
+              headerSubtitle: "text-white/60",
+              socialButtonsBlockButton: "bg-white/[0.07] border border-white/[0.10] text-white hover:bg-white/[0.10]",
+              dividerLine: "bg-white/[0.08]",
+              dividerText: "text-white/35",
+              formFieldLabel: "text-white/60",
+              formFieldInput: "bg-white/[0.07] border-white/[0.10] text-white focus:border-white/30",
+              formButtonPrimary: "bg-white text-black hover:bg-white/90",
+              footerActionLink: "text-white/70 hover:text-white",
             },
           }}
         />
