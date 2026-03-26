@@ -8,36 +8,6 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      colors: {
-        // Khove Design System — Dark mode first
-        bg: {
-          base: "#09090B",
-          surface: "#111113",
-          elevated: "#18181B",
-          overlay: "#27272A",
-        },
-        brand: {
-          primary: "#6366F1",
-          primaryHover: "#818CF8",
-          secondary: "#8B5CF6",
-        },
-        accent: {
-          emerald: "#10B981",
-          amber: "#F59E0B",
-          rose: "#F43F5E",
-          sky: "#0EA5E9",
-        },
-        border: {
-          DEFAULT: "#27272A",
-          subtle: "#1F1F23",
-        },
-        text: {
-          primary: "#FAFAFA",
-          secondary: "#A1A1AA",
-          tertiary: "#71717A",
-          disabled: "#52525B",
-        },
-      },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "Inter Variable", "system-ui", "sans-serif"],
         mono: ["var(--font-geist-mono)", "Fira Code", "monospace"],
