@@ -158,6 +158,7 @@ model Task {
   source      TaskSource @default(KHOVE)
   externalId  String?
   externalUrl String?
+  description String?
   userId      String
   workspaceId String?
   createdAt   DateTime   @default(now())
