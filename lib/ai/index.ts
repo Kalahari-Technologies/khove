@@ -108,7 +108,12 @@ export async function runAIConversation(
       tools: tools as Parameters<typeof generateText>[0]["tools"],
       stopWhen: stepCountIs(5),
     });
-    responseText = result.text;
+    // `result.text` is empty when the model only called tools without a follow-up.
+    // Fall back to the last step that has text, then a generic confirmation.
+    responseText =
+      result.text?.trim() ||
+      result.steps?.findLast((s) => s.text?.trim())?.text?.trim() ||
+      "Done! Let me know if there's anything else you need.";
   } catch (error) {
     console.error("[AI] generateText failed:", error);
     return {

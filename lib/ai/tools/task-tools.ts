@@ -38,9 +38,14 @@ export function getTaskTools(userId: string) {
       ),
       execute: async ({ title, priority, dueDate, workspaceId }) => {
         try {
-          const defaultStatus = await db.workflowStatus.findFirst({
-            where: { category: "NOT_STARTED", workspaceId: null, isDefault: true },
-          });
+          const defaultStatus =
+            await db.workflowStatus.findFirst({
+              where: { category: "NOT_STARTED", workspaceId: null, isDefault: true },
+            }) ??
+            await db.workflowStatus.findFirst({
+              where: { category: "NOT_STARTED", workspaceId: null },
+              orderBy: { position: "asc" },
+            });
 
           const task = await db.task.create({
             data: {
@@ -73,40 +78,71 @@ export function getTaskTools(userId: string) {
 
     listTasks: tool({
       description:
-        "List the user's tasks. Filter by status category or show all.",
+        "List or search the user's tasks. Supports filtering by title keyword, status, priority, and due date range. Use this whenever the user asks to find, show, list, or search tasks — even when they describe tasks by name or partial name.",
       inputSchema: zodSchema(
         z.object({
+          titleSearch: z
+            .string()
+            .optional()
+            .describe("Partial or full task title to search for (case-insensitive)"),
           statusCategory: z
             .enum(["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "BLOCKED", "DONE", "CANCELLED"])
             .optional()
             .describe("Filter by status category"),
+          priority: z
+            .enum(["URGENT", "HIGH", "MEDIUM", "LOW"])
+            .optional()
+            .describe("Filter by priority level"),
+          dueBefore: z
+            .string()
+            .optional()
+            .describe("Return tasks due before this ISO 8601 date (e.g. 2025-06-30)"),
+          dueAfter: z
+            .string()
+            .optional()
+            .describe("Return tasks due after this ISO 8601 date"),
+          overdue: z
+            .boolean()
+            .optional()
+            .describe("If true, return only overdue tasks (past due date, not done)"),
           limit: z
             .number()
             .optional()
-            .default(10)
-            .describe("Max tasks to return (default 10)"),
+            .default(15)
+            .describe("Max tasks to return (default 15)"),
           workspaceId: z.string().optional(),
         })
       ),
-      execute: async ({ statusCategory, limit, workspaceId }) => {
+      execute: async ({ titleSearch, statusCategory, priority, dueBefore, dueAfter, overdue, limit, workspaceId }) => {
         try {
+          const now = new Date();
           const tasks = await db.task.findMany({
             where: {
               userId,
               ...(workspaceId && { workspaceId }),
+              ...(titleSearch && {
+                title: { contains: titleSearch, mode: "insensitive" },
+              }),
               ...(statusCategory && {
                 status: { category: statusCategory as StatusCategory },
               }),
-              ...(!statusCategory && {
+              ...(priority && { priority: priority as Priority }),
+              ...(overdue && {
+                dueDate: { lt: now },
+                NOT: { status: { category: "DONE" as StatusCategory } },
+              }),
+              ...(!statusCategory && !overdue && {
                 NOT: { status: { category: "CANCELLED" as StatusCategory } },
               }),
+              ...(dueBefore && !overdue && { dueDate: { lt: new Date(dueBefore) } }),
+              ...(dueAfter && !overdue && { dueDate: { gt: new Date(dueAfter) } }),
             },
             include: { status: true },
             orderBy: [
               { status: { position: "asc" } },
               { createdAt: "desc" },
             ],
-            take: limit ?? 10,
+            take: limit ?? 15,
           });
 
           return {
