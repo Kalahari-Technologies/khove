@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import { pushTaskToGoogleCalendar } from "@/lib/integrations/google-calendar";
 import { publishEvent } from "@/lib/realtime";
 
+const VALID_PRIORITIES = ["URGENT", "HIGH", "MEDIUM", "LOW"];
+
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { id: string } },
 ) {
   try {
     const user = await getCurrentUser();
@@ -19,17 +21,16 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const { statusId } = await req.json();
-    if (typeof statusId !== "string") {
-      return NextResponse.json({ error: "statusId required" }, { status: 400 });
+    const { priority } = await req.json();
+    if (typeof priority !== "string" || !VALID_PRIORITIES.includes(priority)) {
+      return NextResponse.json({ error: "Invalid priority" }, { status: 400 });
     }
 
     const updated = await db.task.update({
       where: { id: params.id },
-      data: { statusId },
+      data: { priority: priority as "URGENT" | "HIGH" | "MEDIUM" | "LOW" },
     });
 
-    // Push to GCal if this task is synced
     if (updated.externalId) {
       try { await pushTaskToGoogleCalendar(user.id, updated); } catch {}
     }

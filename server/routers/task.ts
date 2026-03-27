@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import type { Priority, TaskSource, AssigneeRole } from "@prisma/client";
 
 const priorityEnum = z.enum(["URGENT", "HIGH", "MEDIUM", "LOW"]);
-const taskSourceEnum = z.enum(["KHOVE", "GITHUB", "JIRA", "AI"]);
+const taskSourceEnum = z.enum(["KHOVE", "GITHUB", "JIRA", "AI", "GOOGLE_CALENDAR"]);
 const assigneeRoleEnum = z.enum(["OWNER", "ASSIGNEE", "REVIEWER", "OBSERVER"]);
 
 export const taskRouter = router({
@@ -30,7 +30,7 @@ export const taskRouter = router({
           userId: ctx.user.id,
           ...(workspaceId && { workspaceId }),
           ...(statusId && { statusId }),
-          ...(source && { source: source as TaskSource }),
+          ...(source && { source: { has: source as TaskSource } }),
         },
         include: {
           status: true,
@@ -62,7 +62,7 @@ export const taskRouter = router({
         statusId: z.string().optional(),
         priority: priorityEnum.optional().default("MEDIUM"),
         dueDate: z.date().optional(),
-        source: taskSourceEnum.optional().default("KHOVE"),
+        source: taskSourceEnum.optional().default("KHOVE"), // origin platform
         externalId: z.string().optional(),
         externalUrl: z.string().url().optional(),
         workspaceId: z.string().optional(),
@@ -74,7 +74,7 @@ export const taskRouter = router({
         const existing = await db.task.findFirst({
           where: {
             externalId: input.externalId,
-            source: input.source as TaskSource,
+            source: { has: input.source as TaskSource },
             userId: ctx.user.id,
           },
         });
@@ -87,7 +87,7 @@ export const taskRouter = router({
           statusId: input.statusId,
           priority: input.priority as Priority,
           dueDate: input.dueDate,
-          source: input.source as TaskSource,
+          source: [input.source as TaskSource],
           externalId: input.externalId,
           externalUrl: input.externalUrl,
           userId: ctx.user.id,
