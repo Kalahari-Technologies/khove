@@ -83,6 +83,16 @@ function combineDatetime(date: Date, time: string | null): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, m);
 }
 
+function addOneHour(time: string): string {
+  const idx = TIME_SLOTS.indexOf(time);
+  if (idx >= 0 && idx < TIME_SLOTS.length - 1) return TIME_SLOTS[idx + 1];
+  return TIME_SLOTS[TIME_SLOTS.length - 1];
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 // ---------------------------------------------------------------------------
 // Description Input (mirror overlay — hashtag/mention highlighting)
 // ---------------------------------------------------------------------------
@@ -388,21 +398,21 @@ function StatusDropdown({
 
 function SyncCard({
   label,
-  Icon,
+  icon,
   connected,
   checked,
   onToggle,
 }: {
   label: string;
-  Icon: React.ElementType;
+  icon: React.ReactNode;
   connected: boolean;
   checked: boolean;
   onToggle: () => void;
 }) {
   return (
-    <div className={`border border-white/[0.08] rounded-xl p-4 flex items-center gap-3 ${!connected ? "opacity-40" : ""}`}>
+    <div onClick={connected? onToggle: undefined} className={`border select-none border-white/[0.08] rounded-xl p-4 flex items-center gap-3 ${!connected ? "opacity-40" : ""}`}>
       <div className="w-8 h-8 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center flex-shrink-0">
-        <Icon size={15} className="text-white/60" />
+        {icon}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[13px] text-white/80 font-medium">{label}</p>
@@ -433,6 +443,150 @@ function SyncCard({
 }
 
 // ---------------------------------------------------------------------------
+// Google Calendar Section
+// ---------------------------------------------------------------------------
+
+function GoogleCalendarSection({
+  agenda, onAgendaChange,
+  location, onLocationChange,
+  guests, guestInput, onGuestInputChange, onAddGuest, onRemoveGuest,
+  startTime, onStartTimeChange,
+  endTime, onEndTimeChange,
+  meetLink, onMeetLinkChange,
+  disabled,
+}: {
+  agenda: string;
+  onAgendaChange: (v: string) => void;
+  location: string;
+  onLocationChange: (v: string) => void;
+  guests: string[];
+  guestInput: string;
+  onGuestInputChange: (v: string) => void;
+  onAddGuest: (email: string) => void;
+  onRemoveGuest: (email: string) => void;
+  startTime: string | null;
+  onStartTimeChange: (t: string | null) => void;
+  endTime: string | null;
+  onEndTimeChange: (t: string | null) => void;
+  meetLink: boolean;
+  onMeetLinkChange: (v: boolean) => void;
+  disabled: boolean;
+}) {
+  function handleGuestKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      const email = guestInput.trim().replace(/,$/, "");
+      if (email && isValidEmail(email) && !guests.includes(email)) {
+        onAddGuest(email);
+        onGuestInputChange("");
+      }
+    }
+  }
+
+  return (
+    <div className="border border-white/[0.08] rounded-xl p-4 flex flex-col gap-3.5 mt-1">
+      {/* Google Meet toggle — FIRST, gates all other fields */}
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-[12px] text-white/60 font-medium">
+          <img src="/assets/google-meet.svg" alt="" width={14} height={14} className="flex-shrink-0" />
+          Google Meet
+        </span>
+        <button
+          type="button"
+          onClick={() => onMeetLinkChange(!meetLink)}
+          className={`relative w-8 h-[18px] rounded-full transition-colors duration-150 ${
+            meetLink ? "bg-white" : "bg-white/[0.12]"
+          }`}
+        >
+          <span
+            className={`absolute top-[2px] w-[14px] h-[14px] rounded-full transition-all duration-150 ${
+              meetLink ? "left-[16px] bg-black" : "left-[2px] bg-white/40"
+            }`}
+          />
+        </button>
+      </div>
+
+      {meetLink && (
+        <p className="text-[10px] text-white/25 -mt-2">
+          A Meet link will be generated when the task is created
+        </p>
+      )}
+
+      {/* All fields below — disabled when Meet toggle is off */}
+      <div className={`flex flex-col gap-3.5 ${!meetLink ? "opacity-40 pointer-events-none" : ""}`}>
+        {/* Agenda */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-white/35 font-medium">Agenda</label>
+          <textarea
+            value={agenda}
+            onChange={(e) => onAgendaChange(e.target.value)}
+            placeholder="Meeting agenda or notes…"
+            rows={3}
+            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-white/70 placeholder:text-white/20 outline-none focus:border-white/[0.20] resize-y leading-relaxed"
+          />
+        </div>
+
+        {/* Location */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-white/35 font-medium">Location</label>
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => onLocationChange(e.target.value)}
+            placeholder="Add location"
+            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-white/70 placeholder:text-white/20 outline-none focus:border-white/[0.20]"
+          />
+        </div>
+
+        {/* Guests */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-white/35 font-medium">Guests</label>
+          {guests.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1">
+              {guests.map((email) => (
+                <span
+                  key={email}
+                  className="flex items-center gap-1 bg-white/[0.06] border border-white/[0.08] rounded-full px-2.5 py-1 text-[11px] text-white/60"
+                >
+                  {email}
+                  <button
+                    type="button"
+                    onClick={() => onRemoveGuest(email)}
+                    className="text-white/30 hover:text-white/60 transition-colors ml-0.5"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            type="email"
+            value={guestInput}
+            onChange={(e) => onGuestInputChange(e.target.value)}
+            onKeyDown={handleGuestKeyDown}
+            placeholder="Add guests by email"
+            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-white/70 placeholder:text-white/20 outline-none focus:border-white/[0.20]"
+          />
+        </div>
+
+        {/* Start time */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-white/35 font-medium">Start time</label>
+          <TimePicker value={startTime} onChange={onStartTimeChange} disabled={disabled} />
+        </div>
+
+        {/* End time */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] text-white/35 font-medium">End time</label>
+          <TimePicker value={endTime} onChange={onEndTimeChange} disabled={disabled} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -447,6 +601,31 @@ export function TaskFormClient({ statuses, connectedProviders }: TaskFormClientP
   const [syncTo, setSyncTo] = useState<Record<string, boolean>>({ GOOGLE_CALENDAR: false, GITHUB: false, JIRA: false });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Google Calendar section
+  const [gcalAgenda, setGcalAgenda] = useState("");
+  const [gcalLocation, setGcalLocation] = useState("");
+  const [gcalGuests, setGcalGuests] = useState<string[]>([]);
+  const [gcalGuestInput, setGcalGuestInput] = useState("");
+  const [gcalStartTime, setGcalStartTime] = useState<string | null>(null);
+  const [gcalEndTime, setGcalEndTime] = useState<string | null>(null);
+  const [gcalStartManual, setGcalStartManual] = useState(false);
+  const [gcalEndManual, setGcalEndManual] = useState(false);
+  const [gcalMeetLink, setGcalMeetLink] = useState(false);
+
+  // Auto-sync gcalStartTime from dueTime (unless manually overridden)
+  useEffect(() => {
+    if (!gcalStartManual && syncTo.GOOGLE_CALENDAR) {
+      setGcalStartTime(dueTime);
+    }
+  }, [dueTime, syncTo.GOOGLE_CALENDAR, gcalStartManual]);
+
+  // Auto-sync gcalEndTime = gcalStartTime + 1hr (unless manually overridden)
+  useEffect(() => {
+    if (!gcalEndManual && gcalStartTime) {
+      setGcalEndTime(addOneHour(gcalStartTime));
+    }
+  }, [gcalStartTime, gcalEndManual]);
 
   const toggleSync = (key: string) => {
     setSyncTo(prev => ({ ...prev, [key]: !prev[key] }));
@@ -473,6 +652,19 @@ export function TaskFormClient({ statuses, connectedProviders }: TaskFormClientP
           priority,
           statusId: statusId ?? undefined,
           dueDate: combinedDate ? combinedDate.toISOString() : undefined,
+          syncToGoogle: syncTo.GOOGLE_CALENDAR,
+          gcal: syncTo.GOOGLE_CALENDAR ? {
+            agenda: gcalAgenda.trim() || undefined,
+            location: gcalLocation.trim() || undefined,
+            guests: gcalGuests.length > 0 ? gcalGuests : undefined,
+            startDateTime: gcalStartTime && dueDate
+              ? combineDatetime(dueDate, gcalStartTime).toISOString()
+              : undefined,
+            endDateTime: gcalEndTime && dueDate
+              ? combineDatetime(dueDate, gcalEndTime).toISOString()
+              : undefined,
+            generateMeetLink: gcalMeetLink,
+          } : undefined,
         }),
       });
       if (!res.ok) {
@@ -611,21 +803,41 @@ export function TaskFormClient({ statuses, connectedProviders }: TaskFormClientP
             <p className="text-[12px] text-white/40 font-medium mb-1">Sync to</p>
             <SyncCard
               label="Google Calendar"
-              Icon={Calendar}
+              icon={<img src="/assets/google-calendar.svg" alt="Google Calendar" width={15} height={15} draggable={false} />}
               connected={connectedProviders.includes("GOOGLE_CALENDAR")}
               checked={syncTo.GOOGLE_CALENDAR}
               onToggle={() => toggleSync("GOOGLE_CALENDAR")}
             />
+            {syncTo.GOOGLE_CALENDAR && connectedProviders.includes("GOOGLE_CALENDAR") && (
+              <GoogleCalendarSection
+                agenda={gcalAgenda}
+                onAgendaChange={setGcalAgenda}
+                location={gcalLocation}
+                onLocationChange={setGcalLocation}
+                guests={gcalGuests}
+                guestInput={gcalGuestInput}
+                onGuestInputChange={setGcalGuestInput}
+                onAddGuest={(email) => setGcalGuests((prev) => [...prev, email])}
+                onRemoveGuest={(email) => setGcalGuests((prev) => prev.filter((e) => e !== email))}
+                startTime={gcalStartTime}
+                onStartTimeChange={(t) => { setGcalStartManual(true); setGcalStartTime(t); }}
+                endTime={gcalEndTime}
+                onEndTimeChange={(t) => { setGcalEndManual(true); setGcalEndTime(t); }}
+                meetLink={gcalMeetLink}
+                onMeetLinkChange={setGcalMeetLink}
+                disabled={!dueDate}
+              />
+            )}
             <SyncCard
               label="GitHub"
-              Icon={GitBranch}
+              icon={<img src="/assets/github.svg" alt="Github" width={15} height={15} draggable={false} />}
               connected={connectedProviders.includes("GITHUB")}
               checked={syncTo.GITHUB}
               onToggle={() => toggleSync("GITHUB")}
             />
             <SyncCard
               label="Jira"
-              Icon={Layers}
+              icon={<img src="/assets/jira.svg" alt="Jira" width={15} height={15} draggable={false} />}
               connected={connectedProviders.includes("JIRA")}
               checked={syncTo.JIRA}
               onToggle={() => toggleSync("JIRA")}

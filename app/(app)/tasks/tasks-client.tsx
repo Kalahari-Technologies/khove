@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import type { TaskWithStatus, WorkflowStatus } from "@/lib/types";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,39 +155,142 @@ function EmptyState() {
 
 // ─── Priority Badge ───────────────────────────────────────────────────────────
 
+const PRIORITY_STYLES: Record<string, string> = {
+  URGENT: "bg-white text-black",
+  HIGH:   "bg-white/[0.10] text-white/80",
+  MEDIUM: "bg-white/[0.06] text-white/55",
+  LOW:    "bg-white/[0.04] text-white/35",
+};
+
+const PRIORITY_LABELS: Record<string, string> = {
+  URGENT: "Urgent",
+  HIGH:   "High",
+  MEDIUM: "Medium",
+  LOW:    "Low",
+};
+
+const PRIORITY_OPTIONS = ["URGENT", "HIGH", "MEDIUM", "LOW"];
+
 function PriorityBadge({ priority }: { priority: string }) {
-  const styles: Record<string, string> = {
-    URGENT: "bg-white text-black",
-    HIGH:   "bg-white/[0.10] text-white/80",
-    MEDIUM: "bg-white/[0.06] text-white/55",
-    LOW:    "bg-white/[0.04] text-white/35",
-  };
-  const labels: Record<string, string> = {
-    URGENT: "Urgent",
-    HIGH:   "High",
-    MEDIUM: "Medium",
-    LOW:    "Low",
-  };
   return (
-    <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${styles[priority] ?? "bg-white/[0.04] text-white/35"}`}>
-      {labels[priority] ?? priority}
+    <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${PRIORITY_STYLES[priority] ?? "bg-white/[0.04] text-white/35"}`}>
+      {PRIORITY_LABELS[priority] ?? priority}
     </span>
+  );
+}
+
+function PriorityCell({
+  task,
+  pendingPriority,
+  onPriorityChange,
+}: {
+  task: TaskWithStatus;
+  pendingPriority: string | undefined;
+  onPriorityChange: (taskId: string, priority: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const effectivePriority = pendingPriority ?? task.priority;
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative w-24 flex-shrink-0 px-2">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        className="flex items-center w-full rounded-md px-0.5 py-1 hover:bg-white/[0.05] transition-colors duration-[100ms]"
+      >
+        <PriorityBadge priority={effectivePriority} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: -4, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -4, scale: 0.97 }}
+              transition={{ duration: 0.1 }}
+              className="absolute left-0 top-full mt-1 z-20 bg-[#111111] border border-white/[0.10] rounded-xl shadow-2xl py-1 w-36 overflow-hidden"
+            >
+              {PRIORITY_OPTIONS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPriorityChange(task.id, p);
+                    setOpen(false);
+                  }}
+                  className={`flex items-center gap-2 w-full px-3 py-2 text-[12px] transition-colors hover:bg-white/[0.05] ${
+                    effectivePriority === p ? "text-white" : "text-white/55"
+                  }`}
+                >
+                  <span className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded ${PRIORITY_STYLES[p]}`}>
+                    {PRIORITY_LABELS[p]}
+                  </span>
+                </button>
+              ))}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
 // ─── Source Badge ─────────────────────────────────────────────────────────────
 
-function SourceBadge({ source }: { source: string }) {
-  const labels: Record<string, string> = {
-    KHOVE:  "Khove",
-    AI:     "Khove",
-    GITHUB: "GitHub",
-    JIRA:   "Jira",
-  };
+const SOURCE_ICONS: Record<string, string> = {
+  KHOVE: "/assets/khove-rounded.png",
+  AI: "/assets/khove-rounded.png",
+  GOOGLE_CALENDAR: "/assets/google-calendar.svg",
+  GITHUB: "/assets/github.svg",
+  JIRA: "/assets/jira.svg",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  KHOVE: "Khove",
+  AI: "Khove",
+  GITHUB: "GitHub",
+  JIRA: "Jira",
+  GOOGLE_CALENDAR: "Calendar",
+};
+
+function SourceBadge({ sources }: { sources: string[] }) {
+  // Collect unique icons (KHOVE/AI use a text fallback, others have SVG icons)
+  const icons: string[] = [];
+  const seen = new Set<string>();
+  for (const s of sources) {
+    const icon = SOURCE_ICONS[s];
+    if (icon && !seen.has(icon)) {
+      seen.add(icon);
+      icons.push(icon);
+    }
+  }
+
+  // Overlapping icons (Instagram-style stacked avatars)
   return (
-    <span className="text-[10px] text-white/30 border border-white/[0.08] rounded px-1.5 py-0.5 leading-none">
-      {labels[source] ?? source}
-    </span>
+    <div className="flex items-center">
+      {icons.map((icon, i) => (
+        <div
+          key={icon}
+          className="w-5 h-5 flex items-center justify-center rounded-full bg-[#111] border border-white/[0.10]"
+          style={{ marginLeft: i > 0 ? -6 : 0, zIndex: icons.length - i, overflow: i>0? 'hidden': 'visible' }}
+        >
+          <img src={icon} alt="" className="flex-shrink-0 w-full h-full object-cover" draggable={false} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -487,15 +591,22 @@ function DueDateCell({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Read-only when due date already set
-  if (effectiveDueDate) {
-    return (
-      <div className="w-36 flex-shrink-0 px-2">
-        <span className={`text-[12px] ${isOverdue ? "text-white/70" : "text-white/35"}`}>
-          {formatSmartDate(effectiveDueDate)}
-        </span>
-      </div>
-    );
+  // Pre-populate picker when opening with an existing date
+  function handleOpen() {
+    if (effectiveDueDate) {
+      setPickerDate(effectiveDueDate);
+      setYear(effectiveDueDate.getFullYear());
+      setMonth(effectiveDueDate.getMonth());
+      // Extract time from existing date
+      const h = effectiveDueDate.getHours();
+      const m = effectiveDueDate.getMinutes();
+      if (h > 0 || m > 0) {
+        const period = h >= 12 ? "PM" : "AM";
+        const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        setPickerTime(`${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`);
+      }
+    }
+    setOpen(true);
   }
 
   const cells = buildMiniGrid(year, month);
@@ -520,11 +631,15 @@ function DueDateCell({
     <div ref={ref} className="relative w-36 flex-shrink-0 px-2">
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
-        className="flex items-center gap-1.5 text-[12px] text-white/25 hover:text-white/50 transition-colors duration-[100ms] w-full"
+        onClick={(e) => { e.stopPropagation(); if (open) setOpen(false); else handleOpen(); }}
+        className={`flex items-center gap-1.5 text-[12px] transition-colors duration-[100ms] w-full rounded-md px-1 py-1 hover:bg-white/[0.05] ${
+          effectiveDueDate
+            ? isOverdue ? "text-white/70" : "text-white/45"
+            : "text-white/25 hover:text-white/50"
+        }`}
       >
         <Calendar size={11} strokeWidth={1.75} />
-        Add date
+        {effectiveDueDate ? formatSmartDate(effectiveDueDate) : "Add date"}
       </button>
 
       <AnimatePresence>
@@ -643,6 +758,8 @@ function TaskTable({
   onStatusChange,
   pendingDueDates,
   onDueDateChange,
+  pendingPriorityIds,
+  onPriorityChange,
 }: {
   tasks: TaskWithStatus[];
   statuses: WorkflowStatus[];
@@ -653,6 +770,8 @@ function TaskTable({
   onStatusChange: (taskId: string, statusId: string) => void;
   pendingDueDates: Record<string, Date>;
   onDueDateChange: (taskId: string, date: Date) => void;
+  pendingPriorityIds: Record<string, string>;
+  onPriorityChange: (taskId: string, priority: string) => void;
 }) {
   const router = useRouter();
   const allSelected = tasks.length > 0 && tasks.every((t) => selectedIds.has(t.id));
@@ -732,13 +851,15 @@ function TaskTable({
                 />
 
                 {/* Priority */}
-                <div className="w-24 flex-shrink-0 px-2">
-                  <PriorityBadge priority={task.priority} />
-                </div>
+                <PriorityCell
+                  task={task}
+                  pendingPriority={pendingPriorityIds[task.id]}
+                  onPriorityChange={onPriorityChange}
+                />
 
                 {/* Source */}
                 <div className="w-20 flex-shrink-0 px-2">
-                  <SourceBadge source={task.source} />
+                  <SourceBadge sources={task.source} />
                 </div>
 
                 {/* Due date — editable if empty */}
@@ -875,6 +996,7 @@ export function TasksClient({ tasks, statuses }: TasksClientProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pendingStatusIds, setPendingStatusIds] = useState<Record<string, string>>({});
   const [pendingDueDates, setPendingDueDates] = useState<Record<string, Date>>({});
+  const [pendingPriorityIds, setPendingPriorityIds] = useState<Record<string, string>>({});
 
   const handleDueDateChange = async (taskId: string, date: Date) => {
     setPendingDueDates(p => ({ ...p, [taskId]: date }));
@@ -910,6 +1032,56 @@ export function TasksClient({ tasks, statuses }: TasksClientProps) {
         return next;
       });
     }
+  };
+
+  const handlePriorityChange = async (taskId: string, priority: string) => {
+    const prev = pendingPriorityIds[taskId] ?? tasks.find(t => t.id === taskId)?.priority;
+    setPendingPriorityIds(p => ({ ...p, [taskId]: priority }));
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/priority`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setPendingPriorityIds(p => {
+        const next = { ...p };
+        if (prev) next[taskId] = prev;
+        else delete next[taskId];
+        return next;
+      });
+    }
+  };
+
+  // ── GCal confirmation dialog state ──────────────────────────────────────
+  const [confirmDialog, setConfirmDialog] = useState<{
+    taskId: string;
+    statusId: string;
+    type: "cancel" | "done";
+  } | null>(null);
+
+  /** Gated status change — intercepts CANCELLED/DONE for GCal-synced tasks. */
+  const requestStatusChange = (taskId: string, statusId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    const targetStatus = statuses.find((s) => s.id === statusId);
+    const isGcalSynced = task?.source.includes("GOOGLE_CALENDAR");
+
+    if (isGcalSynced && targetStatus?.category === "CANCELLED") {
+      setConfirmDialog({ taskId, statusId, type: "cancel" });
+      return;
+    }
+
+    if (isGcalSynced && targetStatus?.category === "DONE") {
+      const meta = (task?.metadata as Record<string, unknown> | null)?.googleCalendar as Record<string, unknown> | undefined;
+      const endTime = meta?.endDateTime ? new Date(meta.endDateTime as string) : null;
+      if (endTime && endTime > new Date()) {
+        setConfirmDialog({ taskId, statusId, type: "done" });
+        return;
+      }
+    }
+
+    handleStatusChange(taskId, statusId);
   };
 
   const toggleSelect = (id: string, e: React.MouseEvent) => {
@@ -1004,7 +1176,7 @@ export function TasksClient({ tasks, statuses }: TasksClientProps) {
                 <button
                   type="button"
                   onClick={() => setSelectedIds(new Set())}
-                  className="text-[12px] text-white/55 hover:text-white/90 border border-white/[0.10] hover:border-white/[0.20] rounded-lg px-2.5 py-1 transition-all duration-[120ms]"
+                  className="text-[12px] text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 hover:bg-red-500/10 rounded-lg px-2.5 py-1 transition-all duration-[120ms]"
                 >
                   Delete
                 </button>
@@ -1014,6 +1186,11 @@ export function TasksClient({ tasks, statuses }: TasksClientProps) {
         </div>
 
         <div className="flex items-center gap-2">
+
+          {viewMode === "table" && (
+            <SortButton sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
+          )}
+
           {/* View toggle */}
           <div className="flex items-center border border-white/[0.08] rounded-lg overflow-hidden bg-white/[0.02]">
             <button
@@ -1037,10 +1214,7 @@ export function TasksClient({ tasks, statuses }: TasksClientProps) {
               Kanban
             </button>
           </div>
-
-          {viewMode === "table" && (
-            <SortButton sortField={sortField} sortOrder={sortOrder} onSort={handleSort} />
-          )}
+          
           <Link
             href="/tasks/new"
             className="flex items-center gap-1.5 text-[12px] font-medium bg-white text-black rounded-lg px-3 py-1.5 hover:bg-white/90 transition-all duration-[120ms]"
@@ -1063,9 +1237,11 @@ export function TasksClient({ tasks, statuses }: TasksClientProps) {
               onToggle={toggleSelect}
               onToggleAll={toggleSelectAll(paginated.map((t) => t.id))}
               pendingStatusIds={pendingStatusIds}
-              onStatusChange={handleStatusChange}
+              onStatusChange={requestStatusChange}
               pendingDueDates={pendingDueDates}
               onDueDateChange={handleDueDateChange}
+              pendingPriorityIds={pendingPriorityIds}
+              onPriorityChange={handlePriorityChange}
             />
           </div>
 
@@ -1104,9 +1280,37 @@ export function TasksClient({ tasks, statuses }: TasksClientProps) {
             tasks={tasks}
             statuses={statuses}
             pendingStatusIds={pendingStatusIds}
-            onStatusChange={handleStatusChange}
+            onStatusChange={requestStatusChange}
           />
         </div>
+      )}
+
+      {/* GCal confirmation dialogs */}
+      {confirmDialog?.type === "cancel" && (
+        <ConfirmDialog
+          open
+          onClose={() => setConfirmDialog(null)}
+          onConfirm={() => handleStatusChange(confirmDialog.taskId, confirmDialog.statusId)}
+          title="Cancel linked meeting?"
+          description="This task has a Google Meet meeting linked. Cancelling the task will also cancel the meeting."
+          confirmLabel="Cancel task & meeting"
+          cancelLabel="Keep task"
+          variant="danger"
+        />
+      )}
+      {confirmDialog?.type === "done" && (
+        <ConfirmDialog
+          open
+          onClose={() => setConfirmDialog(null)}
+          onConfirm={() => handleStatusChange(confirmDialog.taskId, confirmDialog.statusId)}
+          title="Meeting still active"
+          description="The linked Google Meet meeting hasn't ended yet. Would you like to keep or cancel the meeting?"
+          confirmLabel="Mark done & cancel meeting"
+          secondaryLabel="Mark done & keep meeting"
+          onSecondary={() => handleStatusChange(confirmDialog.taskId, confirmDialog.statusId)}
+          cancelLabel="Go back"
+          variant="warning"
+        />
       )}
     </div>
   );

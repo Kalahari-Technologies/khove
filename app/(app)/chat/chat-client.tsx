@@ -498,7 +498,7 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
                 className="absolute inset-0 flex items-center justify-center overflow-hidden z-0"
               >
                 <div className="w-[700px] h-[700px] flex-shrink-0">
-                  <Spline style={{scale: .8}} scene="https://prod.spline.design/82Tonkj-UcGFwOV3/scene.splinecode" />
+                  <Spline style={{scale: .8}}  scene="https://prod.spline.design/oJJP0xwASvkGC4IM/scene.splinecode" />
                 </div>
               </div>
               {/* Text — sits on top of the scene */}

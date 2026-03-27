@@ -11,8 +11,40 @@ import {
   MessageSquare,
   Plus,
   Home,
+  Unplug,
 } from "lucide-react";
-import type { PlannerTask } from "@/lib/types";
+import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
+import { UpgradeDialog } from "@/components/upgrade-dialog";
+
+// ---------------------------------------------------------------------------
+// Google Calendar logo
+// ---------------------------------------------------------------------------
+
+function GoogleCalendarIcon({ size = 14 }: { size?: number }) {
+  return (
+    <img
+      src="/assets/google-calendar.svg"
+      alt="Google Calendar"
+      width={size}
+      height={size}
+      className="flex-shrink-0"
+      draggable={false}
+    />
+  );
+}
+
+function JiraIcon({ size = 14 }: { size?: number }) {
+  return (
+    <img
+      src="/assets/jira.svg"
+      alt="Jira"
+      width={size}
+      height={size}
+      className="flex-shrink-0"
+      draggable={false}
+    />
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +52,10 @@ import type { PlannerTask } from "@/lib/types";
 
 interface PlannerClientProps {
   isFirstTime: boolean;
+  isGoogleConnected: boolean;
+  planTier: string;
   tasks: PlannerTask[];
+  calendarEntries: CalendarDisplayEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -43,7 +78,6 @@ function isToday(date: Date): boolean {
 function buildCalendarGrid(year: number, month: number): Date[] {
   // Monday-first 6-week grid (42 cells)
   const firstOfMonth = new Date(year, month, 1);
-  // getDay() returns 0=Sun..6=Sat, convert to Mon=0..Sun=6
   const startOffset = (firstOfMonth.getDay() + 6) % 7;
   const gridStart = new Date(year, month, 1 - startOffset);
 
@@ -62,6 +96,19 @@ const MONTH_NAMES = [
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// ---------------------------------------------------------------------------
+// Unified cell item type
+// ---------------------------------------------------------------------------
+
+interface CellItem {
+  id: string;
+  title: string;
+  type: "task" | "entry";
+  color: string;
+  isGoogleCalendar?: boolean;
+  hasMeetLink?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Breadcrumb
@@ -88,16 +135,10 @@ function Breadcrumb({ extra }: { extra?: string }) {
 // ---------------------------------------------------------------------------
 
 const ORBIT_ICONS = [
-  { Icon: Calendar, label: "Google Calendar" },
+  { Icon: GoogleCalendarIcon, label: "Google Calendar" },
   { Icon: GitBranch, label: "GitHub" },
-  { Icon: Layers, label: "Jira" },
+  { Icon: JiraIcon, label: "Jira" },
   { Icon: MessageSquare, label: "Slack" },
-];
-
-const ORBIT_RINGS = [
-  { size: 200, duration: "20s", iconCount: 1, icons: [0] },
-  { size: 340, duration: "30s", iconCount: 2, icons: [1, 2] },
-  { size: 480, duration: "40s", iconCount: 1, icons: [3] },
 ];
 
 function OrbitRing({
@@ -124,7 +165,6 @@ function OrbitRing({
         const angle = (360 / iconIndices.length) * i;
         const rad = (angle * Math.PI) / 180;
         const r = size / 2;
-        // Position on circumference (top = 0deg)
         const x = r + r * Math.sin(rad) - 18;
         const y = r - r * Math.cos(rad) - 18;
         const { Icon } = ORBIT_ICONS[idx];
@@ -146,7 +186,28 @@ function OrbitRing({
   );
 }
 
-function PlannerEmptyState() {
+function PlannerEmptyState({ planTier }: { planTier: string }) {
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
+
+  const canCalendar = planTier !== "FREE";
+
+  function handleConnect(feature: string, href: string | undefined) {
+    if (!href) return;
+    if (feature === "calendarTools" && !canCalendar) {
+      setUpgradeFeature(feature);
+      setUpgradeOpen(true);
+      return;
+    }
+    window.location.href = href;
+  }
+
+  const CTA_BUTTONS: Array<{ label: string; icon: React.ReactNode; href: string | undefined; feature: string }> = [
+    { label: "Google Calendar", icon: <GoogleCalendarIcon size={13} />, href: "/api/integrations/google/connect", feature: "calendarTools" },
+    { label: "GitHub", icon: <GitBranch size={13} />, href: undefined, feature: "githubTools" },
+    { label: "Jira", icon: <JiraIcon size={13} />, href: undefined, feature: "jiraTools" },
+  ];
+
   return (
     <div className="flex flex-col h-full bg-[#0a0a0a] overflow-hidden">
       <style>{`
@@ -175,8 +236,8 @@ function PlannerEmptyState() {
             <OrbitRing size={480} duration="40s" iconIndices={[3]} />
 
             {/* Center logo mark */}
-            <div className="absolute w-14 h-14 flex items-center justify-center rounded-2xl bg-white/[0.06] border border-white/[0.12]">
-              <img src="/assets/khove-rounded.png" alt="Khove" className="w-9 h-9 object-contain" draggable={false} />
+            <div className="absolute w-16 h-16 flex items-center justify-center rounded-[50%] border border-white/[0.12]">
+              <img src="/assets/khove-rounded.png" alt="Khove" className="w-full h-full object-cover" draggable={false} />
             </div>
           </div>
         </div>
@@ -190,22 +251,24 @@ function PlannerEmptyState() {
             Link Google Calendar, GitHub, and Jira to see all your work in one place.
           </p>
           <div className="flex items-center gap-2 mt-1 flex-wrap justify-center">
-            {[
-              { label: "Google Calendar", Icon: Calendar },
-              { label: "GitHub", Icon: GitBranch },
-              { label: "Jira", Icon: Layers },
-            ].map(({ label, Icon }) => (
+            {CTA_BUTTONS.map(({ label, icon, href, feature }) => (
               <button
                 key={label}
-                className="flex items-center gap-1.5 border border-white/[0.15] rounded-full px-4 py-2 text-[13px] text-white/70 hover:bg-white/[0.06] hover:text-white/90 transition-colors"
+                onClick={() => handleConnect(feature, href)}
+                className={`flex items-center gap-1.5 border border-white/[0.15] rounded-full px-4 py-2 text-[13px] text-white/70 hover:bg-white/[0.06] hover:text-white/90 transition-colors ${
+                  !href ? "opacity-40 cursor-not-allowed" : ""
+                }`}
+                disabled={!href}
               >
-                <Icon size={13} />
+                {icon}
                 {label}
               </button>
             ))}
           </div>
         </div>
       </div>
+
+      <UpgradeDialog open={upgradeOpen} onClose={() => setUpgradeOpen(false)} feature={upgradeFeature} />
     </div>
   );
 }
@@ -214,20 +277,56 @@ function PlannerEmptyState() {
 // Planner Calendar (normal state)
 // ---------------------------------------------------------------------------
 
-function PlannerCalendar({ tasks }: { tasks: PlannerTask[] }) {
+function PlannerCalendar({
+  tasks,
+  calendarEntries,
+  isGoogleConnected,
+  planTier,
+}: {
+  tasks: PlannerTask[];
+  calendarEntries: CalendarDisplayEntry[];
+  isGoogleConnected: boolean;
+  planTier: string;
+}) {
   const router = useRouter();
   const today = new Date();
 
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+
+  const canCalendar = planTier !== "FREE";
 
   // Group tasks by date key
-  const tasksByDate: Record<string, PlannerTask[]> = {};
+  const itemsByDate: Record<string, CellItem[]> = {};
+
   for (const task of tasks) {
     const d = new Date(task.dueDate);
     const key = toDateKey(d);
-    if (!tasksByDate[key]) tasksByDate[key] = [];
-    tasksByDate[key].push(task);
+    if (!itemsByDate[key]) itemsByDate[key] = [];
+    itemsByDate[key].push({
+      id: task.id,
+      title: task.title,
+      type: "task",
+      color: task.status.color,
+      isGoogleCalendar: task.source.includes("GOOGLE_CALENDAR"),
+      hasMeetLink: task.hasMeetLink,
+    });
+  }
+
+  // Merge external calendar entries (holidays, birthdays — display only)
+  for (const entry of calendarEntries) {
+    const d = new Date(entry.startDate);
+    if (isNaN(d.getTime())) continue;
+    const key = toDateKey(d);
+    if (!itemsByDate[key]) itemsByDate[key] = [];
+    itemsByDate[key].push({
+      id: entry.id,
+      title: entry.title,
+      type: "entry",
+      color: "#71717A", // zinc-500 — dim
+    });
   }
 
   const grid = buildCalendarGrid(currentYear, currentMonth);
@@ -255,10 +354,17 @@ function PlannerCalendar({ tasks }: { tasks: PlannerTask[] }) {
     setCurrentMonth(today.getMonth());
   }
 
-  // Month date range subtitle
-  const firstOfMonth = new Date(currentYear, currentMonth, 1);
-  const lastOfMonth = new Date(currentYear, currentMonth + 1, 0);
-  const rangeSubtitle = `${MONTH_SHORT[currentMonth]} 1 – ${MONTH_SHORT[currentMonth]} ${lastOfMonth.getDate()}, ${currentYear}`;
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await fetch("/api/integrations/google/disconnect", { method: "POST" });
+      window.location.reload();
+    } catch {
+      setDisconnecting(false);
+    }
+  }
+
+  const rangeSubtitle = `${MONTH_SHORT[currentMonth]} 1 – ${MONTH_SHORT[currentMonth]} ${new Date(currentYear, currentMonth + 1, 0).getDate()}, ${currentYear}`;
 
   return (
     <div className="flex flex-col h-full bg-black overflow-hidden">
@@ -289,6 +395,34 @@ function PlannerCalendar({ tasks }: { tasks: PlannerTask[] }) {
 
         {/* Right: nav + actions */}
         <div className="flex items-center gap-2">
+          {/* Google Calendar status */}
+          {isGoogleConnected ? (
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.10] text-[12px] text-white/50 hover:bg-white/[0.06] hover:text-white/70 transition-colors"
+              title="Disconnect Google Calendar"
+            >
+              <GoogleCalendarIcon size={12} />
+              {disconnecting ? "Disconnecting…" : "Google Calendar"}
+              <Unplug size={10} className="ml-0.5 opacity-50" />
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (!canCalendar) {
+                  setUpgradeOpen(true);
+                } else {
+                  window.location.href = "/api/integrations/google/connect";
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500/30 text-[12px] text-blue-400 hover:bg-blue-500/10 transition-colors"
+            >
+              <GoogleCalendarIcon size={12} />
+              Connect Calendar
+            </button>
+          )}
+
           <button
             onClick={prevMonth}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-white/[0.10] text-white/50 hover:bg-white/[0.06] hover:text-white/80 transition-colors"
@@ -335,10 +469,10 @@ function PlannerCalendar({ tasks }: { tasks: PlannerTask[] }) {
           const isCurrentMonth = day.getMonth() === currentMonth;
           const todayCell = isToday(day);
           const key = toDateKey(day);
-          const cellTasks = tasksByDate[key] ?? [];
+          const cellItems = itemsByDate[key] ?? [];
           const limit = todayCell ? 2 : 3;
-          const overflow = cellTasks.length > limit ? cellTasks.length - limit : 0;
-          const visible = cellTasks.slice(0, limit);
+          const overflow = cellItems.length > limit ? cellItems.length - limit : 0;
+          const visible = cellItems.slice(0, limit);
 
           return (
             <div
@@ -364,20 +498,37 @@ function PlannerCalendar({ tasks }: { tasks: PlannerTask[] }) {
                 )}
               </div>
 
-              {/* Task chips */}
-              {visible.map((task) => (
+              {/* Item chips */}
+              {visible.map((item) => (
                 <button
-                  key={task.id}
-                  onClick={() => router.push(`/tasks/${task.id}`)}
-                  style={{ backgroundColor: task.status.color }}
-                  className="flex items-center gap-1 w-full text-left rounded-md px-1.5 py-0.5 hover:bg-white/[0.09] transition-colors group"
+                  key={item.id}
+                  onClick={() => {
+                    if (item.type === "task") {
+                      router.push(`/tasks/${item.id}`);
+                    }
+                    // Calendar entries are non-clickable
+                  }}
+                  className={`flex items-center gap-1 w-full text-left rounded-md px-1.5 py-0.5 transition-colors group ${
+                    item.type === "entry"
+                      ? "bg-white/[0.03] cursor-default"
+                      : "hover:bg-white/[0.09]"
+                  }`}
+                  style={item.type === "task" ? { backgroundColor: item.color } : undefined}
                 >
-                  {/* <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: task.status.color }}
-                  /> */}
-                  <span className="text-[10px] text-white font-medium group-hover:text-white/85 truncate transition-colors">
-                    {task.title}
+                  {item.isGoogleCalendar && !item.hasMeetLink && (
+                    <GoogleCalendarIcon size={9} />
+                  )}
+                  {item.hasMeetLink && (
+                    <img src="/assets/google-meet.svg" alt="" width={9} height={9} className="flex-shrink-0" />
+                  )}
+                  <span
+                    className={`text-[10px] font-medium truncate transition-colors ${
+                      item.type === "entry"
+                        ? "text-white/30 italic"
+                        : "text-white group-hover:text-white/85"
+                    }`}
+                  >
+                    {item.title}
                   </span>
                 </button>
               ))}
@@ -391,6 +542,8 @@ function PlannerCalendar({ tasks }: { tasks: PlannerTask[] }) {
           );
         })}
       </div>
+
+      <UpgradeDialog open={upgradeOpen} onClose={() => setUpgradeOpen(false)} feature="calendarTools" />
     </div>
   );
 }
@@ -399,7 +552,7 @@ function PlannerCalendar({ tasks }: { tasks: PlannerTask[] }) {
 // Export
 // ---------------------------------------------------------------------------
 
-export function PlannerClient({ isFirstTime, tasks }: PlannerClientProps) {
-  if (isFirstTime) return <PlannerEmptyState />;
-  return <PlannerCalendar tasks={tasks} />;
+export function PlannerClient({ isFirstTime, isGoogleConnected, planTier, tasks, calendarEntries }: PlannerClientProps) {
+  if (isFirstTime) return <PlannerEmptyState planTier={planTier} />;
+  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} isGoogleConnected={isGoogleConnected} planTier={planTier} />;
 }
