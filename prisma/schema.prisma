@@ -39,6 +39,7 @@ enum TaskSource {
   GITHUB
   JIRA
   AI
+  GOOGLE_CALENDAR
 }
 
 enum AssigneeRole {
@@ -112,6 +113,7 @@ model User {
   conversations    Conversation[]
   aiUsageLogs      AiUsageLog[]
   subscriptions    Subscription[]
+  calendarEntries  CalendarEntry[]
 }
 
 model Workspace {
@@ -155,10 +157,11 @@ model Task {
   statusId    String?
   priority    Priority   @default(MEDIUM)
   dueDate     DateTime?
-  source      TaskSource @default(KHOVE)
+  source      TaskSource[] @default([KHOVE])
   externalId  String?
   externalUrl String?
   description String?
+  metadata    Json?
   userId      String
   workspaceId String?
   createdAt   DateTime   @default(now())
@@ -321,4 +324,24 @@ model Subscription {
   @@index([userId])
   @@index([workspaceId])
   @@index([externalSubId])
+}
+
+// External/inconsequential calendar events — display only, no sync
+model CalendarEntry {
+  id         String    @id @default(cuid())
+  userId     String
+  title      String
+  startDate  DateTime
+  endDate    DateTime?
+  isAllDay   Boolean   @default(false)
+  externalId String?
+  source     String    @default("GOOGLE_CALENDAR")
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, externalId])
+  @@index([userId])
+  @@index([startDate])
 }
