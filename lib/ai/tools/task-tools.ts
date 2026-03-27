@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 
 type Priority = "URGENT" | "HIGH" | "MEDIUM" | "LOW";
-type TaskSource = "KHOVE" | "GITHUB" | "JIRA" | "AI";
+type TaskSource = "KHOVE" | "GITHUB" | "JIRA" | "AI" | "GOOGLE_CALENDAR";
 type StatusCategory =
   | "NOT_STARTED"
   | "IN_PROGRESS"
@@ -52,7 +52,7 @@ export function getTaskTools(userId: string) {
               title,
               priority: (priority ?? "MEDIUM") as Priority,
               dueDate: dueDate ? new Date(dueDate) : undefined,
-              source: "AI" as TaskSource,
+              source: ["AI"],
               userId,
               workspaceId: workspaceId ?? null,
               statusId: defaultStatus?.id ?? null,
