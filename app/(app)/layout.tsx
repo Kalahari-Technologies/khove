@@ -2,6 +2,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import AppSidebar from "@/components/app-sidebar";
+import { RealtimeProvider } from "@/components/realtime-provider";
 
 export default async function AppLayout({
   children,
@@ -32,6 +33,7 @@ export default async function AppLayout({
           updatedAt: c.updatedAt.toISOString(),
         }))}
       />
+      <RealtimeProvider />
       <main className="flex-1 overflow-hidden bg-black">{children}</main>
     </div>
   );
