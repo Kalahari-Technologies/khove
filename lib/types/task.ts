@@ -23,8 +23,19 @@ export interface PlannerTask {
   title: string;
   /** ISO string — serialized from `task.dueDate` for client component. */
   dueDate: string;
+  source: string[];
+  hasMeetLink?: boolean;
   status: {
     name: string;
     color: string;
   };
+}
+
+/** External calendar entry for display-only on the planner (holidays, birthdays, etc.). */
+export interface CalendarDisplayEntry {
+  id: string;
+  title: string;
+  startDate: string;
+  endDate?: string;
+  isAllDay: boolean;
 }
