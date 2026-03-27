@@ -26,6 +26,7 @@
     "@upstash/redis": "^1",
     "ai": "^6.0.137",
     "clsx": "^2",
+    "googleapis": "^171.4.0",
     "inngest": "^4.0.5",
     "lucide-react": "^1.0.1",
     "motion": "^12.38.0",
