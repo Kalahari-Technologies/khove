@@ -3,10 +3,30 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // Public routes that don't require authentication
 const isPublicRoute = createRouteMatcher([
   "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
+  "/login(.*)",
+  "/join(.*)",
+  "/onboarding(.*)",
+  "/sso-callback(.*)",
   "/api/webhooks/(.*)", // All webhook endpoints — must be unprotected
   "/api/inngest(.*)",   // Inngest serve endpoint — authenticated via signing key
+]);
+
+// Slugs that cannot be workspace slugs — static array for Edge compatibility
+// (middleware runs in Edge runtime, cannot import from lib/)
+const RESERVED_SLUGS = new Set([
+  "login",
+  "join",
+  "onboarding",
+  "api",
+  "settings",
+  "admin",
+  "new",
+  "invite",
+  "_next",
+  "assets",
+  "favicon",
+  "robots",
+  "sitemap",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

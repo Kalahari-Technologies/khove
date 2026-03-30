@@ -1,5 +1,6 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
+import { ensurePersonalWorkspace } from "@/lib/workspace/create-personal";
 import type { User } from "@prisma/client";
 
 /**
@@ -23,7 +24,7 @@ export async function getCurrentUser(): Promise<User | null> {
   );
   if (!primaryEmail) return null;
 
-  return db.user.upsert({
+  const user = await db.user.upsert({
     where: { clerkId },
     create: {
       clerkId,
@@ -35,6 +36,15 @@ export async function getCurrentUser(): Promise<User | null> {
     },
     update: {},
   });
+
+  // Ensure personal workspace exists (handles webhook race condition)
+  await ensurePersonalWorkspace({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+  });
+
+  return user;
 }
 
 /**

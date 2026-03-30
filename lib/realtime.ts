@@ -47,6 +47,27 @@ export async function publishEvent(userId: string, event: RealtimeEvent): Promis
 }
 
 /**
+ * Push a real-time event to all members of a workspace.
+ * Fan-out: publishes to each member's individual event queue.
+ * Use for workspace-scoped mutations (task created/updated in a shared workspace).
+ */
+export async function publishWorkspaceEvent(
+  workspaceId: string,
+  event: RealtimeEvent
+): Promise<void> {
+  // Import db lazily to avoid circular dependency
+  const { db } = await import("@/lib/db");
+  const members = await db.workspaceMember.findMany({
+    where: { workspaceId },
+    select: { userId: true },
+  });
+
+  await Promise.all(
+    members.map((m) => publishEvent(m.userId, event))
+  );
+}
+
+/**
  * Drain all pending events for a user. Called by the SSE endpoint.
  * Cost: 2 Redis commands (LRANGE + DEL) when there are events, 1 (LRANGE) when empty.
  */

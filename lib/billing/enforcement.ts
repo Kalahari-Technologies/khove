@@ -1,6 +1,6 @@
 import type { PlanTier } from "@prisma/client";
 import { checkUsage, incrementUsage } from "@/lib/redis";
-import { hasFeature, PLANS } from "@/lib/billing/plans";
+import { PLANS } from "@/lib/billing/plans";
 import type { PlanConfig } from "@/lib/billing/plans";
 
 export interface UsageCheckResult {
@@ -12,7 +12,7 @@ export interface UsageCheckResult {
 }
 
 /**
- * Check if a user/workspace can send an AI message.
+ * Check if a user/workspace can perform an AI action.
  * Returns blocked:true if at limit — callers return 200 with blocked:true, not 4xx.
  */
 export async function checkAndIncrementUsage(
@@ -21,7 +21,7 @@ export async function checkAndIncrementUsage(
   workspaceId?: string
 ): Promise<UsageCheckResult> {
   const plan = PLANS[planTier];
-  const limit = plan.aiMessagesPerMonth;
+  const limit = plan.aiActionsPerMonth;
 
   // Unlimited tiers skip Redis
   if (limit === -1) {
@@ -46,7 +46,7 @@ export function enforceFeatureAccess(
   tier: PlanTier,
   feature: keyof PlanConfig["features"]
 ): void {
-  if (!hasFeature(tier, feature)) {
+  if (!PLANS[tier].features[feature]) {
     throw new Error(
       `Feature '${feature}' is not available on the ${tier} plan. Upgrade to access this feature.`
     );
@@ -54,26 +54,33 @@ export function enforceFeatureAccess(
 }
 
 /**
- * Returns which tool categories are available for a given tier + integrations.
+ * Returns which tool categories are available for a given tier + connected integrations.
+ * Per V3: ALL integrations are free for ALL tiers. Tools load if the integration is connected.
  */
 export function getAvailableToolCategories(
   tier: PlanTier,
   connectedIntegrations: string[]
 ): string[] {
-  const features = PLANS[tier].features;
   const categories: string[] = [];
 
-  if (features.taskTools) categories.push("tasks");
-  if (features.calendarTools && connectedIntegrations.includes("GOOGLE_CALENDAR")) {
+  // Task tools — always available
+  categories.push("tasks");
+
+  // Integration tools — available to ALL tiers, gated only by connection status
+  if (connectedIntegrations.includes("GOOGLE_CALENDAR")) {
     categories.push("calendar");
   }
-  if (features.githubTools && connectedIntegrations.includes("GITHUB")) {
+  if (connectedIntegrations.includes("GITHUB")) {
     categories.push("github");
   }
-  if (features.jiraTools && connectedIntegrations.includes("JIRA")) {
+  if (connectedIntegrations.includes("JIRA")) {
     categories.push("jira");
   }
-  if (features.standupAutomation) categories.push("standup");
+
+  // Standup automation — PRO+ only
+  if (PLANS[tier].features.standupAutomation) {
+    categories.push("standup");
+  }
 
   return categories;
 }

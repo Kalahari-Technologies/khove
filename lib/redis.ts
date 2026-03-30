@@ -29,8 +29,12 @@ export const redis = new Proxy({} as Redis, {
 // Plan Limits
 // ─────────────────────────────────────────────
 
+// AI action limits per month (V3 Concept Note)
+// FREE: 20 actions/month (user-scoped)
+// PRO: Unlimited
+// TEAM: 500/workspace, SMB: 2000/workspace
 export const PLAN_LIMITS: Record<PlanTier, number> = {
-  FREE: 30,
+  FREE: 20,
   PRO: Infinity,
   TEAM: 500,
   SMB: 2000,
