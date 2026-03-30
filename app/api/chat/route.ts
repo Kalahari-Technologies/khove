@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { runAIConversation } from "@/lib/ai";
+import { requireWorkspaceMembership } from "@/lib/workspace/resolve";
 
 export async function POST(req: Request) {
   try {
@@ -23,6 +24,13 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
+
+    // Validate workspace membership
+    await requireWorkspaceMembership(workspaceId, user.id);
 
     const result = await runAIConversation({
       userId: user.id,
@@ -57,6 +65,9 @@ export async function POST(req: Request) {
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Not a member of this workspace") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     console.error("[/api/chat] Unhandled error:", error);
     return NextResponse.json(

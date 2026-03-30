@@ -4,10 +4,23 @@ import {
   initialCalendarSync,
   handleCalendarWebhook,
   refreshExpiringTokens,
+  renewCalendarWebhooks,
   disconnectCalendarCleanup,
 } from "@/lib/inngest/functions/calendar-sync";
+import {
+  initialGitHubSync,
+  handleGitHubWebhook,
+} from "@/lib/inngest/functions/github-sync";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [initialCalendarSync, handleCalendarWebhook, refreshExpiringTokens, disconnectCalendarCleanup],
+  functions: [
+    initialCalendarSync,
+    handleCalendarWebhook,
+    refreshExpiringTokens,
+    renewCalendarWebhooks,
+    disconnectCalendarCleanup,
+    initialGitHubSync,
+    handleGitHubWebhook,
+  ],
 });

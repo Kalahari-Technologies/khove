@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { decrypt } from "@/lib/encryption";
-import { createOAuth2Client } from "@/lib/integrations/google-calendar";
 import { db } from "@/lib/db";
-import { inngest } from "@/lib/inngest";
 import { canAdminWorkspace } from "@/lib/workspace/authorization";
+import { publishEvent } from "@/lib/realtime";
 
 /**
- * POST /api/integrations/google/disconnect
+ * POST /api/integrations/github/disconnect
  * Body: { workspaceId: string }
- * Revokes the Google token and soft-deletes the integration.
- * Requires OWNER/ADMIN role.
+ * Soft-deletes the GitHub integration. Requires OWNER/ADMIN role.
  */
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -23,7 +20,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
   }
 
-  // Verify admin permission
   const membership = await db.workspaceMember.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
   });
@@ -32,30 +28,19 @@ export async function POST(req: NextRequest) {
   }
 
   const integration = await db.integration.findFirst({
-    where: { workspaceId, provider: "GOOGLE_CALENDAR", isActive: true },
+    where: { workspaceId, provider: "GITHUB", isActive: true },
   });
 
   if (!integration) {
-    return NextResponse.json({ error: "No active Google Calendar integration found." }, { status: 404 });
+    return NextResponse.json({ error: "GitHub is not connected" }, { status: 404 });
   }
-
-  // Best-effort token revocation
-  try {
-    const accessToken = decrypt(integration.accessTokenEnc);
-    const oauth2 = createOAuth2Client();
-    await oauth2.revokeToken(accessToken);
-  } catch {}
 
   await db.integration.update({
     where: { id: integration.id },
     data: { isActive: false },
   });
 
-  // Clean up synced tasks + calendar entries in the background
-  await inngest.send({
-    name: "google-calendar/disconnected",
-    data: { userId: user.id, workspaceId },
-  });
+  await publishEvent(user.id, { type: "refresh" }).catch(() => {});
 
   return NextResponse.json({ success: true });
 }

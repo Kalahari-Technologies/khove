@@ -2,6 +2,7 @@ import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { ensurePersonalWorkspace } from "@/lib/workspace/create-personal";
 import type { WebhookEvent } from "@clerk/nextjs/server";
 
 export async function POST(req: Request) {
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
       );
       if (!primaryEmail) break;
 
-      await db.user.upsert({
+      const user = await db.user.upsert({
         where: { clerkId },
         create: {
           clerkId,
@@ -58,6 +59,13 @@ export async function POST(req: Request) {
           email: primaryEmail.email_address,
           name: [first_name, last_name].filter(Boolean).join(" ") || null,
         },
+      });
+
+      // Create personal workspace for new user
+      await ensurePersonalWorkspace({
+        id: user.id,
+        name: user.name,
+        email: user.email,
       });
       break;
     }

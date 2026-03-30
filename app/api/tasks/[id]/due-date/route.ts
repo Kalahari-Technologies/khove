@@ -62,7 +62,7 @@ export async function PATCH(
     // Push to GCal if this task is synced
     if (updated.externalId) {
       try {
-        await pushTaskToGoogleCalendar(user.id, updated);
+        await pushTaskToGoogleCalendar(updated.workspaceId ?? "", updated);
       } catch {}
     }
 

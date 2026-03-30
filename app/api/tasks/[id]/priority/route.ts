@@ -32,7 +32,7 @@ export async function PATCH(
     });
 
     if (updated.externalId) {
-      try { await pushTaskToGoogleCalendar(user.id, updated); } catch {}
+      try { await pushTaskToGoogleCalendar(updated.workspaceId ?? "", updated); } catch {}
     }
 
     await publishEvent(user.id, { type: "task.updated", taskId: params.id }).catch(() => {});

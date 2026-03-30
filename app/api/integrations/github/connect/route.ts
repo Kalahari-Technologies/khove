@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canAdminWorkspace } from "@/lib/workspace/authorization";
-import { createOAuth2Client, GOOGLE_CALENDAR_SCOPES } from "@/lib/integrations/google-calendar";
+import { createGitHubOAuthUrl } from "@/lib/integrations/github";
 
 /**
- * GET /api/integrations/google/connect?workspaceId=xxx
- * Redirects the user to Google's OAuth consent screen.
- * Requires OWNER/ADMIN role in the target workspace.
+ * GET /api/integrations/github/connect?workspaceId=xxx
+ * Redirects to GitHub OAuth. Requires OWNER/ADMIN role.
  */
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -20,7 +19,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
   }
 
-  // Verify user is admin/owner of the workspace
   const membership = await db.workspaceMember.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
   });
@@ -28,14 +26,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Only workspace admins can connect integrations" }, { status: 403 });
   }
 
-  const oauth2 = createOAuth2Client();
-
-  const url = oauth2.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: GOOGLE_CALENDAR_SCOPES,
-    state: `${user.id}:${workspaceId}`, // CSRF + workspace context
-  });
-
+  const url = createGitHubOAuthUrl(user.id, workspaceId);
   return NextResponse.redirect(url);
 }

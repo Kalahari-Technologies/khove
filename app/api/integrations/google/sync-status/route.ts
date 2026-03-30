@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { Redis } from "@upstash/redis";
 
@@ -14,23 +14,27 @@ function getRedis(): Redis {
 }
 
 /**
- * GET /api/integrations/google/sync-status
- * Returns the current sync status from Redis. 1 Redis GET per poll.
+ * GET /api/integrations/google/sync-status?workspaceId=xxx
+ * Returns the current sync status from Redis. Workspace-scoped.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const workspaceId = new URL(req.url).searchParams.get("workspaceId");
+  if (!workspaceId) {
+    return NextResponse.json({ error: "workspaceId required" }, { status: 400 });
+  }
+
   const redis = getRedis();
-  const raw = await redis.get<string>(`cal-sync:${user.id}`);
+  const raw = await redis.get<string>(`cal-sync:${workspaceId}`);
 
   if (!raw) {
     return NextResponse.json({ status: "idle" });
   }
 
-  // Could be "syncing" or a JSON string like {"status":"done","tasksCreated":5,...}
   if (raw === "syncing") {
     return NextResponse.json({ status: "syncing" });
   }

@@ -23,15 +23,15 @@ export async function POST(req: NextRequest) {
       isActive: true,
       metadata: { path: ["webhookChannelId"], equals: channelId },
     },
-    select: { userId: true },
+    select: { userId: true, workspaceId: true },
   });
 
   if (integration) {
-    // Fire-and-forget — Inngest handles the processing
     await inngest.send({
       name: "google-calendar/webhook.received",
       data: {
         userId: integration.userId,
+        workspaceId: integration.workspaceId,
         channelId,
         resourceId,
       },

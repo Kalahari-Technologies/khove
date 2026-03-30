@@ -8,12 +8,12 @@ import { inngest } from "@/lib/inngest";
 /**
  * GET /api/integrations/google/callback
  * Exchanges the authorization code for tokens, encrypts them, and upserts the Integration record.
- * Redirects to /calendar on success.
+ * State carries userId:workspaceId for CSRF + workspace targeting.
  */
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.redirect(new URL("/sign-in", req.url));
+    return NextResponse.redirect(new URL("/login", req.url));
   }
 
   const { searchParams } = new URL(req.url);
@@ -21,14 +21,22 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state");
   const error = searchParams.get("error");
 
-  // Google returned an error (user denied consent, etc.)
+  // Parse state → userId:workspaceId
+  const [stateUserId, stateWorkspaceId] = (state ?? "").split(":");
+
+  // Resolve workspace slug for redirect
+  const workspace = stateWorkspaceId
+    ? await db.workspace.findUnique({ where: { id: stateWorkspaceId }, select: { slug: true } })
+    : null;
+  const plannerPath = workspace ? `/${workspace.slug}/planner` : "/planner";
+
   if (error) {
-    return NextResponse.redirect(new URL(`/calendar?error=${error}`, req.url));
+    return NextResponse.redirect(new URL(`${plannerPath}?error=${error}`, req.url));
   }
 
-  // CSRF: state must match the authenticated user's ID
-  if (!code || state !== user.id) {
-    return NextResponse.redirect(new URL("/calendar?error=invalid_state", req.url));
+  // CSRF: userId from state must match authenticated user
+  if (!code || !stateWorkspaceId || stateUserId !== user.id) {
+    return NextResponse.redirect(new URL(`${plannerPath}?error=invalid_state`, req.url));
   }
 
   try {
@@ -36,7 +44,7 @@ export async function GET(req: NextRequest) {
     const { tokens } = await oauth2.getToken(code);
 
     if (!tokens.access_token) {
-      return NextResponse.redirect(new URL("/calendar?error=no_token", req.url));
+      return NextResponse.redirect(new URL(`${plannerPath}?error=no_token`, req.url));
     }
 
     const accessTokenEnc = encrypt(tokens.access_token);
@@ -49,11 +57,12 @@ export async function GET(req: NextRequest) {
 
     await db.integration.upsert({
       where: {
-        provider_userId: { provider: "GOOGLE_CALENDAR", userId: user.id },
+        provider_workspaceId: { provider: "GOOGLE_CALENDAR", workspaceId: stateWorkspaceId },
       },
       create: {
         provider: "GOOGLE_CALENDAR",
         userId: user.id,
+        workspaceId: stateWorkspaceId,
         accessTokenEnc,
         refreshTokenEnc,
         tokenExpiresAt,
@@ -61,6 +70,7 @@ export async function GET(req: NextRequest) {
         isActive: true,
       },
       update: {
+        userId: user.id,
         accessTokenEnc,
         ...(refreshTokenEnc && { refreshTokenEnc }),
         tokenExpiresAt,
@@ -68,15 +78,15 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Dispatch initial sync as background job — don't block the redirect
+    // Dispatch initial sync as background job
     await inngest.send({
       name: "google-calendar/initial-sync",
-      data: { userId: user.id },
+      data: { userId: user.id, workspaceId: stateWorkspaceId },
     });
 
-    return NextResponse.redirect(new URL("/calendar?syncing=true", req.url));
+    return NextResponse.redirect(new URL(`${plannerPath}?syncing=true`, req.url));
   } catch (err) {
     console.error("[Google Calendar] OAuth callback error:", err);
-    return NextResponse.redirect(new URL("/calendar?error=auth_failed", req.url));
+    return NextResponse.redirect(new URL(`${plannerPath}?error=auth_failed`, req.url));
   }
 }
