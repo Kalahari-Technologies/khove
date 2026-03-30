@@ -10,7 +10,7 @@ import {
  * Google Calendar tools — available to PRO+ tiers when GOOGLE_CALENDAR is connected.
  * Every execute() is wrapped in try/catch — tool failures never crash the conversation.
  */
-export function getCalendarTools(userId: string) {
+export function getCalendarTools(workspaceId: string) {
   return {
     listUpcomingEvents: tool({
       description:
@@ -38,7 +38,7 @@ export function getCalendarTools(userId: string) {
           const defaultMax = new Date();
           defaultMax.setDate(defaultMax.getDate() + 7);
 
-          const events = await listUpcomingEvents(userId, {
+          const events = await listUpcomingEvents(workspaceId, {
             timeMin: timeMin ?? new Date().toISOString(),
             timeMax: timeMax ?? defaultMax.toISOString(),
             maxResults: maxResults ?? 10,
@@ -94,7 +94,7 @@ export function getCalendarTools(userId: string) {
         location,
       }) => {
         try {
-          const event = await createEvent(userId, {
+          const event = await createEvent(workspaceId, {
             summary,
             startDateTime,
             endDateTime,
@@ -134,7 +134,7 @@ export function getCalendarTools(userId: string) {
       ),
       execute: async ({ timeMin, timeMax }) => {
         try {
-          const result = await checkAvailability(userId, timeMin, timeMax);
+          const result = await checkAvailability(workspaceId, timeMin, timeMax);
           const isFree = result.busy.length === 0;
 
           return {

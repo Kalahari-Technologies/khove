@@ -9,6 +9,7 @@ import { encrypt, decrypt } from "@/lib/encryption";
 // ---------------------------------------------------------------------------
 
 const SCOPES = [
+  "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.freebusy",
 ];
@@ -36,10 +37,10 @@ export { SCOPES as GOOGLE_CALENDAR_SCOPES };
  * Throws if no active GOOGLE_CALENDAR integration exists.
  */
 export async function getCalendarClient(
-  userId: string,
-): Promise<{ calendar: calendar_v3.Calendar; calendarId: string }> {
+  workspaceId: string,
+): Promise<{ calendar: calendar_v3.Calendar; calendarId: string; integration: { id: string; userId: string } }> {
   const integration = await db.integration.findFirst({
-    where: { userId, provider: "GOOGLE_CALENDAR", isActive: true },
+    where: { workspaceId, provider: "GOOGLE_CALENDAR", isActive: true },
   });
   if (!integration) {
     throw new Error("Google Calendar is not connected. Please connect it first.");
@@ -80,19 +81,19 @@ export async function getCalendarClient(
     (integration.metadata as Record<string, unknown>)?.calendarId as string | undefined ??
     "primary";
 
-  return { calendar, calendarId };
+  return { calendar, calendarId, integration: { id: integration.id, userId: integration.userId } };
 }
 
 // ---------------------------------------------------------------------------
 // High-level helpers
 // ---------------------------------------------------------------------------
 
-/** List upcoming events from the user's connected calendar. */
+/** List upcoming events from the workspace's connected calendar (primary only). */
 export async function listUpcomingEvents(
-  userId: string,
+  workspaceId: string,
   opts?: { timeMin?: string; timeMax?: string; maxResults?: number },
 ): Promise<calendar_v3.Schema$Event[]> {
-  const { calendar, calendarId } = await getCalendarClient(userId);
+  const { calendar, calendarId } = await getCalendarClient(workspaceId);
 
   const now = new Date().toISOString();
   const res = await calendar.events.list({
@@ -107,9 +108,65 @@ export async function listUpcomingEvents(
   return res.data.items ?? [];
 }
 
+/** Fetch events from ALL user calendars (primary, holidays, birthdays, subscribed). */
+export async function listAllCalendarEvents(
+  workspaceId: string,
+  opts?: { timeMin?: string; timeMax?: string; maxResults?: number },
+): Promise<Array<calendar_v3.Schema$Event & { _calendarId: string; _calendarSummary: string; _isHolidayOrBirthday: boolean }>> {
+  const { calendar } = await getCalendarClient(workspaceId);
+
+  const now = new Date().toISOString();
+  const timeMin = opts?.timeMin ?? now;
+  const timeMax = opts?.timeMax ?? undefined;
+  const maxPerCalendar = opts?.maxResults ?? 50;
+
+  // Get all calendars the user has access to
+  const calListRes = await calendar.calendarList.list();
+  const calendars = calListRes.data.items ?? [];
+
+  const allEvents: Array<calendar_v3.Schema$Event & { _calendarId: string; _calendarSummary: string; _isHolidayOrBirthday: boolean }> = [];
+
+  for (const cal of calendars) {
+    if (!cal.id) continue;
+
+    // Identify non-actionable calendar types
+    const isHolidayOrBirthday =
+      cal.accessRole === "reader" || // subscribed calendars (holidays, sports, etc.)
+      cal.id.includes("#holiday@") ||
+      cal.id.includes("#contacts@") ||
+      cal.id.includes("addressbook#") ||
+      (cal.summary?.toLowerCase().includes("holiday") ?? false) ||
+      (cal.summary?.toLowerCase().includes("birthday") ?? false);
+
+    try {
+      const res = await calendar.events.list({
+        calendarId: cal.id,
+        timeMin,
+        timeMax,
+        maxResults: maxPerCalendar,
+        singleEvents: true,
+        orderBy: "startTime",
+      });
+
+      for (const event of res.data.items ?? []) {
+        allEvents.push({
+          ...event,
+          _calendarId: cal.id,
+          _calendarSummary: cal.summary ?? cal.id,
+          _isHolidayOrBirthday: isHolidayOrBirthday,
+        });
+      }
+    } catch {
+      // Skip calendars that fail (permissions, etc.)
+    }
+  }
+
+  return allEvents;
+}
+
 /** Create a calendar event and return it. */
 export async function createEvent(
-  userId: string,
+  workspaceId: string,
   event: {
     summary: string;
     description?: string;
@@ -119,7 +176,7 @@ export async function createEvent(
     location?: string;
   },
 ): Promise<calendar_v3.Schema$Event> {
-  const { calendar, calendarId } = await getCalendarClient(userId);
+  const { calendar, calendarId } = await getCalendarClient(workspaceId);
 
   const res = await calendar.events.insert({
     calendarId,
@@ -138,11 +195,11 @@ export async function createEvent(
 
 /** Check free/busy availability for a time range. */
 export async function checkAvailability(
-  userId: string,
+  workspaceId: string,
   timeMin: string,
   timeMax: string,
 ): Promise<{ busy: Array<{ start: string; end: string }> }> {
-  const { calendar, calendarId } = await getCalendarClient(userId);
+  const { calendar, calendarId } = await getCalendarClient(workspaceId);
 
   const res = await calendar.freebusy.query({
     requestBody: {
@@ -167,11 +224,11 @@ export async function checkAvailability(
 
 /** Register a push notification channel for calendar changes. */
 export async function registerWebhook(
-  userId: string,
+  workspaceId: string,
   webhookUrl: string,
 ): Promise<{ channelId: string; resourceId: string; expiration: string }> {
-  const { calendar, calendarId } = await getCalendarClient(userId);
-  const channelId = `khove-cal-${userId}-${Date.now()}`;
+  const { calendar, calendarId } = await getCalendarClient(workspaceId);
+  const channelId = `khove-cal-${workspaceId}-${Date.now()}`;
 
   const res = await calendar.events.watch({
     calendarId,
@@ -191,11 +248,11 @@ export async function registerWebhook(
 
 /** Stop a push notification channel. */
 export async function stopWebhook(
-  userId: string,
+  workspaceId: string,
   channelId: string,
   resourceId: string,
 ): Promise<void> {
-  const { calendar } = await getCalendarClient(userId);
+  const { calendar } = await getCalendarClient(workspaceId);
 
   await calendar.channels.stop({
     requestBody: { id: channelId, resourceId },
@@ -209,9 +266,22 @@ export async function stopWebhook(
 /**
  * Actionable events (meetings, calls, appointments) → become Tasks.
  * External events (holidays, birthdays, OOO, focus time) → CalendarEntry display only.
+ *
+ * An event is actionable if:
+ * 1. It's from the user's primary/writable calendar (not a holiday/birthday subscription)
+ * 2. Its eventType is "default" (not "birthday", "focusTime", "outOfOffice", "workingLocation")
  */
-export function isActionableEvent(event: calendar_v3.Schema$Event): boolean {
-  return (event.eventType ?? "default") === "default";
+export function isActionableEvent(
+  event: calendar_v3.Schema$Event & { _isHolidayOrBirthday?: boolean },
+): boolean {
+  // Events from holiday/birthday/subscribed calendars are never actionable
+  if (event._isHolidayOrBirthday) return false;
+
+  // Non-default event types are never actionable
+  const eventType = event.eventType ?? "default";
+  if (eventType !== "default") return false;
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -239,20 +309,22 @@ function buildEventMetadata(
  * Returns "created" | "updated" | "cancelled" | "skipped".
  */
 export async function upsertTaskFromEvent(
-  userId: string,
+  workspaceId: string,
   event: calendar_v3.Schema$Event,
   calendarId: string,
 ): Promise<"created" | "updated" | "cancelled" | "skipped"> {
   if (!event.id) return "skipped";
 
   const existing = await db.task.findFirst({
-    where: { userId, source: { has: "GOOGLE_CALENDAR" }, externalId: event.id },
+    where: { workspaceId, source: { has: "GOOGLE_CALENDAR" }, externalId: event.id },
   });
 
   // Cancelled event → mark task as cancelled if it exists
   if (event.status === "cancelled") {
     if (existing) {
       const cancelledStatus = await db.workflowStatus.findFirst({
+        where: { category: "CANCELLED", workspaceId },
+      }) ?? await db.workflowStatus.findFirst({
         where: { category: "CANCELLED", workspaceId: null },
       });
       await db.task.update({
@@ -286,15 +358,19 @@ export async function upsertTaskFromEvent(
     return "updated";
   }
 
-  // New task — find a default status
+  // Get userId from the integration that owns this workspace connection
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GOOGLE_CALENDAR", isActive: true },
+    select: { userId: true },
+  });
+
   const defaultStatus =
-    (await db.workflowStatus.findFirst({
+    await db.workflowStatus.findFirst({
+      where: { category: "NOT_STARTED", workspaceId, isDefault: true },
+    }) ??
+    await db.workflowStatus.findFirst({
       where: { category: "NOT_STARTED", workspaceId: null, isDefault: true },
-    })) ??
-    (await db.workflowStatus.findFirst({
-      where: { category: "NOT_STARTED", workspaceId: null },
-      orderBy: { position: "asc" },
-    }));
+    });
 
   await db.task.create({
     data: {
@@ -306,7 +382,8 @@ export async function upsertTaskFromEvent(
       dueDate,
       priority: "MEDIUM",
       statusId: defaultStatus?.id ?? null,
-      userId,
+      userId: integration?.userId ?? "",
+      workspaceId,
       metadata,
     },
   });
@@ -318,13 +395,13 @@ export async function upsertTaskFromEvent(
  * Returns "created" | "updated" | "deleted" | "skipped".
  */
 export async function upsertCalendarEntry(
-  userId: string,
+  workspaceId: string,
   event: calendar_v3.Schema$Event,
 ): Promise<"created" | "updated" | "deleted" | "skipped"> {
   if (!event.id) return "skipped";
 
   const existing = await db.calendarEntry.findUnique({
-    where: { userId_externalId: { userId, externalId: event.id } },
+    where: { workspaceId_externalId: { workspaceId, externalId: event.id } },
   });
 
   // Cancelled → delete if exists
@@ -351,6 +428,12 @@ export async function upsertCalendarEntry(
       : null;
   const isAllDay = !event.start?.dateTime;
 
+  // Get userId from the integration that owns this workspace connection
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GOOGLE_CALENDAR", isActive: true },
+    select: { userId: true },
+  });
+
   if (existing) {
     await db.calendarEntry.update({
       where: { id: existing.id },
@@ -361,7 +444,8 @@ export async function upsertCalendarEntry(
 
   await db.calendarEntry.create({
     data: {
-      userId,
+      userId: integration?.userId ?? "",
+      workspaceId,
       title,
       startDate,
       endDate,
@@ -382,17 +466,15 @@ export async function upsertCalendarEntry(
  * Called on OAuth connect (initial sync) and can be called for manual re-sync.
  */
 export async function syncGoogleCalendar(
-  userId: string,
+  workspaceId: string,
   opts?: { timeMin?: string; timeMax?: string },
 ): Promise<{ tasksCreated: number; tasksUpdated: number; entriesCreated: number }> {
-  const { calendarId } = await getCalendarClient(userId);
-
-  // Fetch 3 months of events
+  // Fetch 3 months of events from ALL calendars (primary, holidays, birthdays, subscribed)
   const now = new Date();
   const timeMin = opts?.timeMin ?? new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
   const timeMax = opts?.timeMax ?? new Date(now.getFullYear(), now.getMonth() + 3, 0).toISOString();
 
-  const events = await listUpcomingEvents(userId, { timeMin, timeMax, maxResults: 250 });
+  const events = await listAllCalendarEvents(workspaceId, { timeMin, timeMax, maxResults: 100 });
 
   let tasksCreated = 0;
   let tasksUpdated = 0;
@@ -400,11 +482,11 @@ export async function syncGoogleCalendar(
 
   for (const event of events) {
     if (isActionableEvent(event)) {
-      const result = await upsertTaskFromEvent(userId, event, calendarId);
+      const result = await upsertTaskFromEvent(workspaceId, event, event._calendarId);
       if (result === "created") tasksCreated++;
       if (result === "updated") tasksUpdated++;
     } else {
-      const result = await upsertCalendarEntry(userId, event);
+      const result = await upsertCalendarEntry(workspaceId, event);
       if (result === "created") entriesCreated++;
     }
   }
@@ -431,7 +513,7 @@ export interface GCalPushResult {
 }
 
 export async function pushTaskToGoogleCalendar(
-  userId: string,
+  workspaceId: string,
   task: Task,
   gcalOpts?: {
     agenda?: string;
@@ -442,7 +524,7 @@ export async function pushTaskToGoogleCalendar(
     generateMeetLink?: boolean;
   },
 ): Promise<GCalPushResult | null> {
-  const { calendar, calendarId } = await getCalendarClient(userId);
+  const { calendar, calendarId } = await getCalendarClient(workspaceId);
 
   const existingMeta = (task.metadata ?? {}) as Record<string, unknown>;
   const gcalMeta = (existingMeta.googleCalendar ?? {}) as Record<string, unknown>;
@@ -519,9 +601,9 @@ export async function pushTaskToGoogleCalendar(
  * Delete a Google Calendar event by its external ID.
  */
 export async function deleteGoogleCalendarEvent(
-  userId: string,
+  workspaceId: string,
   externalId: string,
 ): Promise<void> {
-  const { calendar, calendarId } = await getCalendarClient(userId);
+  const { calendar, calendarId } = await getCalendarClient(workspaceId);
   await calendar.events.delete({ calendarId, eventId: externalId });
 }

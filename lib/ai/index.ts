@@ -14,7 +14,7 @@ export interface RunAIConversationInput {
   conversationId?: string;
   newMessage: string;
   planTier: PlanTier;
-  workspaceId?: string;
+  workspaceId: string;
   userName: string;
 }
 
@@ -60,11 +60,13 @@ export async function runAIConversation(
     ((conversation?.messages as unknown) as ChatMessage[]) ?? [];
   const history = pruneConversationHistory(rawHistory);
 
-  // Load connected integrations
-  const integrations = await db.integration.findMany({
-    where: { userId, isActive: true },
-    select: { provider: true },
-  });
+  // Load connected integrations — workspace-scoped
+  const integrations = workspaceId
+    ? await db.integration.findMany({
+        where: { workspaceId, isActive: true },
+        select: { provider: true },
+      })
+    : [];
   const connectedIntegrations = integrations.map((i: { provider: string }) => i.provider);
 
   // Load workspace settings
@@ -91,7 +93,7 @@ export async function runAIConversation(
   const { model, tier: modelTier } = routeToModel(complexityScore, planTier);
 
   // ─── Step 4: Tool loading ──────────────────────────────────────────────
-  const tools = getToolsForContext(userId, planTier, connectedIntegrations);
+  const tools = getToolsForContext(userId, workspaceId, planTier, connectedIntegrations);
 
   // ─── Step 5–6: AI call + tool loop (max 5 steps) ──────────────────────
   const messages = [

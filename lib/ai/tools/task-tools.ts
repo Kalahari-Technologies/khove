@@ -3,7 +3,6 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 
 type Priority = "URGENT" | "HIGH" | "MEDIUM" | "LOW";
-type TaskSource = "KHOVE" | "GITHUB" | "JIRA" | "AI" | "GOOGLE_CALENDAR";
 type StatusCategory =
   | "NOT_STARTED"
   | "IN_PROGRESS"
@@ -15,8 +14,9 @@ type StatusCategory =
 /**
  * Task tools — available to all tiers (FREE and above).
  * Every execute() is wrapped in try/catch — tool failures never crash the conversation.
+ * workspaceId is required — all task operations are workspace-scoped.
  */
-export function getTaskTools(userId: string) {
+export function getTaskTools(userId: string, workspaceId: string) {
   return {
     createTask: tool({
       description:
@@ -33,18 +33,17 @@ export function getTaskTools(userId: string) {
             .string()
             .optional()
             .describe("ISO 8601 due date, e.g. 2025-06-15"),
-          workspaceId: z.string().optional().describe("Workspace to assign the task to"),
         })
       ),
-      execute: async ({ title, priority, dueDate, workspaceId }) => {
+      execute: async ({ title, priority, dueDate }) => {
         try {
+          // Prefer workspace-specific default status, fall back to system
           const defaultStatus =
             await db.workflowStatus.findFirst({
-              where: { category: "NOT_STARTED", workspaceId: null, isDefault: true },
+              where: { category: "NOT_STARTED", workspaceId, isDefault: true },
             }) ??
             await db.workflowStatus.findFirst({
-              where: { category: "NOT_STARTED", workspaceId: null },
-              orderBy: { position: "asc" },
+              where: { category: "NOT_STARTED", workspaceId: null, isDefault: true },
             });
 
           const task = await db.task.create({
@@ -54,7 +53,7 @@ export function getTaskTools(userId: string) {
               dueDate: dueDate ? new Date(dueDate) : undefined,
               source: ["AI"],
               userId,
-              workspaceId: workspaceId ?? null,
+              workspaceId,
               statusId: defaultStatus?.id ?? null,
             },
             include: { status: true },
@@ -110,16 +109,14 @@ export function getTaskTools(userId: string) {
             .optional()
             .default(15)
             .describe("Max tasks to return (default 15)"),
-          workspaceId: z.string().optional(),
         })
       ),
-      execute: async ({ titleSearch, statusCategory, priority, dueBefore, dueAfter, overdue, limit, workspaceId }) => {
+      execute: async ({ titleSearch, statusCategory, priority, dueBefore, dueAfter, overdue, limit }) => {
         try {
           const now = new Date();
           const tasks = await db.task.findMany({
             where: {
-              userId,
-              ...(workspaceId && { workspaceId }),
+              workspaceId,
               ...(titleSearch && {
                 title: { contains: titleSearch, mode: "insensitive" },
               }),
@@ -182,13 +179,12 @@ export function getTaskTools(userId: string) {
             .describe(
               "New status category — AI always uses category, never status name strings"
             ),
-          workspaceId: z.string().optional(),
         })
       ),
-      execute: async ({ taskId, title, priority, dueDate, statusCategory, workspaceId }) => {
+      execute: async ({ taskId, title, priority, dueDate, statusCategory }) => {
         try {
           const task = await db.task.findFirst({
-            where: { id: taskId, userId },
+            where: { id: taskId, workspaceId },
           });
           if (!task) return { success: false, error: "Task not found" };
 
@@ -198,7 +194,7 @@ export function getTaskTools(userId: string) {
               where: {
                 category: statusCategory as StatusCategory,
                 OR: [
-                  { workspaceId: workspaceId ?? task.workspaceId ?? null },
+                  { workspaceId },
                   { workspaceId: null },
                 ],
               },
@@ -247,12 +243,19 @@ export function getTaskTools(userId: string) {
       execute: async ({ taskId }) => {
         try {
           const task = await db.task.findFirst({
-            where: { id: taskId, userId },
+            where: { id: taskId, workspaceId },
           });
           if (!task) return { success: false, error: "Task not found" };
 
           const cancelledStatus = await db.workflowStatus.findFirst({
-            where: { category: "CANCELLED", workspaceId: null },
+            where: {
+              category: "CANCELLED",
+              OR: [
+                { workspaceId },
+                { workspaceId: null },
+              ],
+            },
+            orderBy: { workspaceId: "desc" },
           });
 
           await db.task.update({
