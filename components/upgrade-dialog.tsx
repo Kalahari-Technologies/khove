@@ -7,7 +7,6 @@ import { Check, X, Star } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // BorderTrail — orbiting particle effect for highlighted card
-// From 21st.dev pricing component, adapted for B&W
 // ---------------------------------------------------------------------------
 
 function BorderTrail({
@@ -42,7 +41,7 @@ function BorderTrail({
 }
 
 // ---------------------------------------------------------------------------
-// Plan data — client-safe subset (no billingProvider or external IDs)
+// Plan data — V3 Concept Note pricing
 // ---------------------------------------------------------------------------
 
 interface PlanCard {
@@ -50,6 +49,7 @@ interface PlanCard {
   info: string;
   price: string;
   period: string;
+  annualPrice?: string;
   features: string[];
   highlighted?: boolean;
   current?: boolean;
@@ -64,9 +64,11 @@ const PLAN_CARDS: PlanCard[] = [
     period: "",
     current: true,
     features: [
-      "30 AI messages / month",
-      "Task management",
-      "Workflow statuses",
+      "Unlimited AI conversations",
+      "20 AI actions / month",
+      "All integrations (Calendar, GitHub, Jira)",
+      "2 workspaces, up to 4 members",
+      "7-day AI memory",
     ],
     cta: "Your plan",
   },
@@ -75,64 +77,73 @@ const PLAN_CARDS: PlanCard[] = [
     info: "For individuals",
     price: "$9",
     period: "/month",
+    annualPrice: "$7.50/mo billed annually",
     highlighted: true,
     features: [
-      "Unlimited AI messages",
-      "Google Calendar sync",
-      "GitHub integration",
-      "Persistent AI memory",
+      "Unlimited AI actions",
+      "Full persistent AI memory",
+      "Standup AI automation",
+      "Custom AI instructions",
+      "5 workspaces",
+      "14-day free trial",
     ],
     cta: "Upgrade to Pro",
   },
   {
     name: "Team",
-    info: "For organizations",
+    info: "For teams",
     price: "$18",
-    period: "/month",
+    period: "/user/month",
+    annualPrice: "$15/user/mo billed annually",
     features: [
       "Everything in Pro",
-      "Up to 25 team members",
-      "Jira integration",
-      "Standup automation",
-      "Team workspace",
+      "500 AI actions / workspace",
+      "Up to 20 members",
+      "Team memory",
+      "Unlimited workspaces",
+      "14-day free trial",
     ],
     cta: "Upgrade to Team",
   },
 ];
 
 // ---------------------------------------------------------------------------
-// Feature context descriptions
+// Feature context — shown when a specific feature triggers the upgrade dialog
 // ---------------------------------------------------------------------------
 
 const FEATURE_CONTEXT: Record<string, { title: string; description: string }> = {
-  calendarTools: {
-    title: "Google Calendar",
-    description: "Sync your calendar events, check availability, and schedule meetings — all through Khove.",
-  },
-  githubTools: {
-    title: "GitHub",
-    description: "Track PRs, issues, and repository activity directly from your Khove workspace.",
-  },
-  jiraTools: {
-    title: "Jira",
-    description: "Read and update Jira tickets, sprint boards, and manage issue transitions.",
-  },
   standupAutomation: {
-    title: "Standup Automation",
-    description: "Generate standup summaries and sprint health reports automatically.",
+    title: "Standup AI",
+    description: "Generate standup summaries and sprint health reports automatically from your activity.",
+  },
+  customAiInstructions: {
+    title: "Custom AI Instructions",
+    description: "Give Khove workspace-specific context so it understands your team's conventions.",
   },
   persistentMemory: {
-    title: "AI Memory",
-    description: "Khove remembers your preferences, context, and past conversations across sessions.",
+    title: "Full AI Memory",
+    description: "Khove remembers your context across sessions. Free tier retains 7 days; upgrade for unlimited.",
+  },
+  teamMemory: {
+    title: "Team Memory",
+    description: "Shared team context that helps Khove understand your team's patterns and preferences.",
   },
   teamWorkspace: {
     title: "Team Workspace",
-    description: "Collaborate with your team in a shared workspace with role-based access.",
+    description: "Collaborate with your team in shared workspaces with role-based access.",
+  },
+  sprintIntelligence: {
+    title: "Sprint Intelligence",
+    description: "AI-powered sprint health reports, blocker detection, and retrospective generation.",
+  },
+  actionLimit: {
+    title: "AI Action Limit",
+    description: "You've used all your AI actions this month. Upgrade for more actions or unlimited access.",
   },
 };
 
 // ---------------------------------------------------------------------------
-// Animation variants (newsletter-dialog pattern)
+// Animation variants
 // ---------------------------------------------------------------------------
 
 const FADE_IN = {
@@ -147,14 +158,13 @@ const FADE_IN = {
 interface UpgradeDialogProps {
   open: boolean;
   onClose: () => void;
-  /** The feature key that triggered the gate (e.g. "calendarTools") */
+  /** The feature key that triggered the gate (e.g. "standupAutomation", "actionLimit") */
   feature?: string;
 }
 
 export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -164,7 +174,6 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Prevent body scroll
   useEffect(() => {
     if (open) document.body.style.overflow = "hidden";
     else document.body.style.overflow = "";
@@ -185,10 +194,8 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
           transition={{ duration: 0.2 }}
           onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
         >
-          {/* Backdrop */}
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
 
-          {/* Dialog panel */}
           <motion.div
             className="relative w-full max-w-3xl rounded-2xl border border-white/[0.10] bg-[#0a0a0a] shadow-2xl overflow-hidden"
             initial={{ opacity: 0, scale: 0.95 }}
@@ -196,7 +203,6 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
           >
-            {/* Close */}
             <button
               onClick={onClose}
               className="absolute right-4 top-4 z-10 w-7 h-7 flex items-center justify-center rounded-lg text-white/30 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
@@ -206,31 +212,21 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
 
             {/* Header */}
             <div className="px-8 pt-7 pb-1">
-              <motion.div
-                variants={FADE_IN}
-                initial="hidden"
-                animate="show"
-                transition={{ delay: 0.1 }}
-              >
+              <motion.div variants={FADE_IN} initial="hidden" animate="show" transition={{ delay: 0.1 }}>
                 <h2 className="text-[22px] font-bold text-white tracking-tight">
                   Plans that Scale with You
                 </h2>
               </motion.div>
 
-              <motion.div
-                variants={FADE_IN}
-                initial="hidden"
-                animate="show"
-                transition={{ delay: 0.15 }}
-              >
+              <motion.div variants={FADE_IN} initial="hidden" animate="show" transition={{ delay: 0.15 }}>
                 {context ? (
                   <p className="text-[13px] text-white/40 mt-1.5 max-w-lg">
-                    <span className="text-white/60 font-medium">{context.title}</span>{" "}
-                    requires a paid plan. {context.description}
+                    <span className="text-white/60 font-medium">{context.title}</span>{" — "}
+                    {context.description}
                   </p>
                 ) : (
                   <p className="text-[13px] text-white/40 mt-1.5 max-w-lg">
-                    Upgrade to access integrations, unlimited AI messages, and more.
+                    All integrations are free on every plan. Upgrade for unlimited AI actions, persistent memory, and team features.
                   </p>
                 )}
               </motion.div>
@@ -254,7 +250,6 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
                         : "border-white/[0.08]"
                     }`}
                   >
-                    {/* BorderTrail on highlighted */}
                     {plan.highlighted && (
                       <BorderTrail
                         size={100}
@@ -271,7 +266,6 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
                         plan.highlighted ? "bg-white/[0.04]" : "bg-white/[0.02]"
                       }`}
                     >
-                      {/* Badges */}
                       <div className="absolute top-2 right-2 flex items-center gap-1.5">
                         {plan.highlighted && (
                           <span className="flex items-center gap-1 rounded-md border border-white/[0.12] bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/70 font-medium">
@@ -298,6 +292,9 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
                           </span>
                         )}
                       </div>
+                      {plan.annualPrice && (
+                        <p className="text-[11px] text-white/25 mt-1">{plan.annualPrice}</p>
+                      )}
                     </div>
 
                     {/* Features */}
@@ -345,7 +342,6 @@ export function UpgradeDialog({ open, onClose, feature }: UpgradeDialogProps) {
               </div>
             </motion.div>
 
-            {/* Dismiss */}
             <motion.div
               className="px-8 pb-5"
               variants={FADE_IN}

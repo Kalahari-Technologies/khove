@@ -6,8 +6,6 @@ import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import {
   Bot,
-  CheckSquare,
-  CalendarDays,
   Layers,
   Settings,
   ChevronLeft,
@@ -20,8 +18,10 @@ import {
   LayoutGrid,
   List,
   Users,
-  MessageCircle,
+  CalendarDays,
 } from "lucide-react";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
+import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
 
 // ─── Easing ───────────────────────────────────────────────────────────────────
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -34,6 +34,19 @@ interface User {
   planTier: string;
 }
 
+interface WorkspaceInfo {
+  id: string;
+  slug: string;
+  name: string;
+  isPersonal: boolean;
+  gradient: string;
+}
+
+interface WorkspaceListItem extends WorkspaceInfo {
+  role: string;
+  planTier: string;
+}
+
 interface Conversation {
   id: string;
   title: string;
@@ -42,8 +55,9 @@ interface Conversation {
 
 interface NavItem {
   id: string;
-  href: string;
-  icon: React.ElementType;
+  path: string; // relative path (e.g. "/chat") — prefixed with workspace slug at render
+  icon?: React.ElementType;
+  assets?: [string, string];
   label: string;
   locked: boolean;
   lockedLabel?: string;
@@ -65,16 +79,35 @@ interface DetailSection {
 // ─── Nav Definition ───────────────────────────────────────────────────────────
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "chat",     href: "/chat",     icon: MessageCircle,         label: "Chat",     locked: false },
-  { id: "tasks",    href: "/tasks",    icon: CheckSquare, label: "Tasks",    locked: false },
-  { id: "calendar", href: "/calendar", icon: CalendarDays,label: "Planner", locked: false },
-  { id: "github",   href: "/github",   icon: Bot,      label: "GitHub",   locked: true, lockedLabel: "Phase 4" },
-  { id: "jira",     href: "/jira",     icon: Layers,      label: "Jira",     locked: true, lockedLabel: "Phase 5" },
+  { id: "chat",     path: "/chat",     assets: ["/assets/chat.svg", "/assets/chat-outlined.svg"],         label: "Chat",     locked: false },
+  { id: "tasks",    path: "/tasks",    assets: ["/assets/tasks.svg", "/assets/tasks-outlined.svg"],       label: "Tasks",    locked: false },
+  { id: "planner",  path: "/planner",  assets: ["/assets/planner.svg", "/assets/planner-outlined.svg"],   label: "Planner",  locked: false },
+  { id: "github",   path: "/github",   assets: ["/assets/github.svg", "/assets/github.svg"],   label: "GitHub",   locked: false },
+  { id: "jira",     path: "/jira",     icon: Layers,   label: "Jira",     locked: true, lockedLabel: "Phase 5" },
 ];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function wsHref(slug: string, path: string) {
+  return `/${slug}${path}`;
+}
+
+function getActiveSection(pathname: string, slug: string): string {
+  // Strip workspace slug prefix to get the relative path
+  const prefix = `/${slug}`;
+  const relative = pathname.startsWith(prefix)
+    ? pathname.slice(prefix.length) || "/"
+    : pathname;
+
+  const match = NAV_ITEMS.find((item) => relative.startsWith(item.path));
+  if (match) return match.id;
+  if (relative.startsWith("/settings")) return "settings";
+  return "chat";
+}
 
 // ─── Detail Panel Content ─────────────────────────────────────────────────────
 
-function getSections(section: string): { title: string; sections: DetailSection[] } {
+function getSections(section: string, slug: string): { title: string; sections: DetailSection[] } {
   const map: Record<string, { title: string; sections: DetailSection[] }> = {
     chat: {
       title: "Ask Khove",
@@ -111,9 +144,9 @@ function getSections(section: string): { title: string; sections: DetailSection[
         {
           title: "Views",
           items: [
-            { label: "All tasks",      href: "/tasks",                        icon: List },
-            { label: "In progress",    href: "/tasks?status=in_progress",     icon: Clock },
-            { label: "Assigned to me", href: "/tasks?mine=true",              icon: Users },
+            { label: "All tasks",      href: wsHref(slug, "/tasks"),                        icon: List },
+            { label: "In progress",    href: wsHref(slug, "/tasks?status=in_progress"),     icon: Clock },
+            { label: "Assigned to me", href: wsHref(slug, "/tasks?mine=true"),              icon: Users },
           ],
         },
         {
@@ -128,7 +161,7 @@ function getSections(section: string): { title: string; sections: DetailSection[
         },
       ],
     },
-    calendar: {
+    planner: {
       title: "Planner",
       sections: [
         {
@@ -151,7 +184,19 @@ function getSections(section: string): { title: string; sections: DetailSection[
     github: {
       title: "GitHub",
       sections: [
-        { items: [{ label: "GitHub integration arrives in Phase 4.", sub: "placeholder" }] },
+        {
+          title: "Quick Actions",
+          items: [
+            { label: "Connect GitHub", icon: Plus, action: true },
+          ],
+        },
+        {
+          title: "Views",
+          items: [
+            { label: "Pull Requests", href: wsHref(slug, "/github"), icon: List },
+            { label: "Issues", href: wsHref(slug, "/github"), icon: Clock },
+          ],
+        },
       ],
     },
     jira: {
@@ -167,25 +212,32 @@ function getSections(section: string): { title: string; sections: DetailSection[
 
 // ─── Icon Rail ────────────────────────────────────────────────────────────────
 
-function IconRail({ activeSection, panelCollapsed }: { activeSection: string; panelCollapsed: boolean }) {
+function IconRail({
+  activeSection,
+  panelCollapsed,
+  slug,
+}: {
+  activeSection: string;
+  panelCollapsed: boolean;
+  slug: string;
+}) {
   return (
     <aside className="relative flex flex-col items-center w-[52px] flex-shrink-0 bg-[#0a0a0a] border-r border-white/[0.07] py-3">
-      {/* Subtle top-to-bottom gradient overlay for depth */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent" />
 
       {/* Logo mark */}
       <img src="/assets/khove-white.png" alt="Khove" className="w-8 h-8 mb-4 object-cover scale-150 select-none" draggable={false} />
-
 
       {/* Nav icons */}
       <nav className="flex flex-col gap-0.5 w-full px-1.5 flex-1">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id;
+          const href = item.locked ? "#" : wsHref(slug, item.path);
           return (
             <Link
               key={item.id}
-              href={item.locked ? "#" : item.href}
+              href={href}
               aria-label={item.label}
               title={item.locked ? `${item.label} — ${item.lockedLabel}` : item.label}
               tabIndex={item.locked ? -1 : 0}
@@ -199,14 +251,23 @@ function IconRail({ activeSection, panelCollapsed }: { activeSection: string; pa
               ].join(" ")}
               style={{ transitionTimingFunction: ease }}
             >
-              <Icon size={15} strokeWidth={isActive ? 2 : 1.75} />
+              {item.assets ? (
+                <img
+                  src={isActive ? item.assets[0] : item.assets[1]}
+                  alt={item.label}
+                  width={15}
+                  height={15}
+                  className={`flex-shrink-0 transition-opacity duration-[120ms] ${isActive ? "opacity-100 brightness-0 invert" : "opacity-60 brightness-0 invert"}`}
+                  draggable={false}
+                />
+              ) : Icon ? (
+                <Icon size={15} strokeWidth={isActive ? 2 : 1.75} />
+              ) : null}
 
-              {/* Active left-edge accent */}
               {isActive && (
                 <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full bg-white" />
               )}
 
-              {/* Locked dot */}
               {item.locked && (
                 <span className="absolute top-1 right-1 w-1 h-1 rounded-full bg-white/25" />
               )}
@@ -218,7 +279,7 @@ function IconRail({ activeSection, panelCollapsed }: { activeSection: string; pa
       {/* Bottom — settings (+ user only when panel is collapsed) */}
       <div className="flex flex-col gap-0.5 w-full px-1.5">
         <Link
-          href="/settings"
+          href={wsHref(slug, "/settings")}
           aria-label="Settings"
           title="Settings"
           className={[
@@ -250,17 +311,25 @@ function DetailPanel({
   isCollapsed,
   onToggle,
   recentConversations,
+  slug,
+  workspace,
+  workspaces,
+  onCreateWorkspace,
 }: {
   activeSection: string;
   user: User;
   isCollapsed: boolean;
   onToggle: () => void;
   recentConversations: Conversation[];
+  slug: string;
+  workspace: WorkspaceInfo;
+  workspaces: WorkspaceListItem[];
+  onCreateWorkspace: () => void;
 }) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["Quick Actions", "Views", "Suggested", "Recent"])
   );
-  const { title, sections } = getSections(activeSection);
+  const { title, sections } = getSections(activeSection, slug);
 
   const toggleSection = (name: string) =>
     setExpandedSections((prev) => {
@@ -274,13 +343,21 @@ function DetailPanel({
       className="relative flex flex-col flex-shrink-0 bg-[#0a0a0a] border-r border-white/[0.07] overflow-hidden transition-all duration-[200ms]"
       style={{ width: isCollapsed ? "0px" : "250px", transitionTimingFunction: ease }}
     >
-      {/* Subtle gradient for panel depth */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.015] to-transparent" />
 
       <div className="relative flex flex-col h-full w-full">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 h-14 flex-shrink-0 border-b border-white/[0.07]">
-          <span className="font-display font-semibold text-white text-[15px] tracking-tight truncate">
+        {/* Workspace switcher */}
+        <div className="flex items-center px-2 py-3 flex-shrink-0 border-b border-white/[0.07]">
+          <WorkspaceSwitcher
+            current={workspace}
+            workspaces={workspaces}
+            onCreateNew={onCreateWorkspace}
+          />
+        </div>
+
+        {/* Section header */}
+        <div className="flex items-center justify-between px-4 h-10 flex-shrink-0">
+          <span className="font-display font-semibold text-white text-[14px] tracking-tight truncate">
             {title}
           </span>
           <button
@@ -335,7 +412,6 @@ function DetailPanel({
 
                 {isExpanded && (
                   <div className="mt-0.5 space-y-0.5">
-                    {/* Recent conversations: special rendering for chat section */}
                     {section.title === "Recent" && activeSection === "chat" ? (
                       recentConversations.length === 0 ? (
                         <p className="px-2 py-2 text-[12px] text-white/30 font-sans leading-relaxed">
@@ -343,7 +419,7 @@ function DetailPanel({
                         </p>
                       ) : (
                         recentConversations.map((conv) => (
-                          <Link key={conv.id} href={`/chat?conversationId=${conv.id}`}>
+                          <Link key={conv.id} href={wsHref(slug, `/chat?conversationId=${conv.id}`)}>
                             <span
                               className="flex items-center gap-2.5 w-full px-2 py-[7px] rounded-md text-[13px] font-sans text-white/65 hover:text-white hover:bg-white/[0.06] cursor-pointer transition-all duration-[120ms]"
                               style={{ transitionTimingFunction: ease }}
@@ -450,31 +526,49 @@ function ExpandToggle({ onClick }: { onClick: () => void }) {
 
 export default function AppSidebar({
   user,
+  workspace,
+  workspaces = [],
   recentConversations = [],
 }: {
   user: User;
+  workspace: WorkspaceInfo;
+  workspaces?: WorkspaceListItem[];
   recentConversations?: Conversation[];
 }) {
   const pathname = usePathname();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
-  const activeSection =
-    NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.id ??
-    (pathname.startsWith("/settings") ? "settings" : "chat");
+  const activeSection = getActiveSection(pathname, workspace.slug);
 
   return (
-    <div className="relative flex flex-row h-full flex-shrink-0">
-      <IconRail activeSection={activeSection} panelCollapsed={panelCollapsed} />
+    <>
+      <div className="relative flex flex-row h-full flex-shrink-0">
+        <IconRail
+          activeSection={activeSection}
+          panelCollapsed={panelCollapsed}
+          slug={workspace.slug}
+        />
 
-      <DetailPanel
-        activeSection={activeSection}
-        user={user}
-        isCollapsed={panelCollapsed}
-        onToggle={() => setPanelCollapsed(true)}
-        recentConversations={recentConversations}
+        <DetailPanel
+          activeSection={activeSection}
+          user={user}
+          isCollapsed={panelCollapsed}
+          onToggle={() => setPanelCollapsed(true)}
+          recentConversations={recentConversations}
+          slug={workspace.slug}
+          workspace={workspace}
+          workspaces={workspaces}
+          onCreateWorkspace={() => setShowCreateDialog(true)}
+        />
+
+        {panelCollapsed && <ExpandToggle onClick={() => setPanelCollapsed(false)} />}
+      </div>
+
+      <CreateWorkspaceDialog
+        open={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
       />
-
-      {panelCollapsed && <ExpandToggle onClick={() => setPanelCollapsed(false)} />}
-    </div>
+    </>
   );
 }

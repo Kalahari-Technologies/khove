@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, protectedProcedure } from "@/server/trpc";
+import {
+  router,
+  workspaceProcedure,
+  workspaceWriteProcedure,
+} from "@/server/trpc";
 import { db } from "@/lib/db";
 import type { Priority, TaskSource, AssigneeRole } from "@prisma/client";
 
@@ -10,12 +14,12 @@ const assigneeRoleEnum = z.enum(["OWNER", "ASSIGNEE", "REVIEWER", "OBSERVER"]);
 
 export const taskRouter = router({
   /**
-   * List tasks — paginated, filterable by status, source, workspace.
+   * List tasks — paginated, filterable by status, source.
+   * Scoped to active workspace.
    */
-  list: protectedProcedure
+  list: workspaceProcedure
     .input(
       z.object({
-        workspaceId: z.string().optional(),
         statusId: z.string().optional(),
         source: taskSourceEnum.optional(),
         cursor: z.string().optional(),
@@ -23,12 +27,11 @@ export const taskRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const { workspaceId, statusId, source, cursor, limit } = input;
+      const { statusId, source, cursor, limit } = input;
 
       const tasks = await db.task.findMany({
         where: {
-          userId: ctx.user.id,
-          ...(workspaceId && { workspaceId }),
+          workspaceId: ctx.workspace.id,
           ...(statusId && { statusId }),
           ...(source && { source: { has: source as TaskSource } }),
         },
@@ -54,18 +57,18 @@ export const taskRouter = router({
 
   /**
    * Create a task — deduplicates by externalId to prevent double-imports from webhooks.
+   * Automatically assigned to active workspace.
    */
-  create: protectedProcedure
+  create: workspaceWriteProcedure
     .input(
       z.object({
         title: z.string().min(1).max(500),
         statusId: z.string().optional(),
         priority: priorityEnum.optional().default("MEDIUM"),
         dueDate: z.date().optional(),
-        source: taskSourceEnum.optional().default("KHOVE"), // origin platform
+        source: taskSourceEnum.optional().default("KHOVE"),
         externalId: z.string().optional(),
         externalUrl: z.string().url().optional(),
-        workspaceId: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -75,7 +78,7 @@ export const taskRouter = router({
           where: {
             externalId: input.externalId,
             source: { has: input.source as TaskSource },
-            userId: ctx.user.id,
+            workspaceId: ctx.workspace.id,
           },
         });
         if (existing) return existing;
@@ -91,16 +94,16 @@ export const taskRouter = router({
           externalId: input.externalId,
           externalUrl: input.externalUrl,
           userId: ctx.user.id,
-          workspaceId: input.workspaceId,
+          workspaceId: ctx.workspace.id,
         },
         include: { status: true, assignees: true },
       });
     }),
 
   /**
-   * Update a task's mutable fields.
+   * Update a task's mutable fields. Task must belong to active workspace.
    */
-  update: protectedProcedure
+  update: workspaceWriteProcedure
     .input(
       z.object({
         id: z.string(),
@@ -114,7 +117,7 @@ export const taskRouter = router({
       const { id, ...data } = input;
 
       const task = await db.task.findFirst({
-        where: { id, userId: ctx.user.id },
+        where: { id, workspaceId: ctx.workspace.id },
       });
       if (!task) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -132,9 +135,9 @@ export const taskRouter = router({
 
   /**
    * Assign users to a task — upserts in a transaction.
-   * Supports multi-assignee (OWNER, ASSIGNEE, REVIEWER, OBSERVER roles).
+   * Task must belong to active workspace.
    */
-  assign: protectedProcedure
+  assign: workspaceWriteProcedure
     .input(
       z.object({
         taskId: z.string(),
@@ -148,7 +151,7 @@ export const taskRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const task = await db.task.findFirst({
-        where: { id: input.taskId, userId: ctx.user.id },
+        where: { id: input.taskId, workspaceId: ctx.workspace.id },
       });
       if (!task) throw new TRPCError({ code: "NOT_FOUND" });
 
@@ -175,18 +178,26 @@ export const taskRouter = router({
 
   /**
    * Soft-delete a task by setting status to CANCELLED.
-   * Tasks are never hard-deleted.
+   * Task must belong to active workspace.
    */
-  delete: protectedProcedure
+  delete: workspaceWriteProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const task = await db.task.findFirst({
-        where: { id: input.id, userId: ctx.user.id },
+        where: { id: input.id, workspaceId: ctx.workspace.id },
       });
       if (!task) throw new TRPCError({ code: "NOT_FOUND" });
 
+      // Find cancelled status — prefer workspace-specific, fall back to system
       const cancelledStatus = await db.workflowStatus.findFirst({
-        where: { category: "CANCELLED", workspaceId: null },
+        where: {
+          category: "CANCELLED",
+          OR: [
+            { workspaceId: ctx.workspace.id },
+            { workspaceId: null, isSystem: true },
+          ],
+        },
+        orderBy: { workspaceId: "desc" }, // workspace-specific first (non-null sorts before null desc)
       });
 
       return db.task.update({
