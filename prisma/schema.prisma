@@ -117,14 +117,16 @@ model User {
 }
 
 model Workspace {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  ownerId   String
-  planTier  PlanTier @default(FREE)
-  settings  Json     @default("{}")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  slug       String   @unique
+  isPersonal Boolean  @default(false)
+  gradient   String   @default("slate")
+  ownerId    String
+  planTier   PlanTier @default(FREE)
+  settings   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
   owner             User                    @relation("WorkspaceOwner", fields: [ownerId], references: [id])
@@ -133,6 +135,7 @@ model Workspace {
   workflowStatuses  WorkflowStatus[]
   customFields      CustomFieldDefinition[]
   integrations      Integration[]
+  calendarEntries   CalendarEntry[]
   conversations     Conversation[]
   aiUsageLogs       AiUsageLog[]
   subscriptions     Subscription[]
@@ -243,11 +246,13 @@ model TaskFieldValue {
 }
 
 // OAuth tokens always encrypted — NEVER store plaintext
+// Workspace-scoped: each workspace independently connects its own integrations.
+// userId tracks WHO connected it (for token refresh); workspaceId is the primary lookup key.
 model Integration {
   id               String              @id @default(cuid())
   provider         IntegrationProvider
-  userId           String
-  workspaceId      String?
+  userId           String              // who connected it
+  workspaceId      String              // which workspace owns it
   accessTokenEnc   String              // AES-256-GCM encrypted via lib/encryption.ts
   refreshTokenEnc  String?
   tokenExpiresAt   DateTime?
@@ -256,13 +261,13 @@ model Integration {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  user      User       @relation(fields: [userId], references: [id])
-  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
 
-  @@unique([provider, userId])
-  @@unique([provider, workspaceId])
+  @@unique([provider, workspaceId])  // one connection per provider per workspace
   @@index([userId])
   @@index([workspaceId])
+  @@index([userId, provider])
 }
 
 // Conversation history as JSON — pruned at 40 messages
@@ -328,20 +333,23 @@ model Subscription {
 
 // External/inconsequential calendar events — display only, no sync
 model CalendarEntry {
-  id         String    @id @default(cuid())
-  userId     String
-  title      String
-  startDate  DateTime
-  endDate    DateTime?
-  isAllDay   Boolean   @default(false)
-  externalId String?
-  source     String    @default("GOOGLE_CALENDAR")
-  metadata   Json?
-  createdAt  DateTime  @default(now())
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String
+  title       String
+  startDate   DateTime
+  endDate     DateTime?
+  isAllDay    Boolean   @default(false)
+  externalId  String?
+  source      String    @default("GOOGLE_CALENDAR")
+  metadata    Json?
+  createdAt   DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
 
-  @@unique([userId, externalId])
+  @@unique([workspaceId, externalId])
   @@index([userId])
+  @@index([workspaceId])
   @@index([startDate])
 }
