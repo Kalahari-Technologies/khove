@@ -19,7 +19,7 @@ function getResend(): Resend {
 // Constants
 // ─────────────────────────────────────────────
 
-const EMAIL_FROM = "Khove <onboarding@resend.dev>";
+const EMAIL_FROM = "Teni from Khove <noreply@kalaharitech.xyz>";
 const EMAIL_REPLY_TO = "khove.io.dev@gmail.com";
 
 const TEMPLATES_DIR = path.join(process.cwd(), "mail_templates");
