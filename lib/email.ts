@@ -19,9 +19,8 @@ function getResend(): Resend {
 // Constants
 // ─────────────────────────────────────────────
 
-const EMAIL_FROM = process.env.NODE_ENV === "production"
-  ? "Khove <hello@khove.io>"
-  : "Khove <onboarding@resend.dev>";
+const EMAIL_FROM = "Khove <onboarding@resend.dev>";
+const EMAIL_REPLY_TO = "khove.io.dev@gmail.com";
 
 const TEMPLATES_DIR = path.join(process.cwd(), "mail_templates");
 
@@ -60,6 +59,7 @@ export async function sendEmail({ to, subject, html }: SendEmailParams) {
   const resend = getResend();
   return resend.emails.send({
     from: EMAIL_FROM,
+    replyTo: EMAIL_REPLY_TO,
     to,
     subject,
     html,
