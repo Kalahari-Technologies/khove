@@ -11,6 +11,10 @@ import {
   initialGitHubSync,
   handleGitHubWebhook,
 } from "@/lib/inngest/functions/github-sync";
+import {
+  sendWelcomeSignupEmail,
+  sendWelcomeBackEmail,
+} from "@/lib/inngest/functions/email";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -22,5 +26,7 @@ export const { GET, POST, PUT } = serve({
     disconnectCalendarCleanup,
     initialGitHubSync,
     handleGitHubWebhook,
+    sendWelcomeSignupEmail,
+    sendWelcomeBackEmail,
   ],
 });

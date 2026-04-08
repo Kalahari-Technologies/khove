@@ -2,6 +2,8 @@ import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { redis } from "@/lib/redis";
+import { inngest } from "@/lib/inngest";
 import { ensurePersonalWorkspace } from "@/lib/workspace/create-personal";
 import type { WebhookEvent } from "@clerk/nextjs/server";
 
@@ -67,6 +69,12 @@ export async function POST(req: Request) {
         name: user.name,
         email: user.email,
       });
+
+      // Send welcome signup email (async via Inngest)
+      await inngest.send({
+        name: "user/welcome-signup",
+        data: { clerkId },
+      });
       break;
     }
 
@@ -92,6 +100,28 @@ export async function POST(req: Request) {
       if (!clerkId) break;
       // Hard delete — cascades to related records via Prisma relations
       await db.user.deleteMany({ where: { clerkId } });
+      break;
+    }
+
+    case "session.created": {
+      const userId = (event.data as { user_id: string }).user_id;
+      if (!userId) break;
+
+      // Skip if cooldown active (already sent within 24h)
+      const cooldownKey = `welcome-back:${userId}`;
+      const hasCooldown = await redis.get(cooldownKey);
+      if (hasCooldown) break;
+
+      // Skip brand-new users (signed up less than 5 minutes ago)
+      const createdAt = (event.data as { created_at: number }).created_at;
+      if (createdAt && Date.now() - createdAt * 1000 < 5 * 60 * 1000) break;
+
+      // Set 24h cooldown and dispatch welcome back email
+      await redis.set(cooldownKey, "1", { ex: 86400 });
+      await inngest.send({
+        name: "user/welcome-back",
+        data: { clerkId: userId },
+      });
       break;
     }
 
