@@ -23,7 +23,7 @@ const EMAIL_FROM = process.env.NODE_ENV === "production"
   ? "Khove <hello@khove.io>"
   : "Khove <onboarding@resend.dev>";
 
-const TEMPLATES_DIR = path.resolve(process.cwd(), "..", "mail-templates");
+const TEMPLATES_DIR = path.join(process.cwd(), "mail_templates");
 
 // ─────────────────────────────────────────────
 // Template Rendering
