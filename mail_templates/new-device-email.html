@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+  <title>New sign in to your Khove account</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; background-color: #EBEBEB; }
+    a { color: inherit; }
+    @media only screen and (max-width: 600px) {
+      .wrapper { width: 100% !important; }
+      .block-pad { padding: 32px 24px !important; }
+      .footer-pad { padding: 20px 24px !important; }
+      .col-half { width: 100% !important; display: block !important; }
+      .btn { width: 100% !important; text-align: center !important; }
+      .detail-label { width: 110px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#EBEBEB;font-family:'DM Sans',Arial,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EBEBEB;">
+    <tr>
+      <td align="center" style="padding:48px 16px;">
+
+        <table class="wrapper" width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;">
+
+          <!-- ── HEADER ── -->
+          <tr>
+            <td style="background-color:#0A0A0A;border-radius:12px 12px 0 0;padding:16px 40px;">
+              <img src="https://khove.xyz/assets/khove-white.png" alt="Khove" width="36" height="36" style="vertical-align:middle;margin-right:2px;" />
+              <span style="font-family:'DM Sans',Arial,sans-serif;font-size:18px;font-weight:600;color:#FAFAFA;letter-spacing:-0.02em;">Khove</span>
+            </td>
+          </tr>
+
+          <!-- ── HERO ── -->
+          <tr>
+            <td style="background-color:#0A0A0A;padding:0 40px 40px 40px;border-bottom:1px solid #1A1A1A;">
+              <p style="margin:0 0 8px 0;font-family:'DM Sans',Arial,sans-serif;font-size:11px;font-weight:500;color:#555555;letter-spacing:0.1em;text-transform:uppercase;">Security alert</p>
+              <h1 style="margin:0 0 16px 0;font-family:'DM Sans',Arial,sans-serif;font-size:28px;font-weight:600;color:#FAFAFA;letter-spacing:-0.03em;line-height:1.2;">New sign in to<br/>your account.</h1>
+              <p style="margin:0;font-family:'DM Sans',Arial,sans-serif;font-size:14px;font-weight:300;color:#888888;line-height:1.65;">A new device just signed in to your Khove account. Review the details below — if this was you, no action is needed.</p>
+            </td>
+          </tr>
+
+          <!-- ── MAIN BODY ── -->
+          <tr>
+            <td class="block-pad" style="background-color:#FAFAFA;padding:40px 40px 8px 40px;">
+
+              <!-- Session details table -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;border-radius:10px;overflow:hidden;background-color:#F4F4F4;">
+
+                <!-- Sign in type -->
+                <tr>
+                  <td class="detail-label" width="140" style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:400;color:#999999;white-space:nowrap;">Sign in type</td>
+                  <td style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:500;color:#0A0A0A;">{{sign_in_method}}</td>
+                </tr>
+
+                <!-- Divider row -->
+                <tr><td colspan="2" style="height:1px;background-color:#E5E5E5;padding:0;"></td></tr>
+
+                <!-- Device -->
+                <tr>
+                  <td class="detail-label" width="140" style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:400;color:#999999;white-space:nowrap;">Device</td>
+                  <td style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:500;color:#0A0A0A;">{{device_type}} · {{browser_name}} for {{operating_system}}</td>
+                </tr>
+
+                <!-- Divider row -->
+                <tr><td colspan="2" style="height:1px;background-color:#E5E5E5;padding:0;"></td></tr>
+
+                <!-- Location -->
+                <tr>
+                  <td class="detail-label" width="140" style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:400;color:#999999;white-space:nowrap;">Location</td>
+                  <td style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:500;color:#0A0A0A;">{{location}}</td>
+                </tr>
+
+                <!-- Divider row -->
+                <tr><td colspan="2" style="height:1px;background-color:#E5E5E5;padding:0;"></td></tr>
+
+                <!-- IP -->
+                <tr>
+                  <td class="detail-label" width="140" style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:400;color:#999999;white-space:nowrap;">IP address</td>
+                  <td style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:500;color:#0A0A0A;">{{ip_address}}</td>
+                </tr>
+
+                <!-- Divider row -->
+                <tr><td colspan="2" style="height:1px;background-color:#E5E5E5;padding:0;"></td></tr>
+
+                <!-- Time -->
+                <tr>
+                  <td class="detail-label" width="140" style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:400;color:#999999;white-space:nowrap;">Time</td>
+                  <td style="padding:14px 20px;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:500;color:#0A0A0A;">{{session_created_at}}</td>
+                </tr>
+
+              </table>
+
+              <!-- Divider -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+                <tr><td style="height:1px;background-color:#E5E5E5;"></td></tr>
+              </table>
+
+              <!-- Don't recognise section -->
+              <p style="margin:0 0 10px 0;font-family:'DM Sans',Arial,sans-serif;font-size:18px;font-weight:600;color:#0A0A0A;letter-spacing:-0.02em;">Don't recognise this activity?</p>
+              <p style="margin:0 0 24px 0;font-family:'DM Sans',Arial,sans-serif;font-size:14px;font-weight:300;color:#555555;line-height:1.65;">
+                If you didn't sign in, your account may be compromised. Sign out of this device immediately and secure your account.
+              </p>
+
+              <!-- CTA button -->
+              <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+                <tr>
+                  <td class="btn" style="background-color:#0A0A0A;border-radius:8px;">
+                    <a href="{{sign_out_url}}" style="display:inline-block;padding:13px 28px;font-family:'DM Sans',Arial,sans-serif;font-size:14px;font-weight:500;color:#FAFAFA;text-decoration:none;letter-spacing:-0.01em;">Sign out of this device →</a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Fallback -->
+              <p style="margin:0 0 28px 0;font-family:'DM Sans',Arial,sans-serif;font-size:13px;font-weight:300;color:#888888;line-height:1.6;">
+                If the button above doesn't work, <a href="{{sign_out_url}}" style="color:#0A0A0A;text-decoration:underline;text-underline-offset:2px;">click here</a> to sign out.
+              </p>
+
+              <!-- Support note -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+                <tr>
+                  <td style="background-color:#F4F4F4;border-radius:8px;padding:16px 18px;">
+                    <p style="margin:0;font-family:'DM Sans',Arial,sans-serif;font-size:12px;font-weight:300;color:#777777;line-height:1.6;">
+                      Questions or concerns? Reach out at <a href="mailto:{{support_email}}" style="color:#0A0A0A;text-decoration:underline;text-underline-offset:2px;">{{support_email}}</a> and we'll help you secure your account as soon as possible.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- ── FOOTER ── -->
+          <tr>
+            <td style="background-color:#0A0A0A;border-radius:0 0 12px 12px;padding:20px 40px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;font-weight:300;color:#adb5bd;white-space:nowrap;">
+                    © {{current_year}} Khove.io · Kigali &amp; Lagos
+                  </td>
+                  <td align="right" style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;font-weight:300;color:#adb5bd;white-space:nowrap;">
+                    <a href="https://khove.xyz/privacy" style="color:#adb5bd;text-decoration:none;">Privacy</a>
+                    <span style="color:#adb5bd;">&nbsp;·&nbsp;</span>
+                    <a href="mailto:hello@khove.xyz" style="color:#adb5bd;text-decoration:none;">Help</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
