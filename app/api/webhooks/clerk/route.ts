@@ -6,6 +6,7 @@ import { redis } from "@/lib/redis";
 import { inngest } from "@/lib/inngest";
 import { ensurePersonalWorkspace } from "@/lib/workspace/create-personal";
 import type { WebhookEvent } from "@clerk/nextjs/server";
+import type { EmailJSON } from "@clerk/backend";
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -104,23 +105,80 @@ export async function POST(req: Request) {
     }
 
     case "session.created": {
-      const userId = (event.data as { user_id: string }).user_id;
+      const sessionData = event.data as {
+        user_id: string;
+        created_at: number;
+        id: string;
+        client_id: string;
+        last_active_at?: number;
+      };
+      const userId = sessionData.user_id;
       if (!userId) break;
 
-      // Skip if cooldown active (already sent within 24h)
+      // ── New device detection ──
+      const clientKey = `known-devices:${userId}`;
+      const clientId = sessionData.client_id;
+      if (clientId) {
+        const isKnown = await redis.sismember(clientKey, clientId);
+        if (!isKnown) {
+          // Track this client as known (set expires after 90 days)
+          await redis.sadd(clientKey, clientId);
+          await redis.expire(clientKey, 60 * 60 * 24 * 90);
+
+          // Skip new-device email for brand-new users
+          const createdAt = sessionData.created_at;
+          const isNewUser = createdAt && Date.now() - createdAt * 1000 < 5 * 60 * 1000;
+
+          if (!isNewUser) {
+            await inngest.send({
+              name: "user/new-device-login",
+              data: {
+                clerkId: userId,
+                sessionId: sessionData.id,
+                clientId,
+              },
+            });
+          }
+        }
+      }
+
+      // ── Welcome back email (with 24h cooldown) ──
       const cooldownKey = `welcome-back:${userId}`;
       const hasCooldown = await redis.get(cooldownKey);
       if (hasCooldown) break;
 
-      // Skip brand-new users (signed up less than 5 minutes ago)
-      const createdAt = (event.data as { created_at: number }).created_at;
+      const createdAt = sessionData.created_at;
       if (createdAt && Date.now() - createdAt * 1000 < 5 * 60 * 1000) break;
 
-      // Set 24h cooldown and dispatch welcome back email
       await redis.set(cooldownKey, "1", { ex: 86400 });
       await inngest.send({
         name: "user/welcome-back",
         data: { clerkId: userId },
+      });
+      break;
+    }
+
+    case "email.created": {
+      const emailData = event.data as EmailJSON;
+      // Only handle emails not delivered by Clerk (we send them ourselves)
+      if (emailData.delivered_by_clerk) break;
+
+      const toEmail = emailData.to_email_address;
+      if (!toEmail) break;
+
+      // Extract OTP code from the data payload
+      const otp = emailData.data?.otp_code
+        || emailData.data?.code
+        || emailData.data?.verification_code;
+      if (!otp) break;
+
+      await inngest.send({
+        name: "user/otp-email",
+        data: {
+          to: toEmail,
+          otpCode: String(otp),
+          slug: emailData.slug || null,
+        },
       });
       break;
     }

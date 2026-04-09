@@ -14,6 +14,8 @@ import {
 import {
   sendWelcomeSignupEmail,
   sendWelcomeBackEmail,
+  sendOtpEmail,
+  sendNewDeviceEmail,
 } from "@/lib/inngest/functions/email";
 
 export const { GET, POST, PUT } = serve({
@@ -28,5 +30,7 @@ export const { GET, POST, PUT } = serve({
     handleGitHubWebhook,
     sendWelcomeSignupEmail,
     sendWelcomeBackEmail,
+    sendOtpEmail,
+    sendNewDeviceEmail,
   ],
 });
