@@ -1,0 +1,22 @@
+# Conductor repository settings — https://conductor.build/docs/reference/settings
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+# Copy gitignored env files (.env.local, etc.) into every new workspace so
+# agents don't have to re-attach secrets by hand each time.
+file_include_globs = ".env*\n"
+
+[scripts]
+# Install deps and generate the Prisma client when a workspace is created.
+# `npm install` alone does not run `prisma generate`, so dev/build would fail
+# on a fresh workspace without it.
+setup = "npm install && npx prisma generate"
+
+# The app hardcodes :3000 (NEXT_PUBLIC_APP_URL + OAuth redirect URIs) and every
+# workspace shares the same remote Supabase/Redis, so only one live dev server
+# should run at a time.
+run_mode = "nonconcurrent"
+
+[scripts.run.dev]
+command = "npm run dev"
+default = true
+icon = "play"
