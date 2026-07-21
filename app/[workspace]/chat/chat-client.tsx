@@ -167,7 +167,7 @@ interface AIChatInputProps {
   onSend: () => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   disabled: boolean;
-  textareaRef: React.RefObject<HTMLTextAreaElement>;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }
 
 function AIChatInput({ value, onChange, onSend, onKeyDown, disabled, textareaRef }: AIChatInputProps) {

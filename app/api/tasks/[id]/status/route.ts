@@ -6,15 +6,16 @@ import { publishEvent } from "@/lib/realtime";
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const task = await db.task.findUnique({ where: { id: params.id } });
+    const task = await db.task.findUnique({ where: { id } });
     if (!task || task.userId !== user.id) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -25,7 +26,7 @@ export async function PATCH(
     }
 
     const updated = await db.task.update({
-      where: { id: params.id },
+      where: { id },
       data: { statusId },
     });
 
@@ -34,7 +35,7 @@ export async function PATCH(
       try { await pushTaskToGoogleCalendar(updated.workspaceId ?? "", updated); } catch {}
     }
 
-    await publishEvent(user.id, { type: "task.updated", taskId: params.id }).catch(() => {});
+    await publishEvent(user.id, { type: "task.updated", taskId: id }).catch(() => {});
 
     return NextResponse.json({ ok: true });
   } catch {
