@@ -1,11 +1,15 @@
 "use client";
 
+import React from "react";
 import { motion } from "motion/react";
 
 /**
- * Placeholder social proof — illustrative quotes with fictional names.
- * Swap for real testimonials once available. Kept strictly B&W; avatars use
- * the app's gradient-initial motif.
+ * Social proof — a faithful port of the 21st.dev `testimonials-columns-1`
+ * component by @sshahaider (three columns of cards auto-scrolling vertically at
+ * different speeds behind a top/bottom fade mask), restyled to Khove's strict
+ * B&W tokens. Avatars use the app's gradient-initial motif instead of photos.
+ *
+ * Placeholder quotes with fictional names — swap for real testimonials later.
  */
 const TESTIMONIALS = [
   {
@@ -50,7 +54,30 @@ const TESTIMONIALS = [
     role: "Solo dev",
     gradient: "from-amber-500 to-yellow-500",
   },
+  {
+    quote:
+      "One place to ask 'what needs my attention today' and actually get a real answer. It's become my morning ritual.",
+    name: "Amara Bello",
+    role: "Engineering Manager, Vertex",
+    gradient: "from-indigo-500 to-purple-500",
+  },
+  {
+    quote:
+      "It turned my scattered issues, PRs and meetings into a plan I could trust. Less overhead, more shipping.",
+    name: "Kenji Watanabe",
+    role: "Tech Lead, Драйв",
+    gradient: "from-teal-500 to-cyan-500",
+  },
+  {
+    quote:
+      "The conversational layer is the difference. My whole team just talks to it — no dashboards to learn.",
+    name: "Lena Fischer",
+    role: "Head of Product, Arc",
+    gradient: "from-pink-500 to-rose-500",
+  },
 ];
+
+type Testimonial = (typeof TESTIMONIALS)[number];
 
 function Avatar({ name, gradient }: { name: string; gradient: string }) {
   const initials = name
@@ -60,47 +87,98 @@ function Avatar({ name, gradient }: { name: string; gradient: string }) {
     .join("");
   return (
     <div
-      className={`flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br ${gradient} text-[12px] font-semibold text-white`}
+      className={`flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br ${gradient} text-[12px] font-semibold text-white`}
     >
       {initials}
     </div>
   );
 }
 
+function TestimonialsColumn({
+  testimonials,
+  duration = 10,
+  className,
+}: {
+  testimonials: Testimonial[];
+  duration?: number;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <motion.div
+        animate={{ translateY: "-50%" }}
+        transition={{
+          duration,
+          repeat: Infinity,
+          ease: "linear",
+          repeatType: "loop",
+        }}
+        className="flex flex-col gap-6 pb-6"
+      >
+        {[...new Array(2)].map((_, dup) => (
+          <React.Fragment key={dup}>
+            {testimonials.map(({ quote, name, role, gradient }, i) => (
+              <figure
+                key={`${dup}-${i}`}
+                className="w-full max-w-xs rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6"
+              >
+                <blockquote className="text-[14px] leading-relaxed text-white/70">
+                  “{quote}”
+                </blockquote>
+                <figcaption className="mt-5 flex items-center gap-3">
+                  <Avatar name={name} gradient={gradient} />
+                  <div className="flex flex-col">
+                    <div className="text-[13px] font-medium leading-5 tracking-tight text-white">
+                      {name}
+                    </div>
+                    <div className="text-[12px] leading-5 tracking-tight text-white/40">
+                      {role}
+                    </div>
+                  </div>
+                </figcaption>
+              </figure>
+            ))}
+          </React.Fragment>
+        ))}
+      </motion.div>
+    </div>
+  );
+}
+
 export function Testimonials() {
+  const firstColumn = TESTIMONIALS.slice(0, 3);
+  const secondColumn = TESTIMONIALS.slice(3, 6);
+  const thirdColumn = TESTIMONIALS.slice(6, 9);
+
   return (
     <section className="mx-auto max-w-6xl px-6 py-24 sm:py-32">
-      <div className="mx-auto max-w-2xl text-center">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-40px" }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="mx-auto max-w-2xl text-center"
+      >
         <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.2em] text-white/35">
           Loved by builders
         </p>
         <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-white">
           Teams that stopped switching tabs
         </h2>
-      </div>
+      </motion.div>
 
-      <div className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {TESTIMONIALS.map((t, i) => (
-          <motion.figure
-            key={t.name}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-40px" }}
-            transition={{ duration: 0.5, delay: (i % 3) * 0.08, ease: [0.16, 1, 0.3, 1] }}
-            className="flex flex-col justify-between rounded-xl border border-white/[0.08] bg-white/[0.02] p-6 transition-colors hover:bg-white/[0.04]"
-          >
-            <blockquote className="text-[14px] leading-relaxed text-white/70">
-              “{t.quote}”
-            </blockquote>
-            <figcaption className="mt-6 flex items-center gap-3">
-              <Avatar name={t.name} gradient={t.gradient} />
-              <div>
-                <div className="text-[13px] font-medium text-white">{t.name}</div>
-                <div className="text-[12px] text-white/40">{t.role}</div>
-              </div>
-            </figcaption>
-          </motion.figure>
-        ))}
+      <div className="mt-14 flex max-h-[740px] justify-center gap-6 overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_20%,black_80%,transparent)]">
+        <TestimonialsColumn testimonials={firstColumn} duration={17} />
+        <TestimonialsColumn
+          testimonials={secondColumn}
+          duration={21}
+          className="hidden md:block"
+        />
+        <TestimonialsColumn
+          testimonials={thirdColumn}
+          duration={19}
+          className="hidden lg:block"
+        />
       </div>
     </section>
   );
