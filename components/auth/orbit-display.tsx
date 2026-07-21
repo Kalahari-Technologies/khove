@@ -22,7 +22,7 @@ function Ripple({
         const opacity = mainCircleOpacity - i * 0.03;
         const animationDelay = `${i * 0.06}s`;
         const borderStyle = i === numCircles - 1 ? "dashed" : "solid";
-        const borderOpacity = 20 + i * 7;
+        const borderOpacity = 40 + i * 5;
 
         return (
           <span
@@ -74,7 +74,7 @@ function OrbitingCircles({
           className="pointer-events-none absolute inset-0 size-full"
         >
           <circle
-            className="stroke-white/[0.45] stroke-[1.5px]"
+            className="stroke-white/[0.7] stroke-[1.5px]"
             cx="50%"
             cy="50%"
             r={radius}
@@ -105,96 +105,119 @@ function OrbitingCircles({
 // ─── Icon configs ─────────────────────────────────────────────────────────────
 
 const ORBIT_ICONS = [
-  // Inner ring — radius 100
+  // Ring 1 — radius 90 (innermost, 2 icons)
   {
     src: "/assets/google-meet.svg",
     alt: "Google Meet",
-    size: 30,
+    size: 28,
     className: "size-[30px] border-none bg-transparent",
-    duration: 20,
-    delay: 20,
-    radius: 100,
+    duration: 22,
+    delay: 0,
+    radius: 90,
     path: false,
     reverse: false,
   },
   {
     src: "/assets/slack.svg",
     alt: "Slack",
-    size: 30,
+    size: 28,
     className: "size-[30px] border-none bg-transparent",
-    duration: 20,
-    delay: 10,
-    radius: 100,
+    duration: 22,
+    delay: 11,
+    radius: 90,
     path: false,
     reverse: false,
   },
-  // Middle ring — radius 170
-  {
-    src: "/assets/github.svg",
-    alt: "GitHub",
-    size: 40,
-    className: "size-[40px] border-none bg-transparent",
-    duration: 20,
-    delay: 0,
-    radius: 170,
-    path: false,
-    reverse: true,
-  },
+  // Ring 2 — radius 155 (3 icons, reverse)
   {
     src: "/assets/google-calendar.svg",
     alt: "Google Calendar",
-    size: 40,
-    className: "size-[40px] border-none bg-transparent",
-    duration: 20,
-    delay: 20,
-    radius: 170,
-    path: false,
-    reverse: true,
-  },
-  {
-    src: "/assets/zoom.svg",
-    alt: "Zoom",
-    size: 40,
-    className: "size-[40px] border-none bg-transparent",
-    duration: 20,
-    delay: 10,
-    radius: 170,
-    path: false,
-    reverse: true,
-  },
-  // Outer ring — radius 250
-  {
-    src: "/assets/jira.svg",
-    alt: "Jira",
-    size: 37,
-    className: "size-[45px] border-none bg-transparent",
-    duration: 20,
+    size: 25,
+    className: "size-[38px] border-none bg-transparent",
+    duration: 26,
     delay: 0,
-    radius: 250,
+    radius: 155,
+    path: false,
+    reverse: true,
+  },
+  {
+    src: "/assets/notion.svg",
+    alt: "Notion",
+    size: 25,
+    className: "size-[38px] border-none bg-transparent",
+    duration: 26,
+    delay: 13,
+    radius: 155,
+    path: false,
+    reverse: true,
+  },
+  // Ring 3 — radius 220 (4 icons)
+  {
+    src: "/assets/figma.svg",
+    alt: "Figma",
+    size: 28,
+    className: "size-[42px] border-none bg-transparent",
+    duration: 30,
+    delay: 7.5,
+    radius: 220,
     path: false,
     reverse: false,
   },
+  {
+    src: "/assets/microsoft-teams.svg",
+    alt: "Teams",
+    size: 28,
+    className: "size-[42px] border-none bg-transparent",
+    duration: 30,
+    delay: 10,
+    radius: 220,
+    path: false,
+    reverse: false,
+  },
+  {
+    src: "/assets/azure.svg",
+    alt: "Azure",
+    size: 28,
+    className: "size-[42px] border-none bg-transparent",
+    duration: 30,
+    delay: 20,
+    radius: 220,
+    path: false,
+    reverse: false,
+  },
+  // Ring 4 — radius 290 (outermost, 3 icons, reverse)
   {
     src: "/assets/github.svg",
     alt: "GitHub",
-    size: 45,
+    size: 30,
     className: "size-[45px] border-none bg-transparent",
-    duration: 20,
-    delay: 15,
-    radius: 250,
+    duration: 34,
+    delay: 0,
+    radius: 290,
     path: false,
-    reverse: false,
+    reverse: true,
   },
   {
     src: "/assets/atlassian.svg",
-    alt: "Jira",
-    size: 45,
+    alt: "Atlassian",
+    size: 30,
     className: "size-[45px] border-none bg-transparent",
-    duration: 20,
-    delay: 30,
-    radius: 250,
+    duration: 34,
+    delay: 11.3,
+    radius: 290,
     path: false,
-    reverse: false,
+    reverse: true,
+  },
+  {
+    src: "/assets/gitlab.svg",
+    alt: "GitLab",
+    size: 30,
+    className: "size-[45px] border-none bg-transparent",
+    duration: 34,
+    delay: 22.7,
+    radius: 290,
+    path: false,
+    reverse: true,
   },
 ];
 
@@ -206,9 +229,7 @@ export const OrbitDisplay = memo(function OrbitDisplay() {
       <Ripple mainCircleSize={100} />
 
       {/* Center text */}
-      <span className="pointer-events-none whitespace-pre-wrap bg-gradient-to-b from-white to-white/10 bg-clip-text text-center text-7xl font-semibold leading-none text-transparent select-none">
-        Khove
-      </span>
+      <img src="/assets/khove-white.png" alt="Khove" width={100} height={100} />
 
       {/* Orbiting icons */}
       {ORBIT_ICONS.map((icon, index) => (

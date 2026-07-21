@@ -61,6 +61,7 @@ interface NavItem {
   label: string;
   locked: boolean;
   lockedLabel?: string;
+  glowColor: string; // primary color for active glow
 }
 
 interface DetailItem {
@@ -79,12 +80,14 @@ interface DetailSection {
 // ─── Nav Definition ───────────────────────────────────────────────────────────
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "chat",     path: "/chat",     assets: ["/assets/chat.svg", "/assets/chat-outlined.svg"],         label: "Chat",     locked: false },
-  { id: "tasks",    path: "/tasks",    assets: ["/assets/tasks.svg", "/assets/tasks-outlined.svg"],       label: "Tasks",    locked: false },
-  { id: "planner",  path: "/planner",  assets: ["/assets/planner.svg", "/assets/planner-outlined.svg"],   label: "Planner",  locked: false },
-  { id: "github",   path: "/github",   assets: ["/assets/github.svg", "/assets/github.svg"],   label: "GitHub",   locked: false },
-  { id: "jira",     path: "/jira",     icon: Layers,   label: "Jira",     locked: true, lockedLabel: "Phase 5" },
+  { id: "chat",     path: "/chat",     assets: ["/assets/chat.svg", "/assets/chat-outlined.svg"],         label: "Chat",     locked: false, glowColor: "#8B5CF6" },       // violet
+  { id: "tasks",    path: "/tasks",    assets: ["/assets/tasks.svg", "/assets/tasks-outlined.svg"],       label: "Tasks",    locked: false, glowColor: "#0EA5E9" },       // ocean blue
+  { id: "planner",  path: "/planner",  assets: ["/assets/planner.svg", "/assets/planner-outlined.svg"],   label: "Planner",  locked: false, glowColor: "#F43F5E" },       // rose
+  { id: "github",   path: "/github",   assets: ["/assets/github.svg", "/assets/github.svg"],             label: "GitHub",   locked: false, glowColor: "#10B981" },       // emerald
+  { id: "jira",     path: "/jira",     icon: Layers,   label: "Jira",     locked: true, lockedLabel: "Phase 5", glowColor: "#6366F1" }, // indigo
 ];
+
+const SETTINGS_GLOW = "#F59E0B"; // amber
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -167,9 +170,9 @@ function getSections(section: string, slug: string): { title: string; sections: 
         {
           title: "Views",
           items: [
-            { label: "Month", icon: LayoutGrid },
-            { label: "Week",  icon: CalendarDays },
-            { label: "Day",   icon: List },
+            { label: "Month", icon: LayoutGrid, href: wsHref(slug, "/planner?view=month") },
+            { label: "Week",  icon: CalendarDays, href: wsHref(slug, "/planner?view=week") },
+            { label: "Day",   icon: List, href: wsHref(slug, "/planner?view=day") },
           ],
         },
         {
@@ -222,14 +225,14 @@ function IconRail({
   slug: string;
 }) {
   return (
-    <aside className="relative flex flex-col items-center w-[52px] flex-shrink-0 bg-[#0a0a0a] border-r border-white/[0.07] py-3">
+    <aside className="relative flex flex-col items-center w-[72px] flex-shrink-0 bg-[#0a0a0a] border-r border-white/[0.07] py-3">
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.02] to-transparent" />
 
       {/* Logo mark */}
-      <img src="/assets/khove-white.png" alt="Khove" className="w-8 h-8 mb-4 object-cover scale-150 select-none" draggable={false} />
+      <img src="/assets/khove-white.png" alt="Khove" className="w-8 h-8 mb-3 object-cover scale-150 select-none" draggable={false} />
 
       {/* Nav icons */}
-      <nav className="flex flex-col gap-0.5 w-full px-1.5 flex-1">
+      <nav className="flex flex-col gap-1 w-full px-2 flex-1">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id;
@@ -239,37 +242,49 @@ function IconRail({
               key={item.id}
               href={href}
               aria-label={item.label}
-              title={item.locked ? `${item.label} — ${item.lockedLabel}` : item.label}
               tabIndex={item.locked ? -1 : 0}
               className={[
-                "relative flex items-center justify-center w-full aspect-square rounded-lg transition-all duration-[120ms]",
+                "relative flex flex-col items-center justify-center w-full py-2 gap-[12px] rounded-xl transition-all duration-[150ms]",
                 isActive
-                  ? "bg-white/[0.10] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]"
+                  ? "text-white"
                   : item.locked
                   ? "text-white/[0.22] cursor-default pointer-events-none"
-                  : "text-white/60 hover:bg-white/[0.06] hover:text-white/90",
+                  : "text-white/50 hover:text-white/80",
               ].join(" ")}
               style={{ transitionTimingFunction: ease }}
             >
+              {/* Active glow — tight colored circle behind icon only */}
+              {isActive && (
+                <span
+                  className="pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30px] h-[30px] rounded-full blur-[6px]"
+                  style={{ backgroundColor: item.glowColor, top: "16px", opacity: 1 }}
+                />
+              )}
+
               {item.assets ? (
                 <img
                   src={isActive ? item.assets[0] : item.assets[1]}
                   alt={item.label}
-                  width={15}
-                  height={15}
-                  className={`flex-shrink-0 transition-opacity duration-[120ms] ${isActive ? "opacity-100 brightness-0 invert" : "opacity-60 brightness-0 invert"}`}
+                  width={18}
+                  height={18}
+                  className={`relative flex-shrink-0 transition-opacity duration-[120ms] ${isActive ? "opacity-100 brightness-0 invert" : "opacity-60 brightness-0 invert"}`}
                   draggable={false}
                 />
               ) : Icon ? (
-                <Icon size={15} strokeWidth={isActive ? 2 : 1.75} />
+                <Icon size={18} strokeWidth={isActive ? 2 : 1.75} className="relative" />
               ) : null}
 
-              {isActive && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full bg-white" />
-              )}
+              <span
+                className={[
+                  "relative text-[10px] font-medium leading-none tracking-tight",
+                  isActive ? "text-white" : item.locked ? "text-white/20" : "text-white/45",
+                ].join(" ")}
+              >
+                {item.label}
+              </span>
 
               {item.locked && (
-                <span className="absolute top-1 right-1 w-1 h-1 rounded-full bg-white/25" />
+                <span className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-white/25" />
               )}
             </Link>
           );
@@ -277,24 +292,36 @@ function IconRail({
       </nav>
 
       {/* Bottom — settings (+ user only when panel is collapsed) */}
-      <div className="flex flex-col gap-0.5 w-full px-1.5">
+      <div className="flex flex-col gap-1 w-full px-2">
         <Link
           href={wsHref(slug, "/settings")}
           aria-label="Settings"
           title="Settings"
           className={[
-            "flex items-center justify-center w-full aspect-square rounded-lg transition-all duration-[120ms]",
+            "relative flex flex-col items-center justify-center w-full py-2 gap-1.5 rounded-xl transition-all duration-[150ms]",
             activeSection === "settings"
-              ? "bg-white/[0.10] text-white"
-              : "text-white/60 hover:bg-white/[0.06] hover:text-white/90",
+              ? "text-white"
+              : "text-white/50 hover:text-white/80",
           ].join(" ")}
           style={{ transitionTimingFunction: ease }}
         >
-          <Settings size={15} strokeWidth={1.75} />
+          {activeSection === "settings" && (
+            <span
+              className="pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full blur-[7px]"
+              style={{ backgroundColor: SETTINGS_GLOW, top: "12px", opacity: 0.85 }}
+            />
+          )}
+          <Settings size={18} strokeWidth={1.75} className="relative" />
+          <span className={[
+            "relative text-[10px] font-medium leading-none tracking-tight",
+            activeSection === "settings" ? "text-white" : "text-white/45",
+          ].join(" ")}>
+            Settings
+          </span>
         </Link>
 
         {panelCollapsed && (
-          <div className="flex items-center justify-center w-full aspect-square rounded-lg">
+          <div className="flex items-center justify-center w-full py-2 rounded-xl">
             <UserButton appearance={{ elements: { avatarBox: "w-6 h-6" } }} />
           </div>
         )}
