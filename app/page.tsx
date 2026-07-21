@@ -1,12 +1,15 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { Landing } from "@/components/landing/landing";
 
 export default async function HomePage() {
   const { userId: clerkId } = await auth();
 
+  // Signed-out visitors see the marketing landing page. Signed-in users fall
+  // through to the workspace redirect below.
   if (!clerkId) {
-    redirect("/login");
+    return <Landing />;
   }
 
   // Check if Clerk user has a username set — if not, they need onboarding
