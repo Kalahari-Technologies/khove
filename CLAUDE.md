@@ -20,7 +20,20 @@ Khove/                      ← product folder (NOT a git repo) — docs/, logos
 
 Always run `git`, `npm`, and `prisma` from `khove/`.
 
-Branches: `development` (default, active), `staging`, `production`.
+### Branching & Release Policy
+
+Long-lived remote branches (the environments): `development` (default, active) →
+`staging` → `production`.
+
+- **All pushes go to `development`.** It is the only branch you push day-to-day.
+- **Promotion is one-way and in order:** `development` → `staging` → `production`.
+  Promote by fast-forwarding each downstream branch to the upstream one (never push a
+  feature straight to `staging`/`production`, and never promote backwards).
+- **Workspace branches stay local — never push them.** Each Conductor workspace works on
+  its own local branch (e.g. `project-context-overview`, `merge-env-fixes-across-branches`).
+  Land the work by merging/pushing to `development`, then delete any workspace branch that
+  was pushed to the remote. The remote should only ever hold `development`, `staging`,
+  and `production`.
 
 ---
 
