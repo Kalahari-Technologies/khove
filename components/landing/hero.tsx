@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { OrbitDisplay } from "@/components/auth/orbit-display";
 import { AuroraBackground } from "./aurora-background";
 import { CtaButton } from "./cta-button";
+import { GradientText } from "./gradient-text";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -39,24 +40,17 @@ export function Hero() {
           </span>
         </motion.a>
 
-        {/* Headline — gradient text via bg-clip-text. Robustness recipe so the
-            gradient never drops out under GPU compositing: the clipped <h1> is
-            static (the entrance animates the wrapper, so no transform/will-change
-            lands on the clip element) and -webkit-text-fill-color is set
-            explicitly (Tailwind's text-transparent only sets `color`). The parent
-            content is also `isolate`d from the Aurora's mix-blend layer. */}
-        <motion.div
+        {/* Headline — gradient rendered as SVG (not bg-clip-text), so it can't
+            drop out under GPU compositing on any browser. */}
+        <motion.h1
           custom={1}
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="max-w-4xl"
+          className="w-full max-w-3xl"
         >
-          <h1 className="text-balance bg-gradient-to-b from-white to-white/60 bg-clip-text text-[clamp(2.5rem,6vw,4.75rem)] font-semibold leading-[1.05] tracking-tight text-transparent [-webkit-text-fill-color:transparent]">
-            Your tools, finally
-            <br className="hidden sm:block" /> thinking together
-          </h1>
-        </motion.div>
+          <GradientText lines={["Your tools, finally", "thinking together"]} />
+        </motion.h1>
 
         {/* Subhead */}
         <motion.p

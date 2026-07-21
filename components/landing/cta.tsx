@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { CtaButton } from "./cta-button";
+import { GradientText } from "./gradient-text";
 import { ACCENTS } from "./constants";
 
 /**
@@ -44,8 +45,8 @@ export function Cta() {
             height={48}
             className="mb-6 h-12 w-12 object-contain"
           />
-          <h2 className="max-w-2xl text-balance bg-gradient-to-b from-white to-white/60 bg-clip-text text-[clamp(2rem,4.5vw,3.25rem)] font-semibold leading-tight tracking-tight text-transparent [-webkit-text-fill-color:transparent]">
-            Give your tools a shared brain
+          <h2 className="w-full max-w-md">
+            <GradientText lines={["Give your tools", "a shared brain"]} />
           </h2>
           <p className="mt-4 max-w-lg text-balance text-[16px] leading-relaxed text-white/55">
             Connect GitHub, Calendar and Jira and start asking. Free forever
