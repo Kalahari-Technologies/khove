@@ -44,7 +44,7 @@ export function Cta() {
             height={48}
             className="mb-6 h-12 w-12 object-contain"
           />
-          <h2 className="max-w-2xl text-balance bg-gradient-to-b from-white to-white/60 bg-clip-text text-[clamp(2rem,4.5vw,3.25rem)] font-semibold leading-tight tracking-tight text-transparent">
+          <h2 className="max-w-2xl text-balance text-[clamp(2rem,4.5vw,3.25rem)] font-semibold leading-tight tracking-tight text-white">
             Give your tools a shared brain
           </h2>
           <p className="mt-4 max-w-lg text-balance text-[16px] leading-relaxed text-white/55">

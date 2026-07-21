@@ -39,23 +39,19 @@ export function Hero() {
           </span>
         </motion.a>
 
-        {/* Headline — animate a wrapper, NOT the gradient-clipped <h1> itself.
-            Applying a motion transform directly to a `bg-clip-text
-            text-transparent` element makes the gradient fail to paint in Chrome
-            (the text renders invisible), so the transform lives on the div and
-            the h1 stays a plain, always-painted layer. */}
-        <motion.div
+        {/* Headline — solid white, NOT gradient bg-clip-text. `-webkit-background-clip:
+            text` renders transparent (invisible) on GPU-accelerated Chromium/Brave,
+            so we keep the headline a plain painted color. */}
+        <motion.h1
           custom={1}
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="max-w-4xl"
+          className="max-w-4xl text-balance text-[clamp(2.5rem,6vw,4.75rem)] font-semibold leading-[1.05] tracking-tight text-white"
         >
-          <h1 className="text-balance bg-gradient-to-b from-white to-white/50 bg-clip-text text-[clamp(2.5rem,6vw,4.75rem)] font-semibold leading-[1.05] tracking-tight text-transparent">
-            Your tools, finally
-            <br className="hidden sm:block" /> thinking together
-          </h1>
-        </motion.div>
+          Your tools, finally
+          <br className="hidden sm:block" /> thinking together
+        </motion.h1>
 
         {/* Subhead */}
         <motion.p
