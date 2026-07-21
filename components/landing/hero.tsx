@@ -19,7 +19,7 @@ export function Hero() {
     <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 pt-28 pb-16">
       <AuroraBackground />
 
-      <div className="relative z-10 flex flex-col items-center text-center">
+      <div className="relative z-10 flex flex-col items-center text-center isolate">
         {/* Announcement pill */}
         <motion.a
           href="#features"
@@ -39,19 +39,24 @@ export function Hero() {
           </span>
         </motion.a>
 
-        {/* Headline — solid white, NOT gradient bg-clip-text. `-webkit-background-clip:
-            text` renders transparent (invisible) on GPU-accelerated Chromium/Brave,
-            so we keep the headline a plain painted color. */}
-        <motion.h1
+        {/* Headline — gradient text via bg-clip-text. Robustness recipe so the
+            gradient never drops out under GPU compositing: the clipped <h1> is
+            static (the entrance animates the wrapper, so no transform/will-change
+            lands on the clip element) and -webkit-text-fill-color is set
+            explicitly (Tailwind's text-transparent only sets `color`). The parent
+            content is also `isolate`d from the Aurora's mix-blend layer. */}
+        <motion.div
           custom={1}
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="max-w-4xl text-balance text-[clamp(2.5rem,6vw,4.75rem)] font-semibold leading-[1.05] tracking-tight text-white"
+          className="max-w-4xl"
         >
-          Your tools, finally
-          <br className="hidden sm:block" /> thinking together
-        </motion.h1>
+          <h1 className="text-balance bg-gradient-to-b from-white to-white/60 bg-clip-text text-[clamp(2.5rem,6vw,4.75rem)] font-semibold leading-[1.05] tracking-tight text-transparent [-webkit-text-fill-color:transparent]">
+            Your tools, finally
+            <br className="hidden sm:block" /> thinking together
+          </h1>
+        </motion.div>
 
         {/* Subhead */}
         <motion.p
