@@ -8,13 +8,17 @@ import { Redis } from "@upstash/redis";
 
 export default async function PlannerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ workspace: string }>;
+  searchParams: Promise<{ view?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const { workspace: slug } = await params;
+  const { view: rawView } = await searchParams;
+  const view = (rawView === "week" || rawView === "day") ? rawView : "month" as const;
   const workspace = await getWorkspaceBySlug(slug);
   if (!workspace) redirect("/login");
 
@@ -83,10 +87,13 @@ export default async function PlannerPage({
         dueDate: t.dueDate!.toISOString(),
         source: t.source,
         hasMeetLink: !!(t.metadata as Record<string, any> | null)?.googleCalendar?.meetLink,
+        endDateTime: (t.metadata as Record<string, any> | null)?.googleCalendar?.endDateTime ?? undefined,
+        isAllDay: (t.metadata as Record<string, any> | null)?.googleCalendar?.isAllDay ?? false,
         status: t.status
           ? { name: t.status.name, color: t.status.color }
           : { name: "No status", color: "#666666" },
       }))}
+      view={view}
       calendarEntries={calendarEntries.map((e) => ({
         id: e.id,
         title: e.title,

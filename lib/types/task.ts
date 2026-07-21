@@ -25,6 +25,10 @@ export interface PlannerTask {
   dueDate: string;
   source: string[];
   hasMeetLink?: boolean;
+  /** ISO string — from metadata.googleCalendar.endDateTime (GCal-synced tasks only). */
+  endDateTime?: string;
+  /** Whether this is an all-day event (from metadata.googleCalendar.isAllDay). */
+  isAllDay?: boolean;
   status: {
     name: string;
     color: string;
