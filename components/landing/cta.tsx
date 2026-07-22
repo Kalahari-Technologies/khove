@@ -1,45 +1,54 @@
 "use client";
 
 import { motion } from "motion/react";
+import { cn } from "@/lib/utils";
 import { CtaButton } from "./cta-button";
 import { GradientText } from "./gradient-text";
 import { ACCENTS } from "./constants";
 
 /**
- * Closing hero — the finale. A full-bleed section where the 5 nav-accent glows
- * bloom into a single soft aurora behind a gradient headline (rendered as SVG
- * via <GradientText>, so it never drops out under GPU compositing). One last
- * signature colour beat before the footer, over the strict B&W base.
+ * Closing hero — the finale. A faithful port of the 21st.dev `cta-with-glow`
+ * pattern (@mikolajdobrucki, id 1378): a centered pitch above a bottom-anchored
+ * `Glow` — two stacked radial ellipses that bloom upward into the section like
+ * light rising off the bottom edge. Recoloured from the shadcn brand token to
+ * the Khove chat accent over the strict B&W base, with the headline rendered as
+ * SVG via <GradientText> so it never drops out under GPU compositing.
  */
+
+/** The signature glow from cta-with-glow — an upward bloom off the bottom edge. */
+function Glow({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute bottom-0 left-0 w-full",
+        className
+      )}
+    >
+      {/* wide, dim outer bloom */}
+      <div
+        className="absolute bottom-0 left-1/2 h-[420px] w-[80%] -translate-x-1/2 translate-y-1/3 rounded-[50%] blur-[6px]"
+        style={{
+          background: `radial-gradient(ellipse at center, ${ACCENTS.chat}55 8%, transparent 62%)`,
+        }}
+      />
+      {/* tighter, brighter core */}
+      <div
+        className="absolute bottom-0 left-1/2 h-[240px] w-[48%] -translate-x-1/2 translate-y-1/4 rounded-[50%]"
+        style={{
+          background: `radial-gradient(ellipse at center, ${ACCENTS.chat}59 6%, transparent 60%)`,
+        }}
+      />
+    </div>
+  );
+}
+
 export function Cta() {
   return (
-    <section className="mx-auto max-w-6xl px-6 py-20">
-      <div className="relative isolate overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] px-6 py-24 text-center sm:py-32">
-        {/* Aurora signature — the 5 nav accents as one soft bloom */}
-        <div className="pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_60%_60%_at_50%_45%,black,transparent)]">
-          <div
-            className="absolute left-1/2 top-1/2 h-[360px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[130px]"
-            style={{
-              background: `radial-gradient(circle, ${ACCENTS.chat}33, transparent 70%)`,
-            }}
-          />
-          <div
-            className="absolute left-[30%] top-[35%] h-[240px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[120px]"
-            style={{
-              background: `radial-gradient(circle, ${ACCENTS.github}26, transparent 70%)`,
-            }}
-          />
-          <div
-            className="absolute left-[70%] top-[60%] h-[240px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[120px]"
-            style={{
-              background: `radial-gradient(circle, ${ACCENTS.planner}22, transparent 70%)`,
-            }}
-          />
-        </div>
-
-        {/* Faint grid */}
+    <section className="mx-auto max-w-6xl px-6 py-16">
+      <div className="relative isolate overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] px-6 pb-32 pt-24 text-center sm:pb-40 sm:pt-32">
+        {/* Faint grid, masked to a soft center */}
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.25] [mask-image:radial-gradient(ellipse_50%_50%_at_50%_50%,black,transparent)]"
+          className="pointer-events-none absolute inset-0 opacity-[0.22] [mask-image:radial-gradient(ellipse_55%_50%_at_50%_40%,black,transparent)]"
           style={{
             backgroundImage:
               "linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)",
@@ -54,13 +63,16 @@ export function Cta() {
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="relative z-10 flex flex-col items-center"
         >
-          <img
-            src="/assets/khove-white.png"
-            alt="Khove"
-            width={48}
-            height={48}
-            className="mb-6 h-12 w-12 object-contain"
-          />
+          <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[12px] text-white/60 backdrop-blur-sm">
+            <img
+              src="/assets/khove-white.png"
+              alt=""
+              width={14}
+              height={14}
+              className="h-3.5 w-3.5 object-contain opacity-80"
+            />
+            Ready when you are
+          </span>
           <h2 className="w-full max-w-lg">
             <GradientText lines={["Give your tools", "a shared brain"]} />
           </h2>
@@ -77,6 +89,9 @@ export function Cta() {
             </CtaButton>
           </div>
         </motion.div>
+
+        {/* Signature: the upward glow beam off the bottom edge */}
+        <Glow />
       </div>
     </section>
   );
