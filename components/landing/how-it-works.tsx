@@ -35,17 +35,17 @@ export function HowItWorks() {
   return (
     <section id="how-it-works" className="mx-auto max-w-6xl px-6 py-24 sm:py-32">
       <div className="mx-auto max-w-2xl text-center">
-        <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.2em] text-white/35">
+        <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.2em] text-ink/35">
           How it works
         </p>
-        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-white">
+        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-ink">
           From connected to shipping in three steps
         </h2>
       </div>
 
       <div className="relative mt-16 grid grid-cols-1 gap-8 md:grid-cols-3">
         {/* Connecting line (desktop) */}
-        <div className="absolute inset-x-[16%] top-6 hidden h-px bg-gradient-to-r from-transparent via-white/[0.1] to-transparent md:block" />
+        <div className="absolute inset-x-[16%] top-6 hidden h-px bg-gradient-to-r from-transparent via-ink/[0.1] to-transparent md:block" />
 
         {STEPS.map((s, i) => (
           <motion.div
@@ -61,18 +61,18 @@ export function HowItWorks() {
                 className="absolute inset-0 rounded-xl blur-lg"
                 style={{ backgroundColor: s.color, opacity: 0.3 }}
               />
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl border border-white/[0.08] bg-[#0e0e11]">
-                <s.icon className="h-5 w-5 text-white" strokeWidth={1.75} />
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl border border-ink/[0.08] bg-ink/[0.04]">
+                <s.icon className="h-5 w-5 text-ink" strokeWidth={1.75} />
               </div>
             </div>
 
-            <span className="mt-5 font-mono text-[12px] tracking-widest text-white/30">
+            <span className="mt-5 font-mono text-[12px] tracking-widest text-ink/30">
               {s.step}
             </span>
-            <h3 className="mt-2 text-[18px] font-medium tracking-tight text-white">
+            <h3 className="mt-2 text-[18px] font-medium tracking-tight text-ink">
               {s.title}
             </h3>
-            <p className="mt-2 max-w-xs text-[14px] leading-relaxed text-white/50">
+            <p className="mt-2 max-w-xs text-[14px] leading-relaxed text-ink/50">
               {s.description}
             </p>
           </motion.div>

@@ -8,6 +8,15 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      colors: {
+        // Landing theme tokens — the base "ink" (foreground) and "paper"
+        // (background) resolve from CSS vars so the landing can switch between
+        // dark and light by swapping the vars (see globals.css). Alpha is
+        // preserved, so `text-ink/60`, `bg-ink/[0.04]`, `border-ink/[0.08]`
+        // all work exactly like the old white-on-black tokens.
+        ink: "rgb(var(--ink) / <alpha-value>)",
+        paper: "rgb(var(--paper) / <alpha-value>)",
+      },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "Inter Variable", "system-ui", "sans-serif"],
         mono: ["var(--font-geist-mono)", "Fira Code", "monospace"],

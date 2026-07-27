@@ -35,7 +35,7 @@ function Ripple({
               animationDelay,
               borderStyle,
               borderWidth: "1px",
-              borderColor: `rgba(255, 255, 255, ${borderOpacity / 100})`,
+              borderColor: `rgb(var(--ink) / ${borderOpacity / 100})`,
               top: "50%",
               left: "50%",
               transform: "translate(-50%, -50%)",
@@ -74,7 +74,7 @@ function OrbitingCircles({
           className="pointer-events-none absolute inset-0 size-full"
         >
           <circle
-            className="stroke-white/[0.7] stroke-[1.5px]"
+            className="stroke-ink/[0.7] stroke-[1.5px]"
             cx="50%"
             cy="50%"
             r={radius}
@@ -91,7 +91,7 @@ function OrbitingCircles({
           } as React.CSSProperties
         }
         className={cn(
-          "absolute flex size-full transform-gpu animate-orbit items-center justify-center rounded-full border border-white/[0.15] bg-white/[0.08] [animation-delay:calc(var(--delay)*1000ms)]",
+          "absolute flex size-full transform-gpu animate-orbit items-center justify-center rounded-full border border-ink/[0.15] bg-ink/[0.08] [animation-delay:calc(var(--delay)*1000ms)]",
           reverse && "[animation-direction:reverse]",
           className
         )}
@@ -229,7 +229,7 @@ export const OrbitDisplay = memo(function OrbitDisplay() {
       <Ripple mainCircleSize={100} />
 
       {/* Center text */}
-      <img src="/assets/khove-white.png" alt="Khove" width={100} height={100} />
+      <img src="/assets/khove-white.png" alt="Khove" width={100} height={100} className="khove-mark" />
 
       {/* Orbiting icons */}
       {ORBIT_ICONS.map((icon, index) => (

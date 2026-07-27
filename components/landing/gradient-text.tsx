@@ -16,8 +16,8 @@ export function GradientText({
   lines,
   className,
   weightClassName = "font-semibold tracking-tight",
-  from = "#ffffff",
-  to = "rgba(255,255,255,0.6)",
+  from = "rgb(var(--ink) / 1)",
+  to = "rgb(var(--ink) / 0.55)",
 }: {
   lines: string[];
   className?: string;
@@ -48,8 +48,12 @@ export function GradientText({
     >
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={from} />
-          <stop offset="100%" stopColor={to} />
+          {/* stop-color set via `style` (not the attribute) so the `--ink`
+              CSS var resolves — SVG presentation attributes don't evaluate
+              var(), but the CSS property does. This is what lets the headline
+              re-theme with the landing's light/dark toggle. */}
+          <stop offset="0%" style={{ stopColor: from }} />
+          <stop offset="100%" style={{ stopColor: to }} />
         </linearGradient>
       </defs>
       <text

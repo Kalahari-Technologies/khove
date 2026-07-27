@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { CtaButton } from "./cta-button";
+import { ThemeToggle } from "./theme";
 
 const LINKS = [
   { label: "Features", href: "#features" },
@@ -38,7 +39,7 @@ export function LandingNav() {
         className={cn(
           "flex w-full max-w-5xl items-center justify-between rounded-xl px-4 py-2.5 transition-all duration-300",
           scrolled
-            ? "border border-white/[0.08] bg-[#09090B]/70 backdrop-blur-xl"
+            ? "border border-ink/[0.08] bg-paper/70 backdrop-blur-xl"
             : "border border-transparent bg-transparent"
         )}
         style={{ transitionTimingFunction: "cubic-bezier(0.16,1,0.3,1)" }}
@@ -50,9 +51,9 @@ export function LandingNav() {
             alt="Khove"
             width={24}
             height={24}
-            className="h-6 w-6 object-contain"
+            className="khove-mark h-6 w-6 object-contain"
           />
-          <span className="text-[15px] font-semibold tracking-tight text-white">
+          <span className="text-[15px] font-semibold tracking-tight text-ink">
             Khove
           </span>
         </Link>
@@ -63,7 +64,7 @@ export function LandingNav() {
             <a
               key={link.href}
               href={link.href}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-white/60 transition-colors hover:text-white"
+              className="rounded-lg px-3 py-1.5 text-[13px] text-ink/60 transition-colors hover:text-ink"
             >
               {link.label}
             </a>
@@ -72,9 +73,10 @@ export function LandingNav() {
 
         {/* Auth actions */}
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <Link
             href="/login"
-            className="hidden rounded-lg px-3 py-1.5 text-[13px] text-white/70 transition-colors hover:text-white sm:block"
+            className="hidden rounded-lg px-3 py-1.5 text-[13px] text-ink/70 transition-colors hover:text-ink sm:block"
           >
             Log in
           </Link>

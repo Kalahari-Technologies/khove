@@ -5,7 +5,7 @@ import { EASE } from "./constants";
 
 /**
  * The landing's primary/secondary buttons, matching the auth pages:
- * primary = solid `bg-white text-black`, secondary = bordered glass.
+ * primary = solid `bg-ink text-paper`, secondary = bordered glass.
  * Both carry the BottomGradient hover accent.
  */
 export function CtaButton({
@@ -34,8 +34,8 @@ export function CtaButton({
         "group/btn relative inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors active:scale-[0.98]",
         sizes[size],
         variant === "primary"
-          ? "bg-white text-black hover:bg-white/90"
-          : "border border-white/[0.10] bg-white/[0.03] text-white/80 hover:bg-white/[0.06]",
+          ? "bg-ink text-paper hover:bg-ink/90"
+          : "border border-ink/[0.10] bg-ink/[0.03] text-ink/80 hover:bg-ink/[0.06]",
         className
       )}
       style={{ transitionTimingFunction: EASE }}

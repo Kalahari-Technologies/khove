@@ -5,6 +5,24 @@
 :root {
   --font-geist-sans: "Geist", "Inter Variable", system-ui, sans-serif;
   --font-geist-mono: "Geist Mono", "Fira Code", monospace;
+
+  /* Landing theme tokens (space-separated RGB channels for `rgb(var(--ink) / a)`).
+     Default to the app's dark palette so any component using ink/paper outside
+     the landing (e.g. the shared orbit on auth pages) is unchanged. */
+  --ink: 255 255 255;
+  --paper: 9 9 11;
+}
+
+/* Landing light theme — overrides scoped to the landing subtree only. */
+.landing-root[data-theme="light"] {
+  --ink: 24 24 27; /* zinc-900, a soft ink rather than pure black */
+  --paper: 250 250 251; /* near-white paper */
+}
+
+/* Colour-glyph brand mark (khove-white.png is a white logo) — invert it to
+   read on light paper. */
+.landing-root[data-theme="light"] .khove-mark {
+  filter: invert(1) brightness(0.9);
 }
 
 * {

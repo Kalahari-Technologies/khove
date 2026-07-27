@@ -24,8 +24,8 @@ export function IntegrationsMarquee() {
   const row = [...INTEGRATIONS, ...INTEGRATIONS];
 
   return (
-    <section className="relative border-y border-white/[0.06] py-14">
-      <p className="mb-9 text-center text-[12px] font-medium uppercase tracking-[0.2em] text-white/35">
+    <section className="relative border-y border-ink/[0.06] py-14">
+      <p className="mb-9 text-center text-[12px] font-medium uppercase tracking-[0.2em] text-ink/35">
         Connects the tools you already use
       </p>
 

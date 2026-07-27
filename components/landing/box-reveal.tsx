@@ -62,7 +62,7 @@ export function BoxReveal({
           left: 0,
           right: 0,
           zIndex: 20,
-          background: "rgba(255, 255, 255, 0.08)",
+          background: "rgb(var(--ink) / 0.08)",
           borderRadius: 4,
         }}
       />

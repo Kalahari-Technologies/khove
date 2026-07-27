@@ -28,14 +28,14 @@ export function Hero() {
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="group mb-7 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[12px] text-white/60 backdrop-blur-sm transition-colors hover:border-white/[0.15] hover:text-white/80"
+          className="group mb-7 inline-flex items-center gap-2 rounded-full border border-ink/[0.08] bg-ink/[0.04] px-3 py-1.5 text-[12px] text-ink/60 backdrop-blur-sm transition-colors hover:border-ink/[0.15] hover:text-ink/80"
         >
           <span className="relative flex h-1.5 w-1.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
           </span>
           GitHub · Google Calendar · Jira, in one place
-          <span className="text-white/30 transition-transform group-hover:translate-x-0.5">
+          <span className="text-ink/30 transition-transform group-hover:translate-x-0.5">
             →
           </span>
         </motion.a>
@@ -58,7 +58,7 @@ export function Hero() {
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="mt-6 max-w-xl text-balance text-[16px] leading-relaxed text-white/55 sm:text-[17px]"
+          className="mt-6 max-w-xl text-balance text-[16px] leading-relaxed text-ink/55 sm:text-[17px]"
         >
           Khove is the AI-native workspace that connects GitHub, Google Calendar
           and Jira behind a single conversational interface — so you can plan,
@@ -86,7 +86,7 @@ export function Hero() {
           variants={fadeUp}
           initial="hidden"
           animate="visible"
-          className="mt-4 text-[12px] text-white/35"
+          className="mt-4 text-[12px] text-ink/35"
         >
           Free forever plan · No credit card required
         </motion.p>

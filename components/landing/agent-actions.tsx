@@ -120,13 +120,13 @@ export function AgentActions() {
   return (
     <section className="mx-auto max-w-6xl px-6 py-24 sm:py-32">
       <div className="mx-auto max-w-2xl text-center">
-        <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.2em] text-white/35">
+        <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.2em] text-ink/35">
           Agent actions
         </p>
-        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-white">
+        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-ink">
           From ask to action
         </h2>
-        <p className="mt-4 text-balance text-[16px] leading-relaxed text-white/50">
+        <p className="mt-4 text-balance text-[16px] leading-relaxed text-ink/50">
           Khove doesn&apos;t just answer — it does the work. Every request maps
           to a real, workspace-scoped tool call across your stack.
         </p>
@@ -143,8 +143,8 @@ export function AgentActions() {
               className={cn(
                 "relative inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] transition-colors",
                 selected
-                  ? "border-white/[0.14] text-white"
-                  : "border-white/[0.06] text-white/50 hover:text-white/80"
+                  ? "border-ink/[0.14] text-ink"
+                  : "border-ink/[0.06] text-ink/50 hover:text-ink/80"
               )}
             >
               {selected && (
@@ -180,10 +180,10 @@ export function AgentActions() {
             {tab.actions.map((a) => (
               <div
                 key={a.tool}
-                className="grid items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.035] sm:grid-cols-[1fr_auto_1fr]"
+                className="grid items-center gap-3 rounded-xl border border-ink/[0.07] bg-ink/[0.02] p-4 transition-colors hover:bg-ink/[0.035] sm:grid-cols-[1fr_auto_1fr]"
               >
-                <p className="text-[13px] text-white/70">“{a.prompt}”</p>
-                <ArrowRight className="hidden h-4 w-4 text-white/25 sm:block" />
+                <p className="text-[13px] text-ink/70">“{a.prompt}”</p>
+                <ArrowRight className="hidden h-4 w-4 text-ink/25 sm:block" />
                 <div className="flex flex-wrap items-center gap-2">
                   <span
                     className="rounded-md border px-2 py-0.5 font-mono text-[11px]"
@@ -195,7 +195,7 @@ export function AgentActions() {
                   >
                     {a.tool}
                   </span>
-                  <span className="text-[12px] text-white/55">{a.result}</span>
+                  <span className="text-[12px] text-ink/55">{a.result}</span>
                 </div>
               </div>
             ))}

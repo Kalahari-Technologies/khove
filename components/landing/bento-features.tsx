@@ -34,8 +34,8 @@ function GlowIcon({
         className="absolute inset-0 rounded-lg blur-md"
         style={{ backgroundColor: color, opacity: 0.35 }}
       />
-      <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.05]">
-        <Icon className="h-[18px] w-[18px] text-white" strokeWidth={1.75} />
+      <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-ink/[0.08] bg-ink/[0.05]">
+        <Icon className="h-[18px] w-[18px] text-ink" strokeWidth={1.75} />
       </div>
     </div>
   );
@@ -63,15 +63,15 @@ function Cell({
       viewport={{ once: true, margin: "-60px" }}
       transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "group relative flex flex-col overflow-hidden border-white/[0.06] p-6 sm:p-8",
+        "group relative flex flex-col overflow-hidden border-ink/[0.06] p-6 sm:p-8",
         className
       )}
     >
       <GlowIcon icon={icon} color={color} />
-      <h3 className="mt-4 text-[17px] font-medium tracking-tight text-white">
+      <h3 className="mt-4 text-[17px] font-medium tracking-tight text-ink">
         {title}
       </h3>
-      <p className="mt-2 max-w-sm text-[14px] leading-relaxed text-white/50">
+      <p className="mt-2 max-w-sm text-[14px] leading-relaxed text-ink/50">
         {description}
       </p>
       {children ? <div className="mt-6 flex-1">{children}</div> : null}
@@ -84,16 +84,16 @@ function Cell({
 function ChatSkeleton() {
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="ml-auto max-w-[80%] rounded-lg rounded-br-sm bg-white/[0.06] px-3 py-2 text-[12px] text-white/70">
+      <div className="ml-auto max-w-[80%] rounded-lg rounded-br-sm bg-ink/[0.06] px-3 py-2 text-[12px] text-ink/70">
         What&apos;s blocking the release?
       </div>
-      <div className="max-w-[90%] rounded-lg rounded-bl-sm border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-white/60">
-        3 PRs are open on <span className="text-white/80">web</span>. #482 is
+      <div className="max-w-[90%] rounded-lg rounded-bl-sm border border-ink/[0.06] bg-ink/[0.02] px-3 py-2 text-[12px] text-ink/60">
+        3 PRs are open on <span className="text-ink/80">web</span>. #482 is
         approved, #479 needs review, #471 has failing checks. Want me to ping the
         reviewers?
       </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-white/30">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/40" />
+      <div className="flex items-center gap-1.5 text-[11px] text-ink/30">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink/40" />
         Khove is thinking…
       </div>
     </div>
@@ -103,7 +103,7 @@ function ChatSkeleton() {
 function GithubSkeleton() {
   const prs = [
     { id: "#482", label: "Approved", tone: "text-emerald-400/80" },
-    { id: "#479", label: "Review", tone: "text-white/40" },
+    { id: "#479", label: "Review", tone: "text-ink/40" },
     { id: "#471", label: "Checks failing", tone: "text-rose-400/80" },
   ];
   return (
@@ -111,10 +111,10 @@ function GithubSkeleton() {
       {prs.map((pr) => (
         <div
           key={pr.id}
-          className="flex items-center gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+          className="flex items-center gap-2.5 rounded-lg border border-ink/[0.06] bg-ink/[0.02] px-3 py-2"
         >
-          <GitPullRequest className="h-3.5 w-3.5 text-white/40" />
-          <span className="text-[12px] text-white/70">{pr.id}</span>
+          <GitPullRequest className="h-3.5 w-3.5 text-ink/40" />
+          <span className="text-[12px] text-ink/70">{pr.id}</span>
           <span className={cn("ml-auto text-[11px]", pr.tone)}>{pr.label}</span>
         </div>
       ))}
@@ -133,8 +133,8 @@ function CalendarSkeleton() {
             className={cn(
               "h-6 rounded-[5px] border",
               busy
-                ? "border-transparent bg-white/[0.14]"
-                : "border-white/[0.05] bg-white/[0.02]"
+                ? "border-transparent bg-ink/[0.14]"
+                : "border-ink/[0.05] bg-ink/[0.02]"
             )}
           />
         );
@@ -150,7 +150,7 @@ function MemorySkeleton() {
       {chips.map((c) => (
         <span
           key={c}
-          className="rounded-full border border-white/[0.07] bg-white/[0.03] px-2.5 py-1 text-[11px] text-white/55"
+          className="rounded-full border border-ink/[0.07] bg-ink/[0.03] px-2.5 py-1 text-[11px] text-ink/55"
         >
           {c}
         </span>
@@ -163,17 +163,17 @@ export function BentoFeatures() {
   return (
     <section id="features" className="mx-auto max-w-6xl px-6 py-24 sm:py-32">
       <div className="mx-auto max-w-2xl text-center">
-        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-white">
+        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-ink">
           One workspace. Every tool.
           <br className="hidden sm:block" /> One conversation.
         </h2>
-        <p className="mt-4 text-balance text-[16px] leading-relaxed text-white/50">
+        <p className="mt-4 text-balance text-[16px] leading-relaxed text-ink/50">
           Stop stitching context together by hand. Khove reads across your
           tools and acts on them — from a single prompt.
         </p>
       </div>
 
-      <div className="mt-14 grid grid-cols-1 overflow-hidden rounded-2xl border border-white/[0.08] md:grid-cols-6">
+      <div className="mt-14 grid grid-cols-1 overflow-hidden rounded-2xl border border-ink/[0.08] md:grid-cols-6">
         <Cell
           className="border-b md:col-span-4 md:border-r"
           icon={MessageSquare}

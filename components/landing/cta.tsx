@@ -45,13 +45,13 @@ function Glow({ className }: { className?: string }) {
 export function Cta() {
   return (
     <section className="mx-auto max-w-6xl px-6 py-16">
-      <div className="relative isolate overflow-hidden rounded-3xl border border-white/[0.08] bg-white/[0.02] px-6 pb-32 pt-24 text-center sm:pb-40 sm:pt-32">
+      <div className="relative isolate overflow-hidden rounded-3xl border border-ink/[0.08] bg-ink/[0.02] px-6 pb-32 pt-24 text-center sm:pb-40 sm:pt-32">
         {/* Faint grid, masked to a soft center */}
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.22] [mask-image:radial-gradient(ellipse_55%_50%_at_50%_40%,black,transparent)]"
           style={{
             backgroundImage:
-              "linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)",
+              "linear-gradient(to right, rgb(var(--ink) / 0.04) 1px, transparent 1px), linear-gradient(to bottom, rgb(var(--ink) / 0.04) 1px, transparent 1px)",
             backgroundSize: "44px 44px",
           }}
         />
@@ -63,20 +63,20 @@ export function Cta() {
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
           className="relative z-10 flex flex-col items-center"
         >
-          <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[12px] text-white/60 backdrop-blur-sm">
+          <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-ink/[0.08] bg-ink/[0.04] px-3 py-1.5 text-[12px] text-ink/60 backdrop-blur-sm">
             <img
               src="/assets/khove-white.png"
               alt=""
               width={14}
               height={14}
-              className="h-3.5 w-3.5 object-contain opacity-80"
+              className="khove-mark h-3.5 w-3.5 object-contain opacity-80"
             />
             Ready when you are
           </span>
           <h2 className="w-full max-w-lg">
             <GradientText lines={["Give your tools", "a shared brain"]} />
           </h2>
-          <p className="mt-5 max-w-lg text-balance text-[16px] leading-relaxed text-white/55">
+          <p className="mt-5 max-w-lg text-balance text-[16px] leading-relaxed text-ink/55">
             Connect GitHub, Calendar and Jira and start asking. Free forever
             plan, no credit card required.
           </p>

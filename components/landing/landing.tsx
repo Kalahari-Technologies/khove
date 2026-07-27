@@ -9,6 +9,7 @@ import { Testimonials } from "./testimonials";
 import { Pricing } from "./pricing";
 import { Cta } from "./cta";
 import { Footer } from "./footer";
+import { LandingThemeProvider } from "./theme";
 
 /**
  * The marketing landing page shown at `/` to signed-out visitors.
@@ -18,18 +19,20 @@ import { Footer } from "./footer";
  */
 export function Landing() {
   return (
-    <main className="relative min-h-screen bg-[#09090B] text-white antialiased">
-      <LandingNav />
-      <Hero />
-      <IntegrationsMarquee />
-      <BentoFeatures />
-      <HowItWorks />
-      <AiDemo />
-      <AgentActions />
-      <Testimonials />
-      <Pricing />
-      <Cta />
-      <Footer />
-    </main>
+    <LandingThemeProvider>
+      <main className="relative min-h-screen bg-paper text-ink antialiased">
+        <LandingNav />
+        <Hero />
+        <IntegrationsMarquee />
+        <BentoFeatures />
+        <HowItWorks />
+        <AiDemo />
+        <AgentActions />
+        <Testimonials />
+        <Pricing />
+        <Cta />
+        <Footer />
+      </main>
+    </LandingThemeProvider>
   );
 }

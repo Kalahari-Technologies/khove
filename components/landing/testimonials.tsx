@@ -120,18 +120,18 @@ function TestimonialsColumn({
             {testimonials.map(({ quote, name, role, gradient }, i) => (
               <figure
                 key={`${dup}-${i}`}
-                className="w-full max-w-xs rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6"
+                className="w-full max-w-xs rounded-2xl border border-ink/[0.08] bg-ink/[0.02] p-6"
               >
-                <blockquote className="text-[14px] leading-relaxed text-white/70">
+                <blockquote className="text-[14px] leading-relaxed text-ink/70">
                   “{quote}”
                 </blockquote>
                 <figcaption className="mt-5 flex items-center gap-3">
                   <Avatar name={name} gradient={gradient} />
                   <div className="flex flex-col">
-                    <div className="text-[13px] font-medium leading-5 tracking-tight text-white">
+                    <div className="text-[13px] font-medium leading-5 tracking-tight text-ink">
                       {name}
                     </div>
-                    <div className="text-[12px] leading-5 tracking-tight text-white/40">
+                    <div className="text-[12px] leading-5 tracking-tight text-ink/40">
                       {role}
                     </div>
                   </div>
@@ -159,10 +159,10 @@ export function Testimonials() {
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         className="mx-auto max-w-2xl text-center"
       >
-        <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.2em] text-white/35">
+        <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.2em] text-ink/35">
           Loved by builders
         </p>
-        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-white">
+        <h2 className="text-balance text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-tight tracking-tight text-ink">
           Teams that stopped switching tabs
         </h2>
       </motion.div>
