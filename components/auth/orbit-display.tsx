@@ -247,7 +247,11 @@ export const OrbitDisplay = memo(function OrbitDisplay() {
             alt={icon.alt}
             width={icon.size}
             height={icon.size}
-            className="pointer-events-none"
+            className={`pointer-events-none${
+              icon.alt === "GitHub" || icon.alt === "Notion"
+                ? " tint-black-in-light"
+                : ""
+            }`}
             draggable={false}
           />
         </OrbitingCircles>

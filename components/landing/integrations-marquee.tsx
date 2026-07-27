@@ -31,17 +31,24 @@ export function IntegrationsMarquee() {
 
       <div className="group relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)]">
         <div className="flex w-max animate-marquee items-center gap-16 pr-16 group-hover:[animation-play-state:paused]">
-          {row.map((item, i) => (
-            <img
-              key={`${item.alt}-${i}`}
-              src={item.src}
-              alt={item.alt}
-              width={30}
-              height={30}
-              className="h-7 w-7 shrink-0 opacity-45 grayscale transition-all duration-300 hover:opacity-100 hover:grayscale-0 sm:h-8 sm:w-8"
-              draggable={false}
-            />
-          ))}
+          {row.map((item, i) => {
+            // github.svg / notion.svg are white marks — invisible on light
+            // paper, so tint them black in light mode (see globals.css).
+            const tintDark = item.alt === "GitHub" || item.alt === "Notion";
+            return (
+              <img
+                key={`${item.alt}-${i}`}
+                src={item.src}
+                alt={item.alt}
+                width={30}
+                height={30}
+                className={`h-7 w-7 shrink-0 opacity-45 grayscale transition-all duration-300 hover:opacity-100 hover:grayscale-0 sm:h-8 sm:w-8${
+                  tintDark ? " tint-black-in-light" : ""
+                }`}
+                draggable={false}
+              />
+            );
+          })}
         </div>
       </div>
     </section>

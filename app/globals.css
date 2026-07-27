@@ -25,6 +25,13 @@
   filter: invert(1) brightness(0.9);
 }
 
+/* White brand marks (GitHub, Notion) wash out on light paper — tint them
+   black in light mode. Used by the hero orbit and the integrations marquee
+   (overrides Tailwind's grayscale/hover filter via specificity). */
+.landing-root[data-theme="light"] .tint-black-in-light {
+  filter: brightness(0);
+}
+
 * {
   box-sizing: border-box;
 }
