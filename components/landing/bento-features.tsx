@@ -11,6 +11,7 @@ import {
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import { ACCENTS } from "./constants";
+import { useLandingTheme } from "./theme";
 
 /**
  * Feature bento — the FeatureCard / FeatureTitle / FeatureDescription pattern
@@ -28,14 +29,28 @@ function GlowIcon({
   icon: typeof MessageSquare;
   color: string;
 }) {
+  const { theme } = useLandingTheme();
+  const light = theme === "light";
+
   return (
     <div className="relative inline-flex self-start">
+      {/* transparent accent bloom — the glow/shadow, both themes */}
       <div
         className="absolute inset-0 rounded-lg blur-md"
-        style={{ backgroundColor: color, opacity: 0.35 }}
+        style={{ backgroundColor: color, opacity: light ? 0.4 : 0.35 }}
       />
-      <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-ink/[0.08] bg-ink/[0.05]">
-        <Icon className="h-[18px] w-[18px] text-ink" strokeWidth={1.75} />
+      {/* light: solid accent fill + white icon · dark: original glass chip */}
+      <div
+        className={cn(
+          "relative flex h-9 w-9 items-center justify-center rounded-lg border",
+          light ? "border-white/10" : "border-ink/[0.08] bg-ink/[0.05]"
+        )}
+        style={light ? { backgroundColor: color } : undefined}
+      >
+        <Icon
+          className={cn("h-[18px] w-[18px]", light ? "text-white" : "text-ink")}
+          strokeWidth={1.75}
+        />
       </div>
     </div>
   );

@@ -2,7 +2,9 @@
 
 import { Plug, MessagesSquare, Rocket } from "lucide-react";
 import { motion } from "motion/react";
+import { cn } from "@/lib/utils";
 import { ACCENTS } from "./constants";
+import { useLandingTheme } from "./theme";
 
 const STEPS = [
   {
@@ -32,6 +34,9 @@ const STEPS = [
 ];
 
 export function HowItWorks() {
+  const { theme } = useLandingTheme();
+  const light = theme === "light";
+
   return (
     <section id="how-it-works" className="mx-auto max-w-6xl px-6 py-24 sm:py-32">
       <div className="mx-auto max-w-2xl text-center">
@@ -57,12 +62,23 @@ export function HowItWorks() {
             className="relative flex flex-col items-center text-center md:items-start md:text-left"
           >
             <div className="relative">
+              {/* transparent accent bloom — the glow/shadow, both themes */}
               <div
                 className="absolute inset-0 rounded-xl blur-lg"
-                style={{ backgroundColor: s.color, opacity: 0.3 }}
+                style={{ backgroundColor: s.color, opacity: light ? 0.4 : 0.3 }}
               />
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl border border-ink/[0.08] bg-ink/[0.04]">
-                <s.icon className="h-5 w-5 text-ink" strokeWidth={1.75} />
+              {/* light: solid accent fill + white icon · dark: original glass chip */}
+              <div
+                className={cn(
+                  "relative flex h-12 w-12 items-center justify-center rounded-xl border",
+                  light ? "border-white/10" : "border-ink/[0.08] bg-ink/[0.04]"
+                )}
+                style={light ? { backgroundColor: s.color } : undefined}
+              >
+                <s.icon
+                  className={cn("h-5 w-5", light ? "text-white" : "text-ink")}
+                  strokeWidth={1.75}
+                />
               </div>
             </div>
 
