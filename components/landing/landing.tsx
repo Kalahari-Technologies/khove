@@ -3,6 +3,8 @@ import { Hero } from "./hero";
 import { IntegrationsMarquee } from "./integrations-marquee";
 import { BentoFeatures } from "./bento-features";
 import { HowItWorks } from "./how-it-works";
+import { AiDemo } from "./ai-demo";
+import { AgentActions } from "./agent-actions";
 import { Testimonials } from "./testimonials";
 import { Pricing } from "./pricing";
 import { Cta } from "./cta";
@@ -22,6 +24,8 @@ export function Landing() {
       <IntegrationsMarquee />
       <BentoFeatures />
       <HowItWorks />
+      <AiDemo />
+      <AgentActions />
       <Testimonials />
       <Pricing />
       <Cta />
