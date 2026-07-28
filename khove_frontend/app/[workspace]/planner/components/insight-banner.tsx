@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, Brain, CalendarClock, Clock, ChevronDown, X } from "lucide-react";
+import { AlertTriangle, Brain, CalendarClock, Clock, ChevronDown, ChevronRight, X } from "lucide-react";
+import { useWorkspace } from "@/lib/workspace/workspace-context";
 
 export interface PlannerInsight {
   id: string;
@@ -30,7 +32,10 @@ const SEVERITY: Record<PlannerInsight["severity"], { dot: string; text: string }
  * focus time, and overloaded days above the planner. Read-only in Stage B; Stage
  * D adds Approve/Reject on the actionable ones.
  */
+const MAX_INLINE = 10;
+
 export function InsightBanner({ insights }: { insights: PlannerInsight[] }) {
+  const workspace = useWorkspace();
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -38,6 +43,8 @@ export function InsightBanner({ insights }: { insights: PlannerInsight[] }) {
 
   const top = insights[0];
   const rest = insights.slice(1);
+  const shown = rest.slice(0, MAX_INLINE);
+  const overflow = rest.length - shown.length;
   const TopIcon = ICONS[top.type];
 
   return (
@@ -82,17 +89,28 @@ export function InsightBanner({ insights }: { insights: PlannerInsight[] }) {
               transition={{ duration: 0.18 }}
               className="border-t border-white/[0.06]"
             >
-              {rest.map((i) => {
-                const Icon = ICONS[i.type];
-                return (
-                  <div key={i.id} className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.04] last:border-0">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${SEVERITY[i.severity].dot}`} />
-                    <Icon size={13} className={`flex-shrink-0 ${SEVERITY[i.severity].text}`} />
-                    <span className="text-[12px] font-medium text-white/75 flex-shrink-0">{i.title}</span>
-                    <span className="text-[12px] text-white/40 truncate">{i.detail}</span>
-                  </div>
-                );
-              })}
+              <div className="max-h-[240px] overflow-y-auto">
+                {shown.map((i) => {
+                  const Icon = ICONS[i.type];
+                  return (
+                    <div key={i.id} className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.04] last:border-0">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${SEVERITY[i.severity].dot}`} />
+                      <Icon size={13} className={`flex-shrink-0 ${SEVERITY[i.severity].text}`} />
+                      <span className="text-[12px] font-medium text-white/75 flex-shrink-0">{i.title}</span>
+                      <span className="text-[12px] text-white/40 truncate">{i.detail}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {overflow > 0 && (
+                <Link
+                  href={`/${workspace.slug}/agent`}
+                  className="flex items-center justify-center gap-1 px-4 py-2 border-t border-white/[0.06] text-[11px] text-white/45 hover:text-white/75 transition-colors"
+                >
+                  {overflow} more in Agent
+                  <ChevronRight size={12} />
+                </Link>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

@@ -55,6 +55,16 @@ function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Human day label from a YYYY-MM-DD key, e.g. "Thu 28 Jul" (no tz drift). */
+function fmtDay(key: string): string {
+  const [y, m, d] = key.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return `${WEEKDAYS[date.getDay()]} ${d} ${MONTHS[m - 1]}`;
+}
+
 function overlaps(a: CalendarEventLike, b: CalendarEventLike): boolean {
   return a.start < b.end && b.start < a.end;
 }
@@ -157,7 +167,7 @@ export function detectConflicts(events: CalendarEventLike[]): Insight[] {
         type: "conflict",
         severity: "critical",
         title: "Double-booked",
-        detail: `"${a.title}" overlaps "${b.title}" on ${dayKey(a.start)}.`,
+        detail: `"${a.title}" overlaps "${b.title}" on ${fmtDay(dayKey(a.start))}.`,
         confidence: 0.95,
         day: dayKey(a.start),
         sources: [
@@ -204,7 +214,7 @@ export function findFocusGaps(events: CalendarEventLike[]): Insight[] {
       type: "focus_gap",
       severity: "warning",
       title: "No deep-work time",
-      detail: `${day} has ${sorted.length} meetings and no free block of ${FOCUS_BLOCK_MIN / 60}h+.`,
+      detail: `${fmtDay(day)} has ${sorted.length} meetings and no ${FOCUS_BLOCK_MIN / 60}h+ free block.`,
       confidence: 0.7,
       day,
       sources: sorted.map((e) => ({
@@ -237,7 +247,7 @@ export function detectOverload(events: CalendarEventLike[]): Insight[] {
       type: "overload",
       severity: hours >= OVERLOAD_HOURS + 2 ? "critical" : "warning",
       title: "Heavy meeting day",
-      detail: `${day} has ${dayEvents.length} meetings totalling ${hours.toFixed(1)}h.`,
+      detail: `${fmtDay(day)} has ${dayEvents.length} meetings totalling ${hours.toFixed(1)}h.`,
       confidence: 0.8,
       day,
       sources: dayEvents.map((e) => ({

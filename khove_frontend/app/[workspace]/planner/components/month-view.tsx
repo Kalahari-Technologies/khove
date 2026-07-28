@@ -7,6 +7,7 @@ import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
 import { ChevronLeft, ChevronRight, Plus, Unplug } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
 import { usePlannerInteractions, type PlannerEventDetail } from "./planner-interactions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 function taskToDetail(t: PlannerTask): PlannerEventDetail {
   return {
@@ -90,12 +91,13 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
   const workspace = useWorkspace();
   const backendFetch = useBackendFetch();
   const connectIntegration = useConnectIntegration();
-  const { openItem, openCreate, rescheduleTask } = usePlannerInteractions();
+  const { openItem, openCreate, rescheduleTask, pendingReschedules } = usePlannerInteractions();
   const today = new Date();
 
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [disconnecting, setDisconnecting] = useState(false);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
   const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
 
@@ -112,7 +114,8 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
   const itemsByDate: Record<string, CellItem[]> = {};
 
   for (const task of tasks) {
-    const d = new Date(task.dueDate);
+    // Apply any optimistic reschedule so the chip moves instantly on drop.
+    const d = new Date(pendingReschedules[task.id] ?? task.dueDate);
     const key = toDateKey(d);
     if (!itemsByDate[key]) itemsByDate[key] = [];
     itemsByDate[key].push({
@@ -197,7 +200,7 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
         <div className="flex items-center gap-2">
           {isGoogleConnected && canAdmin ? (
             <button
-              onClick={handleDisconnect}
+              onClick={() => setShowDisconnectConfirm(true)}
               disabled={disconnecting}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.10] text-[12px] text-white/50 hover:bg-white/[0.06] hover:text-white/70 transition-colors"
             >
@@ -325,6 +328,17 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
           );
         })}
       </div>
+
+      <ConfirmDialog
+        open={showDisconnectConfirm}
+        onClose={() => setShowDisconnectConfirm(false)}
+        onConfirm={handleDisconnect}
+        variant="danger"
+        title="Disconnect Google Calendar?"
+        description="This removes all synced Google Calendar events and meetings from this workspace, including any tasks created from them. To get them back you'll need to reconnect and re-sync."
+        confirmLabel="Disconnect & delete"
+        cancelLabel="Keep connected"
+      />
     </>
   );
 }

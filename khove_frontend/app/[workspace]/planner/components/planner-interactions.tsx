@@ -40,6 +40,8 @@ interface InteractionsCtx {
   openItem: (d: PlannerEventDetail) => void;
   openCreate: (at: Date) => void;
   rescheduleTask: (taskId: string, newStart: Date) => Promise<void>;
+  /** Optimistic reschedule overrides (taskId → new start ISO) for instant UI. */
+  pendingReschedules: Record<string, string>;
   canWrite: boolean;
 }
 
@@ -53,6 +55,7 @@ export function usePlannerInteractions(): InteractionsCtx {
       openItem: () => {},
       openCreate: () => {},
       rescheduleTask: async () => {},
+      pendingReschedules: {},
       canWrite: false,
     };
   }
@@ -93,15 +96,29 @@ export function PlannerInteractionsProvider({
   const backendFetch = useBackendFetch();
   const [detail, setDetail] = useState<PlannerEventDetail | null>(null);
   const [createAt, setCreateAt] = useState<Date | null>(null);
+  const [pendingReschedules, setPendingReschedules] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<string | null>(null);
 
   const rescheduleTask = useCallback(
     async (taskId: string, newStart: Date) => {
-      await backendFetch(
-        `/api/tasks/${taskId}/due-date`,
-        { method: "PATCH", body: JSON.stringify({ dueDate: newStart.toISOString() }) },
-        workspaceId,
-      );
-      router.refresh();
+      const iso = newStart.toISOString();
+      // Optimistic: move the chip immediately, reconcile/rollback after the save.
+      setPendingReschedules((p) => ({ ...p, [taskId]: iso }));
+      try {
+        const res = await backendFetch(
+          `/api/tasks/${taskId}/due-date`,
+          { method: "PATCH", body: JSON.stringify({ dueDate: iso }) },
+          workspaceId,
+        );
+        if (!res.ok) throw new Error("save failed");
+        router.refresh();
+        // Clear the override once the refreshed props have caught up.
+        setTimeout(() => setPendingReschedules((p) => { const n = { ...p }; delete n[taskId]; return n; }), 1500);
+      } catch {
+        setPendingReschedules((p) => { const n = { ...p }; delete n[taskId]; return n; }); // revert
+        setToast("Couldn't move that event — put it back.");
+        setTimeout(() => setToast(null), 3000);
+      }
     },
     [backendFetch, workspaceId, router],
   );
@@ -145,9 +162,10 @@ export function PlannerInteractionsProvider({
       openItem: (d) => setDetail(d),
       openCreate: (at) => canWrite && isGoogleConnected && setCreateAt(at),
       rescheduleTask,
+      pendingReschedules,
       canWrite,
     }),
-    [rescheduleTask, canWrite, isGoogleConnected],
+    [rescheduleTask, pendingReschedules, canWrite, isGoogleConnected],
   );
 
   return (
@@ -170,6 +188,16 @@ export function PlannerInteractionsProvider({
             onClose={() => setCreateAt(null)}
             onCreate={createEvent}
           />
+        )}
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-red-950/90 border border-red-500/30 px-4 py-2 text-[12px] text-red-200 shadow-xl"
+          >
+            {toast}
+          </motion.div>
         )}
       </AnimatePresence>
     </Ctx.Provider>
