@@ -34,6 +34,21 @@ export default async function GitHubPage({
     }
   }
 
+  // Open PR Shepherd proposals (NUDGE_REVIEWER / REQUEST_REVIEW / FLAG_PR).
+  const GITHUB_ACTION_TYPES = new Set(["NUDGE_REVIEWER", "REQUEST_REVIEW", "FLAG_PR"]);
+  const allActions = isConnected ? await trpc.agentAction.list.query({}).catch(() => []) : [];
+  const shepherdActions = allActions
+    .filter((a) => GITHUB_ACTION_TYPES.has(a.type))
+    .map((a) => ({
+      id: a.id,
+      type: a.type,
+      status: a.status,
+      title: a.title,
+      rationale: a.rationale,
+      confidence: a.confidence,
+      error: a.error,
+    }));
+
   return (
     <GitHubClient
       isConnected={isConnected}
@@ -42,6 +57,7 @@ export default async function GitHubPage({
       githubLogin={(metadata?.login as string) ?? null}
       githubAvatar={(metadata?.avatarUrl as string) ?? null}
       threadByTaskId={threadByTaskId}
+      shepherdActions={shepherdActions}
       tasks={tasks.map((t) => ({
         id: t.id,
         title: t.title,
@@ -50,6 +66,7 @@ export default async function GitHubPage({
         externalUrl: t.externalUrl,
         metadata: t.metadata as Record<string, unknown> | null,
         createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
       }))}
     />
   );
