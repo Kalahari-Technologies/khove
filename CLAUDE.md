@@ -192,10 +192,11 @@ Model IDs live **only** in `lib/ai/providers/` — never hardcode them elsewhere
 | `task-tools.ts` | createTask, listTasks, updateTask, deleteTask (soft — sets CANCELLED) |
 | `calendar-tools.ts` | listUpcomingEvents, createCalendarEvent (writes Google **and** local Task), checkAvailability, detectScheduleConflicts, findFocusTime, suggestReschedule |
 | `github-tools.ts` | listRepositories, listPullRequests, getPullRequest, listIssues, createGitHubIssue, getRepoActivity |
+| `jira-tools.ts` | listJiraProjects, listJiraIssues (JQL), getJiraIssue, createJiraIssue (ADF), commentJiraIssue (ADF), transitionJiraIssue (transitions API, keyed on StatusCategory) |
 | `thread-tools.ts` | listThreads, getThread, createThread (optionally attaches a meeting + auto-links) — loaded alongside task tools |
 
 `getToolsForContext()` loads tools by **connection status, not tier** — all integrations are free
-on all tiers. Task tools always load. Jira tools do not exist yet (call site commented out).
+on all tiers. Task tools always load. Jira tools load when JIRA is connected.
 
 ---
 
@@ -251,7 +252,7 @@ Monetisation is via AI **actions**, not integration access.
 
 ---
 
-## Background Jobs — 14 Inngest functions
+## Background Jobs — 21 Inngest functions
 
 Registered in `khove_backend/src/app.ts` (`inngestServe` functions array).
 
@@ -262,9 +263,17 @@ on `invalid_grant` + fires `token-revoked`), `google-calendar-renew-webhooks`,
 `google-calendar-disconnect-cleanup`, `google-calendar-token-revoked` (reconnect email + realtime)
 
 **Agent** (`agent-actions.ts`): `calendar-intelligence-scan` (daily 08:00 — drafts PENDING
-agent actions per connected workspace)
+agent actions per connected workspace). **PR Shepherd** (`shepherd.ts`): `pr-shepherd-scan`
+(09:00 & 13:00 — drafts NUDGE_REVIEWER / REQUEST_REVIEW / FLAG_PR over open PRs; webhook drafts
+state-based signals inline).
 
-**GitHub** (`github-sync.ts`): `github-initial-sync`, `github-webhook-handler`
+**GitHub** (`github-sync.ts`): `github-initial-sync`, `github-webhook-handler` (routed by App
+`installationId`; rich PR review/CI state)
+
+**Jira** (`jira-sync.ts`): `jira-initial-sync` (JQL last-30d + registers a project-scoped dynamic
+webhook), `jira-poll-sync` (daily incremental), `jira-webhook-handler`, `jira-refresh-tokens`
+(*/30 — rotating refresh tokens), `jira-renew-webhooks` (daily — extend 30-day expiry),
+`jira-disconnect-cleanup`
 
 **Email** (`email.ts`, via Resend): `send-welcome-signup-email`, `send-welcome-back-email`,
 `send-otp-email`, `send-new-device-email` — all triggered from the Clerk webhook.
@@ -339,19 +348,21 @@ on any `realtime` event. (The old SSE/Redis-poll endpoint is deleted.)
 | GitHub | ✅ code complete — needs `GITHUB_*` env vars |
 | Transactional email (Resend) | ✅ 4 templates |
 | Planner month / week / day views | ✅ |
-| Jira (Phase 5) | ❌ not started |
+| Jira (Atlassian) | ✅ code complete — OAuth 3LO + issue sync + dynamic webhook + AI tools (ADF/transitions); needs `ATLASSIAN_*` env vars |
 | Billing (Phase 6) | ❌ not started |
 
 ### Env vars actually read by code
 
 `ANTHROPIC_API_KEY`, `CLERK_WEBHOOK_SECRET`, `ENCRYPTION_KEY`, `GITHUB_APP_ID`,
-`GITHUB_APP_PRIVATE_KEY`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`,
+`GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_SLUG`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_GENERATIVE_AI_API_KEY`, `GOOGLE_REDIRECT_URI`,
+`ATLASSIAN_CLIENT_ID`, `ATLASSIAN_CLIENT_SECRET`,
 `NEXT_PUBLIC_APP_URL`, `RESEND_API_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
 plus `DATABASE_URL` / `DIRECT_URL` (Prisma) and the `NEXT_PUBLIC_CLERK_*` routing vars.
 
-Still unset: `ANTHROPIC_API_KEY` (blocks Haiku/Sonnet — everything falls back to Flash),
-all `GITHUB_*`, all `ATLASSIAN_*`, all billing keys.
+Still unset in some envs: `ANTHROPIC_API_KEY` (blocks Haiku/Sonnet — everything falls back to
+Flash) and all billing keys. `GITHUB_*` and `ATLASSIAN_*` are wired; set them where the
+integrations should run.
 
 ---
 
