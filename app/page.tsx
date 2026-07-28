@@ -1,36 +1,36 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
 import { Landing } from "@/components/landing/landing";
+import { serverTRPC } from "@/lib/trpc/server";
 
 export default async function HomePage() {
   const { userId: clerkId } = await auth();
 
-  // Signed-out visitors see the marketing landing page. Signed-in users fall
-  // through to the workspace redirect below.
+  // Signed-out visitors see the marketing landing page.
   if (!clerkId) {
     return <Landing />;
   }
 
-  // Check if Clerk user has a username set — if not, they need onboarding
+  // Clerk user without a username needs onboarding.
   const clerkUser = await currentUser();
   if (clerkUser && !clerkUser.username) {
     redirect("/onboarding");
   }
 
-  // Look up user's personal workspace slug
-  const user = await db.user.findUnique({ where: { clerkId } });
-  if (!user) redirect("/login");
-
-  const personalWorkspace = await db.workspace.findFirst({
-    where: { ownerId: user.id, isPersonal: true },
-    select: { slug: true },
-  });
-
-  if (personalWorkspace) {
-    redirect(`/${personalWorkspace.slug}/chat`);
+  // Resolve the personal workspace via the backend (no direct DB access).
+  let personalWorkspaceSlug: string | null = null;
+  try {
+    const trpc = await serverTRPC();
+    const me = await trpc.workspace.me.query();
+    personalWorkspaceSlug = me.personalWorkspaceSlug;
+  } catch {
+    redirect("/login");
   }
 
-  // Fallback — should not happen after ensurePersonalWorkspace in auth
+  if (personalWorkspaceSlug) {
+    redirect(`/${personalWorkspaceSlug}/chat`);
+  }
+
+  // Fallback — should not happen after ensurePersonalWorkspace in auth.
   redirect("/onboarding");
 }
