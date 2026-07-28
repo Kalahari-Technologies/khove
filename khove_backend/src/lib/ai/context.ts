@@ -59,7 +59,7 @@ export function assembleSystemPrompt(opts: SystemPromptOptions): string {
   const capabilityLines: string[] = [
     "- Create, update, list, and manage tasks",
   ];
-  if (canUseCalendar) capabilityLines.push("- View and create Google Calendar events, check availability");
+  if (canUseCalendar) capabilityLines.push("- View and create Google Calendar events, check availability, detect scheduling conflicts and overloaded days, and find focus/deep-work time");
   if (canUseGitHub) capabilityLines.push("- Check GitHub PRs, issues, and repository activity");
   if (canUseJira) capabilityLines.push("- Read and update Jira tickets, sprint boards, and issue transitions");
   if (canUseStandup) capabilityLines.push("- Generate standup summaries and sprint health reports");

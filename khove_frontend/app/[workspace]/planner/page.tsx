@@ -25,11 +25,12 @@ export default async function PlannerPage({
   const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
 
-  const [tasksResult, calendarEntries, googleIntegration, sync] = await Promise.all([
+  const [tasksResult, calendarEntries, googleIntegration, sync, insights] = await Promise.all([
     trpc.task.list.query({ hasDueDate: true, limit: 200 }),
     trpc.calendarEntry.list.query({ from: monthStart, to: monthEnd }),
     trpc.integration.get.query({ provider: "GOOGLE_CALENDAR" }),
     trpc.integration.syncStatus.query(),
+    trpc.insight.getForRange.query({ from: monthStart, to: monthEnd }).catch(() => []),
   ]);
 
   const tasks = tasksResult.items;
@@ -71,6 +72,14 @@ export default async function PlannerPage({
         startDate: e.startDate.toISOString(),
         endDate: e.endDate?.toISOString(),
         isAllDay: e.isAllDay,
+      }))}
+      insights={insights.map((i) => ({
+        id: i.id,
+        type: i.type,
+        severity: i.severity,
+        title: i.title,
+        detail: i.detail,
+        day: i.day,
       }))}
     />
   );

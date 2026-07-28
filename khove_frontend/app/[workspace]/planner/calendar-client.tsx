@@ -12,6 +12,7 @@ import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { MonthView } from "./components/month-view";
 import { WeekView } from "./components/week-view";
 import { DayView } from "./components/day-view";
+import { InsightBanner, type PlannerInsight } from "./components/insight-banner";
 
 // ---------------------------------------------------------------------------
 // Google Calendar logo
@@ -82,6 +83,7 @@ interface PlannerClientProps {
   planTier: string;
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
+  insights?: PlannerInsight[];
   view?: "month" | "week" | "day";
 }
 
@@ -263,6 +265,7 @@ function PlannerEmptyState({ planTier, canAdmin, workspaceId }: { planTier: stri
 function PlannerCalendar({
   tasks,
   calendarEntries,
+  insights = [],
   isGoogleConnected,
   canAdmin,
   workspaceId,
@@ -271,6 +274,7 @@ function PlannerCalendar({
 }: {
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
+  insights?: PlannerInsight[];
   isGoogleConnected: boolean;
   canAdmin: boolean;
   workspaceId: string;
@@ -279,6 +283,7 @@ function PlannerCalendar({
 }) {
   return (
     <div className="flex flex-col h-full bg-black overflow-hidden">
+      {insights.length > 0 && <InsightBanner insights={insights} />}
       {view === "month" && (
         <MonthView
           tasks={tasks}
@@ -303,10 +308,10 @@ function PlannerCalendar({
 // Export
 // ---------------------------------------------------------------------------
 
-export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, view = "month" }: PlannerClientProps) {
+export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, insights = [], view = "month" }: PlannerClientProps) {
   if (isSyncing) return <PlannerSyncingState />;
   if (isFirstTime) return <PlannerEmptyState planTier={planTier} canAdmin={canAdmin} workspaceId={workspaceId} />;
-  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} view={view} />;
+  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} insights={insights} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} view={view} />;
 }
 
 // ---------------------------------------------------------------------------

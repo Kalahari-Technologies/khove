@@ -5,6 +5,18 @@ import {
   createCalendarEventAndTask,
   checkAvailability,
 } from "@backend/lib/integrations/google-calendar";
+import {
+  loadWorkspaceEvents,
+  computeInsights,
+  findFreeWindows,
+} from "@backend/lib/calendar/intelligence";
+
+/** Default analysis window: now → +14 days. */
+function defaultRange(from?: string, to?: string): { from: Date; to: Date } {
+  const start = from ? new Date(from) : new Date();
+  const end = to ? new Date(to) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  return { from: start, to: end };
+}
 
 /**
  * Google Calendar tools — available to PRO+ tiers when GOOGLE_CALENDAR is connected.
@@ -142,6 +154,93 @@ export function getCalendarTools(workspaceId: string) {
             success: true,
             free: isFree,
             busyPeriods: result.busy,
+          };
+        } catch (error) {
+          return { success: false, error: String(error) };
+        }
+      },
+    }),
+
+    detectScheduleConflicts: tool({
+      description:
+        "Analyze the user's calendar for scheduling problems — double-booked meetings, overloaded days, and days with no protected deep-work time. Use when the user asks about conflicts, how busy they are, or to review their schedule.",
+      inputSchema: zodSchema(
+        z.object({
+          from: z.string().optional().describe("ISO 8601 start of analysis window (default: now)"),
+          to: z.string().optional().describe("ISO 8601 end of window (default: +14 days)"),
+        }),
+      ),
+      execute: async ({ from, to }) => {
+        try {
+          const range = defaultRange(from, to);
+          const events = await loadWorkspaceEvents(workspaceId, range.from, range.to);
+          const insights = computeInsights(events);
+          return {
+            success: true,
+            count: insights.length,
+            insights: insights.map((i) => ({
+              type: i.type,
+              severity: i.severity,
+              title: i.title,
+              detail: i.detail,
+              day: i.day,
+              confidence: i.confidence,
+            })),
+          };
+        } catch (error) {
+          return { success: false, error: String(error) };
+        }
+      },
+    }),
+
+    findFocusTime: tool({
+      description:
+        "Find free windows in the user's calendar suitable for focused/deep work. Use when the user asks when they're free for heads-down work or to block focus time.",
+      inputSchema: zodSchema(
+        z.object({
+          from: z.string().optional().describe("ISO 8601 start (default: now)"),
+          to: z.string().optional().describe("ISO 8601 end (default: +14 days)"),
+          minMinutes: z
+            .number()
+            .optional()
+            .default(120)
+            .describe("Minimum free-window length in minutes (default 120)"),
+        }),
+      ),
+      execute: async ({ from, to, minMinutes }) => {
+        try {
+          const range = defaultRange(from, to);
+          const events = await loadWorkspaceEvents(workspaceId, range.from, range.to);
+          const windows = findFreeWindows(events, minMinutes ?? 120);
+          return { success: true, count: windows.length, windows };
+        } catch (error) {
+          return { success: false, error: String(error) };
+        }
+      },
+    }),
+
+    suggestReschedule: tool({
+      description:
+        "Suggest concrete fixes for calendar problems (which meeting to move to resolve a conflict, or when to block focus time). Use after detecting conflicts or when the user asks how to fix their schedule.",
+      inputSchema: zodSchema(
+        z.object({
+          from: z.string().optional().describe("ISO 8601 start (default: now)"),
+          to: z.string().optional().describe("ISO 8601 end (default: +14 days)"),
+        }),
+      ),
+      execute: async ({ from, to }) => {
+        try {
+          const range = defaultRange(from, to);
+          const events = await loadWorkspaceEvents(workspaceId, range.from, range.to);
+          const actionable = computeInsights(events).filter((i) => i.suggestedAction);
+          return {
+            success: true,
+            count: actionable.length,
+            suggestions: actionable.map((i) => ({
+              problem: i.detail,
+              action: i.suggestedAction,
+              confidence: i.confidence,
+            })),
           };
         } catch (error) {
           return { success: false, error: String(error) };

@@ -5,6 +5,7 @@ import { workflowStatusRouter } from "@backend/server/routers/workflow-status";
 import { integrationRouter } from "@backend/server/routers/integration";
 import { conversationRouter } from "@backend/server/routers/conversation";
 import { calendarEntryRouter } from "@backend/server/routers/calendar-entry";
+import { insightRouter } from "@backend/server/routers/insight";
 
 export const appRouter = router({
   task: taskRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
   integration: integrationRouter,
   conversation: conversationRouter,
   calendarEntry: calendarEntryRouter,
+  insight: insightRouter,
 });
 
 export type AppRouter = typeof appRouter;
