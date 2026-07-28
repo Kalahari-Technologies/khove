@@ -51,6 +51,23 @@ export const workspaceRouter = router({
     }));
   }),
 
+  /** Current user + their personal workspace slug (for the root redirect page). */
+  me: protectedProcedure.query(async ({ ctx }) => {
+    const personal = await db.workspace.findFirst({
+      where: { ownerId: ctx.user.id, isPersonal: true },
+      select: { slug: true },
+    });
+    return {
+      user: {
+        id: ctx.user.id,
+        email: ctx.user.email,
+        name: ctx.user.name,
+        planTier: ctx.user.planTier,
+      },
+      personalWorkspaceSlug: personal?.slug ?? null,
+    };
+  }),
+
   /**
    * Get a workspace by slug (with membership check).
    */

@@ -55,6 +55,21 @@ export const taskRouter = router({
       };
     }),
 
+  /** Get a single task (with status + assignees) — scoped to active workspace. */
+  get: workspaceProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const task = await db.task.findFirst({
+        where: { id: input.id, workspaceId: ctx.workspace.id },
+        include: {
+          status: true,
+          assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+        },
+      });
+      if (!task) throw new TRPCError({ code: "NOT_FOUND" });
+      return task;
+    }),
+
   /**
    * Create a task — deduplicates by externalId to prevent double-imports from webhooks.
    * Automatically assigned to active workspace.
