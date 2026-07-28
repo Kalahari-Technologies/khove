@@ -1,5 +1,5 @@
-# dependencies
-/node_modules
+# dependencies (any workspace)
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -8,14 +8,14 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
-# next.js
-/.next/
-/out/
+# next.js (any workspace)
+.next/
+out/
 
 # production
-/build
+build/
 
 # misc
 .DS_Store
