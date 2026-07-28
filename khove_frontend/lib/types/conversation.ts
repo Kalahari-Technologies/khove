@@ -17,8 +17,11 @@ export type ConversationSummary = Prisma.ConversationGetPayload<{
  *   `conversation.messages as unknown as ChatMessage[]`
  */
 export interface ChatStep {
-  tool: string;
+  kind?: "tool" | "thought";
+  tool?: string;
   label: string;
+  detail?: string;
+  category?: string;
 }
 
 export interface ChatMessage {

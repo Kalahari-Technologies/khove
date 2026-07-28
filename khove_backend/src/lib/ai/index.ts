@@ -29,12 +29,42 @@ export interface RunAIConversationResult {
 
 export type ChatStreamEvent =
   | { t: "meta"; conversationId: string }
-  | { t: "step"; tool: string; label: string; status: "running" | "done" }
+  | { t: "step"; tool: string; label: string; detail?: string; category: string; status: "running" | "done" }
+  | { t: "thought"; text: string; strip?: boolean }
   | { t: "text"; delta: string }
-  | { t: "reasoning"; delta: string }
   | { t: "blocked"; response: string }
   | { t: "error"; message: string }
   | { t: "done"; model: string };
+
+/** One entry in the assistant's process trail (persisted + rendered). */
+export interface ProcessItem {
+  kind: "thought" | "tool";
+  label: string;
+  detail?: string;
+  tool?: string;
+  category?: string;
+}
+
+/** Coarse tool category → drives the icon in the UI. */
+function toolCategory(name: string): string {
+  if (/task/i.test(name)) return "tasks";
+  if (/calendar|event|availability|conflict|focus|reschedule/i.test(name)) return "calendar";
+  if (/repo|pull|issue|github/i.test(name)) return "github";
+  if (/thread/i.test(name)) return "threads";
+  return "other";
+}
+
+/** A short human detail for a tool call, taken from its input (e.g. "owner/repo"). */
+function stepDetail(input: unknown): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const o = input as Record<string, unknown>;
+  if (typeof o.owner === "string" && typeof o.repo === "string") {
+    return `${o.owner}/${o.repo}${o.pullNumber != null ? `#${String(o.pullNumber)}` : ""}`;
+  }
+  const first = o.title ?? o.summary ?? o.query ?? o.repo ?? o.status ?? o.threadId ?? o.name;
+  if (typeof first === "string" && first.trim()) return first.slice(0, 48);
+  return undefined;
+}
 
 interface PreparedContext {
   conversation: Awaited<ReturnType<typeof db.conversation.findFirst>>;
@@ -125,8 +155,10 @@ export async function streamAIConversation(
   write({ t: "meta", conversationId: convId });
 
   const messages = [...history, { role: "user" as const, content: newMessage }];
-  const steps: Array<{ tool: string; label: string }> = [];
+  const process: ProcessItem[] = [];
   let finalText = "";
+  let stepText = ""; // text produced within the current step (narration until proven answer)
+  let reasoningBuf = "";
 
   try {
     const result = streamText({
@@ -138,26 +170,52 @@ export async function streamAIConversation(
     });
 
     for await (const part of result.fullStream) {
-      const p = part as { type: string; toolName?: string; text?: string; error?: unknown };
+      const p = part as { type: string; toolName?: string; text?: string; input?: unknown; error?: unknown };
       switch (p.type) {
-        case "tool-call": {
-          const tool = p.toolName ?? "tool";
-          const label = labelForTool(tool);
-          steps.push({ tool, label });
-          write({ t: "step", tool, label, status: "running" });
-          break;
-        }
-        case "tool-result": {
-          write({ t: "step", tool: p.toolName ?? "tool", label: labelForTool(p.toolName ?? "tool"), status: "done" });
+        case "start-step": {
+          stepText = "";
+          reasoningBuf = "";
           break;
         }
         case "text-delta": {
           const delta = p.text ?? "";
-          if (delta) { finalText += delta; write({ t: "text", delta }); }
+          if (delta) { stepText += delta; finalText += delta; write({ t: "text", delta }); }
           break;
         }
         case "reasoning-delta": {
-          if (p.text) write({ t: "reasoning", delta: p.text });
+          if (p.text) reasoningBuf += p.text;
+          break;
+        }
+        case "tool-call": {
+          // Any narration produced before this tool call is a "thought", not the
+          // answer — flush it as such and strip it from the streamed answer.
+          const thought = stepText.trim();
+          if (thought) {
+            process.push({ kind: "thought", label: "Thinking", detail: thought });
+            write({ t: "thought", text: thought, strip: true });
+            finalText = finalText.replace(stepText, "").replace(/^\s+/, "");
+            stepText = "";
+          }
+          const tool = p.toolName ?? "tool";
+          const label = labelForTool(tool);
+          const detail = stepDetail(p.input);
+          const category = toolCategory(tool);
+          process.push({ kind: "tool", tool, label, detail, category });
+          write({ t: "step", tool, label, detail, category, status: "running" });
+          break;
+        }
+        case "tool-result": {
+          const tool = p.toolName ?? "tool";
+          write({ t: "step", tool, label: labelForTool(tool), category: toolCategory(tool), status: "done" });
+          break;
+        }
+        case "finish-step": {
+          const th = reasoningBuf.trim();
+          if (th) {
+            process.push({ kind: "thought", label: "Thinking", detail: th });
+            write({ t: "thought", text: th });
+            reasoningBuf = "";
+          }
           break;
         }
         case "error": {
@@ -183,7 +241,7 @@ export async function streamAIConversation(
   const updatedMessages: ChatMessage[] = [
     ...history,
     { role: "user", content: newMessage, timestamp: now },
-    { role: "assistant", content: finalText, timestamp: now, steps },
+    { role: "assistant", content: finalText, timestamp: now, steps: process },
   ];
   await db.conversation.update({
     where: { id: convId },

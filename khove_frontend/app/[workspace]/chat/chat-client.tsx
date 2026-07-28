@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Paperclip, Send, ChevronRight, ChevronDown, Sparkles, Check } from "lucide-react";
+import { Paperclip, Send, ChevronRight, Sparkles, Check, Brain, Wrench, ListTodo, Calendar, GitBranch, Link2 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -307,38 +307,68 @@ function SuggestionChips({ onSelect }: { onSelect: (p: string) => void }) {
 
 // ─── Process block (AI tool-process trail) ────────────────────────────────────
 
-function ProcessBlock({
-  steps,
-  streaming = false,
-}: {
-  steps: Array<{ label: string; done?: boolean }>;
-  streaming?: boolean;
-}) {
+interface ProcItem {
+  kind?: "tool" | "thought";
+  label: string;
+  detail?: string;
+  category?: string;
+  done?: boolean;
+}
+
+const CATEGORY_ICON: Record<string, typeof Wrench> = {
+  tasks: ListTodo,
+  calendar: Calendar,
+  github: GitBranch,
+  threads: Link2,
+  other: Wrench,
+};
+
+function ProcessRow({ item, streaming }: { item: ProcItem; streaming: boolean }) {
+  const isThought = item.kind === "thought";
+  const Icon = isThought ? Brain : CATEGORY_ICON[item.category ?? "other"] ?? Wrench;
+  const running = streaming && !isThought && !item.done;
+  return (
+    <div className="flex items-center gap-2 text-[12.5px] py-0.5">
+      <Icon size={13} className="text-white/35 flex-shrink-0" />
+      <span className="text-white/65 flex-shrink-0">{item.label}</span>
+      {item.detail && (
+        <span className="text-white/45 bg-white/[0.04] border border-white/[0.07] rounded-md px-1.5 py-[1px] truncate max-w-[320px]">
+          {item.detail}
+        </span>
+      )}
+      {running && <span className="w-2.5 h-2.5 rounded-full border border-white/25 border-t-white/70 animate-spin flex-shrink-0" />}
+      {!isThought && item.done && <Check size={12} className="text-emerald-400/55 flex-shrink-0" />}
+    </div>
+  );
+}
+
+function ProcessBlock({ items, streaming = false }: { items: ProcItem[]; streaming?: boolean }) {
   const [open, setOpen] = useState(false);
-  if (steps.length === 0) return null;
-  const anyRunning = streaming && steps.some((s) => !s.done);
-  const headline = anyRunning
-    ? `${steps[steps.length - 1].label}…`
-    : `${steps.length} step${steps.length > 1 ? "s" : ""}`;
+  if (items.length === 0) return null;
+  const running = streaming ? items.find((i) => !i.done) : undefined;
 
   return (
-    <div className="mb-2 rounded-lg border border-white/[0.07] bg-white/[0.02] overflow-hidden w-fit min-w-[210px] max-w-md">
-      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 w-full px-2.5 py-1.5 text-left">
-        <Sparkles size={12} className={`flex-shrink-0 ${anyRunning ? "text-violet-300" : "text-white/40"}`} />
-        <span className="text-[11px] text-white/55 flex-1 truncate">{headline}</span>
-        <ChevronDown size={12} className={`text-white/30 transition-transform ${open ? "rotate-180" : ""}`} />
+    <div className="mb-3 w-full">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 text-[12.5px] text-white/45 hover:text-white/75 transition-colors">
+        <ChevronRight size={14} className={`transition-transform flex-shrink-0 ${open ? "rotate-90" : ""}`} />
+        {running ? (
+          <span className="flex items-center gap-1.5 min-w-0">
+            <Sparkles size={12} className="text-violet-300 animate-pulse flex-shrink-0" />
+            <span className="truncate text-white/55">
+              {running.label}
+              {running.detail ? ` · ${running.detail}` : ""}…
+            </span>
+          </span>
+        ) : (
+          <span>
+            {items.length} step{items.length > 1 ? "s" : ""}
+          </span>
+        )}
       </button>
       {open && (
-        <div className="px-3 pb-2 pt-0.5 space-y-1 border-t border-white/[0.05]">
-          {steps.map((s, i) => (
-            <div key={i} className="flex items-center gap-2 text-[11px] text-white/50">
-              {s.done ? (
-                <Check size={11} className="text-emerald-400/70 flex-shrink-0" />
-              ) : (
-                <span className="w-2.5 h-2.5 rounded-full border border-white/25 border-t-white/70 animate-spin flex-shrink-0" />
-              )}
-              <span className="truncate">{s.label}</span>
-            </div>
+        <div className="mt-2 ml-[6px] pl-3 border-l border-white/[0.08] space-y-0.5">
+          {items.map((it, i) => (
+            <ProcessRow key={i} item={it} streaming={streaming} />
           ))}
         </div>
       )}
@@ -378,9 +408,9 @@ function MessageBubble({ message }: { message: ClientChatMessage }) {
             {message.content}
           </div>
         ) : (
-          <div className="text-[14px] text-white/88 leading-relaxed max-w-3xl">
+          <div className="text-[15px] text-white/88 leading-7 max-w-3xl">
             {message.steps && message.steps.length > 0 && (
-              <ProcessBlock steps={message.steps.map((s) => ({ label: s.label, done: true }))} />
+              <ProcessBlock items={message.steps.map((s) => ({ ...s, done: true }))} />
             )}
             <MessageContent content={message.content} />
           </div>
@@ -402,38 +432,40 @@ function MessageBubble({ message }: { message: ClientChatMessage }) {
 // ─── Message Content (markdown) ───────────────────────────────────────────────
 
 const MARKDOWN_COMPONENTS: Components = {
-  p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-  ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-2 marker:text-white/30">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-2 marker:text-white/40">{children}</ol>,
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  p: ({ children }) => <p className="mb-3 last:mb-0 leading-7">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc pl-6 space-y-1.5 mb-3 marker:text-white/30">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-6 space-y-1.5 mb-3 marker:text-white/40">{children}</ol>,
+  li: ({ children }) => <li className="leading-7 pl-1">{children}</li>,
   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-  em: ({ children }) => <em className="italic">{children}</em>,
+  em: ({ children }) => <em className="italic text-white/90">{children}</em>,
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer" className="text-violet-300 underline underline-offset-2 hover:text-violet-200">
       {children}
     </a>
   ),
-  h1: ({ children }) => <p className="font-semibold text-white text-[15px] mt-2 mb-1.5">{children}</p>,
-  h2: ({ children }) => <p className="font-semibold text-white/95 mt-2 mb-1">{children}</p>,
-  h3: ({ children }) => <p className="font-medium text-white/90 mt-1.5 mb-1">{children}</p>,
-  blockquote: ({ children }) => <blockquote className="border-l-2 border-white/15 pl-3 text-white/70 my-2">{children}</blockquote>,
-  hr: () => <hr className="border-white/10 my-3" />,
+  h1: ({ children }) => <h1 className="font-semibold text-white text-[19px] leading-snug mt-5 mb-2 first:mt-0 pb-1.5 border-b border-white/[0.08]">{children}</h1>,
+  h2: ({ children }) => <h2 className="font-semibold text-white text-[16.5px] leading-snug mt-4 mb-2 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="font-semibold text-white/95 text-[14.5px] mt-3 mb-1.5 first:mt-0">{children}</h3>,
+  blockquote: ({ children }) => <blockquote className="border-l-2 border-violet-400/40 pl-3.5 text-white/70 my-3 italic">{children}</blockquote>,
+  hr: () => <hr className="border-white/[0.08] my-4" />,
   code: ({ className, children }) =>
     className ? (
-      <code className={`${className} text-[12.5px]`}>{children}</code>
+      <code className={`${className} text-[13px]`}>{children}</code>
     ) : (
-      <code className="font-mono text-[12px] bg-white/[0.08] px-1.5 py-0.5 rounded text-white/85">{children}</code>
+      <code className="font-mono text-[12.5px] bg-white/[0.08] px-1.5 py-0.5 rounded text-violet-200/90">{children}</code>
     ),
   pre: ({ children }) => (
-    <pre className="bg-white/[0.05] border border-white/[0.08] rounded-lg p-3 overflow-x-auto font-mono my-2">{children}</pre>
+    <pre className="bg-white/[0.04] border border-white/[0.08] rounded-xl p-3.5 overflow-x-auto font-mono my-3 leading-relaxed">{children}</pre>
   ),
   table: ({ children }) => (
-    <div className="overflow-x-auto my-2">
-      <table className="text-[13px] border-collapse">{children}</table>
+    <div className="overflow-x-auto my-3 rounded-xl border border-white/[0.09]">
+      <table className="w-full text-[13.5px] border-collapse">{children}</table>
     </div>
   ),
-  th: ({ children }) => <th className="border border-white/10 px-2 py-1 text-left font-medium">{children}</th>,
-  td: ({ children }) => <td className="border border-white/10 px-2 py-1">{children}</td>,
+  thead: ({ children }) => <thead className="bg-white/[0.04]">{children}</thead>,
+  th: ({ children }) => <th className="px-3 py-2 text-left font-semibold text-white/90 border-b border-white/[0.09]">{children}</th>,
+  td: ({ children }) => <td className="px-3 py-2 border-b border-white/[0.05] text-white/80 align-top">{children}</td>,
+  tr: ({ children }) => <tr className="last:[&>td]:border-b-0">{children}</tr>,
 };
 
 function MessageContent({ content }: { content: string }) {
@@ -479,15 +511,15 @@ function LiveAssistant({ stream }: { stream: StreamState }) {
   const revealed = useSmoothReveal(stream.assistantText, streaming);
   return (
     <div className="flex-1 min-w-0">
-      {stream.steps.length > 0 && <ProcessBlock steps={stream.steps} streaming={streaming} />}
+      {stream.process.length > 0 && <ProcessBlock items={stream.process} streaming={streaming} />}
       {revealed ? (
-        <div className="text-[14px] text-white/88 leading-relaxed">
+        <div className="text-[15px] text-white/88 leading-7">
           <MessageContent content={revealed} />
           {streaming && (
-            <span className="inline-block align-middle w-[6px] h-[15px] ml-0.5 rounded-[1px] bg-white/50 animate-pulse" />
+            <span className="inline-block align-middle w-[6px] h-[16px] ml-0.5 rounded-[1px] bg-white/50 animate-pulse" />
           )}
         </div>
-      ) : stream.steps.length === 0 ? (
+      ) : stream.process.length === 0 ? (
         <LoadingBreadcrumb />
       ) : null}
     </div>
@@ -528,7 +560,7 @@ export function ChatClient({ userName, initialMessages = [] }: ChatClientProps) 
           role: "assistant",
           content: activeStream.assistantText,
           timestamp: new Date(),
-          steps: activeStream.steps.map((s) => ({ tool: s.tool, label: s.label })),
+          steps: activeStream.process.map((s) => ({ kind: s.kind, tool: s.tool, label: s.label, detail: s.detail, category: s.category })),
         },
       ];
     });

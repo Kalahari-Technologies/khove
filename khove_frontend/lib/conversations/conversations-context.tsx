@@ -22,14 +22,19 @@ export interface ConvListItem {
   generating: boolean;
 }
 
-export interface LiveStep extends ChatStep {
+export interface ProcessEntry {
+  kind: "tool" | "thought";
+  label: string;
+  detail?: string;
+  tool?: string;
+  category?: string;
   done: boolean;
 }
 
 export interface StreamState {
   userMessage: string;
   assistantText: string;
-  steps: LiveStep[];
+  process: ProcessEntry[];
   status: "streaming" | "done" | "error";
 }
 
@@ -141,7 +146,7 @@ export function ConversationsProvider({
 
       setStreams((prev) => ({
         ...prev,
-        [key]: { userMessage: trimmed, assistantText: "", steps: [], status: "streaming" },
+        [key]: { userMessage: trimmed, assistantText: "", process: [], status: "streaming" },
       }));
       if (isNew) {
         setNewKey(key);
@@ -178,18 +183,31 @@ export function ConversationsProvider({
               }
             } else if (t === "step") {
               const tool = e.tool as string;
-              const label = e.label as string;
               const status = e.status as string;
               patchStream(key, (s) => {
-                const idx = s.steps.findIndex((x) => x.tool === tool && !x.done);
-                if (status === "done" && idx >= 0) {
-                  const steps = [...s.steps];
-                  steps[idx] = { ...steps[idx], done: true };
-                  return { ...s, steps };
+                if (status === "done") {
+                  const idx = s.process.findIndex((x) => x.kind === "tool" && x.tool === tool && !x.done);
+                  if (idx < 0) return s;
+                  const process = [...s.process];
+                  process[idx] = { ...process[idx], done: true };
+                  return { ...s, process };
                 }
-                if (status === "running") return { ...s, steps: [...s.steps, { tool, label, done: false }] };
-                return s;
+                return {
+                  ...s,
+                  process: [
+                    ...s.process,
+                    { kind: "tool", tool, label: e.label as string, detail: e.detail as string | undefined, category: e.category as string | undefined, done: false },
+                  ],
+                };
               });
+            } else if (t === "thought") {
+              const text = e.text as string;
+              patchStream(key, (s) => ({
+                ...s,
+                process: [...s.process, { kind: "thought", label: "Thinking", detail: text, done: true }],
+                // A stripped thought was streamed into the answer first — remove it.
+                assistantText: e.strip ? s.assistantText.replace(text, "").replace(/^\s+/, "") : s.assistantText,
+              }));
             } else if (t === "text") {
               patchStream(key, (s) => ({ ...s, assistantText: s.assistantText + (e.delta as string) }));
             } else if (t === "blocked") {
@@ -197,7 +215,7 @@ export function ConversationsProvider({
             } else if (t === "error") {
               patchStream(key, (s) => ({ ...s, assistantText: s.assistantText + `\n\n_${e.message as string}_`, status: "error" }));
             } else if (t === "done") {
-              patchStream(key, (s) => ({ ...s, status: "done", steps: s.steps.map((x) => ({ ...x, done: true })) }));
+              patchStream(key, (s) => ({ ...s, status: "done", process: s.process.map((x) => ({ ...x, done: true })) }));
             }
           };
 

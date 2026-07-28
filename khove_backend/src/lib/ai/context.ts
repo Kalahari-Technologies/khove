@@ -5,8 +5,8 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
-  /** For assistant messages: the tool-process trail shown in the chat UI. */
-  steps?: Array<{ tool: string; label: string }>;
+  /** For assistant messages: the thought + tool-process trail shown in the chat UI. */
+  steps?: Array<{ kind?: string; tool?: string; label: string; detail?: string; category?: string }>;
 }
 
 const MAX_CONVERSATION_MESSAGES = 40;
@@ -90,8 +90,9 @@ ${integrationList}
 - If a tool fails, returns nothing, or an integration is not connected, say so plainly (e.g. "Your Google Calendar isn't connected, so I can't see your events") and stop — do not make up a plausible-looking answer to fill the gap.
 - If a tool call fails, return a helpful error message. Never let a tool failure crash the conversation.
 - For task status changes, always use StatusCategory (NOT_STARTED, IN_PROGRESS, IN_REVIEW, BLOCKED, DONE, CANCELLED) — never status name strings.
-- Keep responses concise and direct. Lead with the result, not the reasoning.
-- Format replies in clean Markdown: use "-" bullet lists, **bold** for key terms, \`code\` for identifiers, and [links](url) where useful. Don't over-format — no oversized headings, and don't bold or enlarge every line.
+- Lead with the result. Keep a simple answer short (a sentence or two) — don't wrap it in headings.
+- For richer answers, format like a clean README in Markdown: use \`##\`/\`###\` headings to organize sections, **Markdown tables** for lists of items with attributes (e.g. tasks with due dates, PRs with status) or comparisons, "-" bullet lists, **bold** for key terms, \`code\` for identifiers, and [links](url). Prefer a table over a long bulleted list when each item has 2+ attributes.
+- Don't over-format: no title on trivial replies, and never bold or enlarge every line.
 - **After calling tools and getting results, you MUST always provide a brief text response summarizing what was done.** Never respond with only tool calls — always end with a human-readable message.
 - If asked to do something your current plan doesn't support, explain the limitation and what plan unlocks it.
 - Current plan: ${planTier}
