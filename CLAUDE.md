@@ -185,18 +185,51 @@ Model IDs live **only** in `lib/ai/providers/` — never hardcode them elsewhere
 - Metering is two-track: pre-flight `checkAndIncrementUsage()` against Redis, plus a post-hoc
   `AiUsageLog` row (which stores the *tier* string, not the model ID, and no token counts).
 
-### Tools — 13 total, all workspace-scoped
+### Tools — all workspace-scoped
 
 | File | Tools |
 |---|---|
 | `task-tools.ts` | createTask, listTasks, updateTask, deleteTask (soft — sets CANCELLED) |
-| `calendar-tools.ts` | listUpcomingEvents, createCalendarEvent, checkAvailability |
+| `calendar-tools.ts` | listUpcomingEvents, createCalendarEvent (writes Google **and** local Task), checkAvailability, detectScheduleConflicts, findFocusTime, suggestReschedule |
 | `github-tools.ts` | listRepositories, listPullRequests, getPullRequest, listIssues, createGitHubIssue, getRepoActivity |
+| `thread-tools.ts` | listThreads, getThread, createThread (optionally attaches a meeting + auto-links) — loaded alongside task tools |
 
 `getToolsForContext()` loads tools by **connection status, not tier** — all integrations are free
 on all tiers. Task tools always load. Jira tools do not exist yet (call site commented out).
 
 ---
+
+## Calendar Intelligence, Connectivity Thread & Agent Actions (V4 — shipped)
+
+The calendar is now the first working slice of the **Observe → Understand → Predict →
+Recommend → Act** loop. Three layers, all workspace-scoped:
+
+- **Time intelligence** (`lib/calendar/intelligence.ts`) — pure detectors over meetings
+  (`GOOGLE_CALENDAR`-sourced Tasks) + entries: `detectConflicts`, `findFocusGaps`,
+  `detectOverload`, `findFreeWindows`. Each `Insight` is evidence-backed
+  (`{ signal, confidence, sources }`) with an optional `suggestedAction`. Surfaced read-only
+  to **all tiers** via the `insight` tRPC router (planner banner) + the 3 AI tools above.
+- **Connectivity Thread** (`lib/threads/`, `Thread`/`ThreadLink` models) — the V4 core
+  primitive: one work item linking a meeting Task ↔ GitHub PRs/issues ↔ people. **Never
+  auto-created** — formed via UI/AI or by approving a `SUGGEST_THREAD` action; `autoLinkMeeting`
+  then derives GitHub links (`parseGitHubRefs` → matched stored GitHub Tasks) and attendee→member
+  `PERSON` links (`resolvePeople`). `thread` tRPC router + `thread-tools.ts`.
+- **Approval-gated agent actions** (`lib/agent/`, `AgentAction`/`AuditLog` models) — governance
+  is literal: **observe = auto** (the `calendar-intelligence-scan` cron drafts `PENDING` actions,
+  deduped by `dedupeKey`, never resurrecting a resolved one), **write = approval** (`agentAction.approve`
+  → `executeAgentAction` via existing write paths → `EXECUTED`), **delete = explicit** (task DELETE
+  route). Every transition writes an `AuditLog`. Action *execution* is plan-gated on
+  `hasFeature(tier,"agentActions")` (**PRO+**; insights/proposals stay free). `notify.ts` fans new
+  proposals to in-app (realtime `refresh`) + an email digest (`agent-digest.html`); Slack is a stub.
+
+**Surfaces:** the `/[workspace]/agent` page (feed with Approve/Reject/Dismiss + "Check my calendar"
+= `scanNow`), a sidebar **Agent** nav with a pending-count badge, and an inline planner panel
+(`agent-panel.tsx`). The planner event popover (`planner-interactions.tsx`) reveals attendees + RSVP,
+Meet link, and the linked thread; month view supports drag-to-reschedule and click-empty-to-create
+(`POST /api/calendar/events`).
+
+New tRPC routers on `appRouter`: `insight`, `thread`, `agentAction`. New realtime events:
+`thread.updated`, `agent-action.created` (both currently ride the `refresh` path client-side).
 
 ## Billing — V3, action-based
 
@@ -218,13 +251,18 @@ Monetisation is via AI **actions**, not integration access.
 
 ---
 
-## Background Jobs — 11 Inngest functions
+## Background Jobs — 14 Inngest functions
 
-Registered in `app/api/inngest/route.ts`:
+Registered in `khove_backend/src/app.ts` (`inngestServe` functions array).
 
 **Calendar** (`lib/inngest/functions/calendar-sync.ts`): `google-calendar-initial-sync`,
-`google-calendar-webhook`, `google-calendar-refresh-tokens`, `google-calendar-renew-webhooks`,
-`google-calendar-disconnect-cleanup`
+`google-calendar-webhook` (now incremental across **all** calendars via a per-calendar
+`syncToken` map — `incrementalSyncAllCalendars`), `google-calendar-refresh-tokens` (deactivates
+on `invalid_grant` + fires `token-revoked`), `google-calendar-renew-webhooks`,
+`google-calendar-disconnect-cleanup`, `google-calendar-token-revoked` (reconnect email + realtime)
+
+**Agent** (`agent-actions.ts`): `calendar-intelligence-scan` (daily 08:00 — drafts PENDING
+agent actions per connected workspace)
 
 **GitHub** (`github-sync.ts`): `github-initial-sync`, `github-webhook-handler`
 
@@ -294,7 +332,10 @@ on any `realtime` event. (The old SSE/Redis-poll endpoint is deleted.)
 | Workspaces (CRUD, roles, switcher, authorization) | ✅ |
 | Prisma + Supabase, Redis, SSE, Inngest | ✅ |
 | AI core (routing, tools, memory, metering) | ✅ |
-| Google Calendar | ✅ workspace-scoped |
+| Google Calendar | ✅ workspace-scoped; rich sync (Meet/RSVP/recurrence), `invalid_grant` handled, delete propagation, all-calendar incremental |
+| Calendar intelligence (conflicts/focus/overload) | ✅ planner banner + AI tools |
+| Connectivity Thread (`Thread`/`ThreadLink`) | ✅ primitive + auto-linking + AI/tRPC |
+| Agent actions (approval-gated + audit) | ✅ cron drafts → approve executes (PRO+) → audited |
 | GitHub | ✅ code complete — needs `GITHUB_*` env vars |
 | Transactional email (Resend) | ✅ 4 templates |
 | Planner month / week / day views | ✅ |
@@ -329,10 +370,9 @@ Observed while auditing; none are blocking, none have been "fixed" silently.
   `workspaceAdminProcedure` — verify the in-handler ownership check.
 - Email template values are interpolated without HTML escaping.
 - `calendar-client.tsx`'s `GithubIcon` has `alt="Jira"` (copy-paste).
-- **GitHub webhook is deaf (env-name mismatch).** `lib/integrations/github.ts` reads
-  `process.env.GITHUB_WEBHOOK_SECRET`, but `.env.local` defines `GITHUB_APP_WEBHOOK_SECRET`, so
-  the secret is `undefined` and `verifyWebhookSignature` rejects every webhook. No incremental
-  GitHub sync. Blocks the PR Shepherd — fix before the pilot.
+- **GitHub webhook secret** is canonicalised on `GITHUB_APP_WEBHOOK_SECRET`
+  (`lib/integrations/github.ts` `verifyWebhookSignature`) — the old env-name mismatch is fixed.
+  Still needs the `GITHUB_*` vars set in the deployed backend for the PR Shepherd sensor to fire.
 - **Sidebar `action: true` items are dead buttons.** In `components/app-sidebar.tsx`, items with
   `action: true` (`Connect GitHub`, `New conversation`, `New task`, `Filter`) render as a
   `<button>` with no `onClick`. Only `href` items work. The only working GitHub connect entry is

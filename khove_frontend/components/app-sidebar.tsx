@@ -84,6 +84,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "tasks",    path: "/tasks",    assets: ["/assets/tasks.svg", "/assets/tasks-outlined.svg"],       label: "Tasks",    locked: false, glowColor: "#0EA5E9" },       // ocean blue
   { id: "planner",  path: "/planner",  assets: ["/assets/planner.svg", "/assets/planner-outlined.svg"],   label: "Planner",  locked: false, glowColor: "#F43F5E" },       // rose
   { id: "github",   path: "/github",   assets: ["/assets/github.svg", "/assets/github.svg"],             label: "GitHub",   locked: false, glowColor: "#10B981" },       // emerald
+  { id: "agent",    path: "/agent",    icon: Bot,      label: "Agent",    locked: false, glowColor: "#14B8A6" },       // teal
   { id: "jira",     path: "/jira",     icon: Layers,   label: "Jira",     locked: true, lockedLabel: "Phase 5", glowColor: "#6366F1" }, // indigo
 ];
 
@@ -202,6 +203,23 @@ function getSections(section: string, slug: string): { title: string; sections: 
         },
       ],
     },
+    agent: {
+      title: "Agent",
+      sections: [
+        {
+          title: "Review",
+          items: [
+            { label: "Pending approvals", href: wsHref(slug, "/agent"), icon: Bot },
+          ],
+        },
+        {
+          title: "About",
+          items: [
+            { label: "Khove proposes calendar actions from your schedule. Nothing runs until you approve.", sub: "placeholder" },
+          ],
+        },
+      ],
+    },
     jira: {
       title: "Jira",
       sections: [
@@ -219,10 +237,12 @@ function IconRail({
   activeSection,
   panelCollapsed,
   slug,
+  pendingActions,
 }: {
   activeSection: string;
   panelCollapsed: boolean;
   slug: string;
+  pendingActions: number;
 }) {
   return (
     <aside className="relative flex flex-col items-center w-[72px] flex-shrink-0 bg-[#0a0a0a] border-r border-white/[0.07] py-3">
@@ -285,6 +305,12 @@ function IconRail({
 
               {item.locked && (
                 <span className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-white/25" />
+              )}
+
+              {item.id === "agent" && pendingActions > 0 && (
+                <span className="absolute top-1 right-3 min-w-[15px] h-[15px] px-1 flex items-center justify-center rounded-full bg-teal-400 text-black text-[9px] font-bold leading-none">
+                  {pendingActions > 9 ? "9+" : pendingActions}
+                </span>
               )}
             </Link>
           );
@@ -556,11 +582,13 @@ export default function AppSidebar({
   workspace,
   workspaces = [],
   recentConversations = [],
+  pendingActions = 0,
 }: {
   user: User;
   workspace: WorkspaceInfo;
   workspaces?: WorkspaceListItem[];
   recentConversations?: Conversation[];
+  pendingActions?: number;
 }) {
   const pathname = usePathname();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -575,6 +603,7 @@ export default function AppSidebar({
           activeSection={activeSection}
           panelCollapsed={panelCollapsed}
           slug={workspace.slug}
+          pendingActions={pendingActions}
         />
 
         <DetailPanel

@@ -28,9 +28,10 @@ export default async function WorkspaceLayout({
 
   // Workspace-scoped reads need x-workspace-id.
   const wsScoped = await serverTRPC(ws.id);
-  const [recentConversations, userWorkspaces] = await Promise.all([
+  const [recentConversations, userWorkspaces, pendingActions] = await Promise.all([
     wsScoped.conversation.list.query({ limit: 10 }),
     base.workspace.list.query(),
+    wsScoped.agentAction.pendingCount.query().catch(() => 0),
   ]);
 
   return (
@@ -68,6 +69,7 @@ export default async function WorkspaceLayout({
               title: c.title ?? "Untitled conversation",
               updatedAt: c.updatedAt.toISOString(),
             }))}
+            pendingActions={pendingActions}
           />
           <RealtimeProvider />
           <main className="flex-1 overflow-hidden bg-black">{children}</main>

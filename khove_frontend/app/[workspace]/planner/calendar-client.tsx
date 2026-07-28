@@ -15,6 +15,8 @@ import { WeekView } from "./components/week-view";
 import { DayView } from "./components/day-view";
 import { InsightBanner, type PlannerInsight } from "./components/insight-banner";
 import { PlannerInteractionsProvider } from "./components/planner-interactions";
+import { PlannerAgentPanel } from "./components/agent-panel";
+import type { AgentActionView } from "@/components/agent/agent-action-card";
 
 // ---------------------------------------------------------------------------
 // Google Calendar logo
@@ -86,6 +88,7 @@ interface PlannerClientProps {
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
   insights?: PlannerInsight[];
+  agentActions?: AgentActionView[];
   view?: "month" | "week" | "day";
 }
 
@@ -268,6 +271,7 @@ function PlannerCalendar({
   tasks,
   calendarEntries,
   insights = [],
+  agentActions = [],
   isGoogleConnected,
   canAdmin,
   workspaceId,
@@ -277,6 +281,7 @@ function PlannerCalendar({
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
   insights?: PlannerInsight[];
+  agentActions?: AgentActionView[];
   isGoogleConnected: boolean;
   canAdmin: boolean;
   workspaceId: string;
@@ -293,6 +298,7 @@ function PlannerCalendar({
     >
       <div className="flex flex-col h-full bg-black overflow-hidden">
         {insights.length > 0 && <InsightBanner insights={insights} />}
+        {agentActions.length > 0 && <PlannerAgentPanel actions={agentActions} slug={workspace.slug} />}
         {view === "month" && (
           <MonthView
             tasks={tasks}
@@ -318,10 +324,10 @@ function PlannerCalendar({
 // Export
 // ---------------------------------------------------------------------------
 
-export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, insights = [], view = "month" }: PlannerClientProps) {
+export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, insights = [], agentActions = [], view = "month" }: PlannerClientProps) {
   if (isSyncing) return <PlannerSyncingState />;
   if (isFirstTime) return <PlannerEmptyState planTier={planTier} canAdmin={canAdmin} workspaceId={workspaceId} />;
-  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} insights={insights} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} view={view} />;
+  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} insights={insights} agentActions={agentActions} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} view={view} />;
 }
 
 // ---------------------------------------------------------------------------
