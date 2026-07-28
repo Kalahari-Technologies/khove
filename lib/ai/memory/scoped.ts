@@ -7,18 +7,18 @@
  * scopes (workspace vs personal) in Technical PRD §16.2.
  *
  * DRAFT — pilot direction (PRD §16). Not yet wired into `runAIConversation`.
- * Setup before this runs:
- *   1. `npm i mem0ai` (then delete the @ts-expect-error below).
+ * `mem0ai` is loaded LAZILY (dynamic import) so importing this module never
+ * requires the dependency; only actually calling a memory op needs it.
+ * Setup before the memory ops run:
+ *   1. `npm i mem0ai`.
  *   2. Enable pgvector on Supabase (`create extension if not exists vector;`).
- *   3. Verify the provider/config keys against the installed mem0ai version —
- *      the OSS provider matrix moves; if the Google embedder isn't supported in
- *      your version, swap `embedder.provider` (config-only change).
+ *   3. Verify the provider/config keys against the installed mem0ai version.
  */
 
-// @ts-expect-error — `mem0ai` is added at pilot implementation time (see header).
-import { Memory } from "mem0ai/oss";
-
 const EMBED_DIM = 768; // gemini text-embedding-004
+// Non-literal specifier — kept out of static analysis so the optional,
+// draft-stage dependency is not required at module load.
+const MEM0_MODULE = "mem0ai/oss";
 
 export interface MemoryRecord {
   id: string;
@@ -49,8 +49,9 @@ type Msg = { role: string; content: string };
 let _client: any | null = null;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function client(): any {
+async function client(): Promise<any> {
   if (_client) return _client;
+  const { Memory } = await import(MEM0_MODULE);
   _client = new Memory({
     version: "v1.1",
     vectorStore: {
@@ -107,7 +108,7 @@ export function scopedMemory(workspaceId: string, userId: string) {
   return {
     /** Work content — scoped to this workspace, never crosses it. */
     async remember(messages: Msg[], opts: RememberOptions = {}): Promise<void> {
-      await client().add(messages, {
+      await (await client()).add(messages, {
         userId,
         runId: opts.threadId,
         agentId: opts.agentId,
@@ -120,7 +121,7 @@ export function scopedMemory(workspaceId: string, userId: string) {
      * follow the user across their own workspaces. Do not pass work content here.
      */
     async rememberPreference(messages: Msg[]): Promise<void> {
-      await client().add(messages, {
+      await (await client()).add(messages, {
         userId,
         metadata: { scope: "personal" },
       });
@@ -128,7 +129,7 @@ export function scopedMemory(workspaceId: string, userId: string) {
 
     /** Recall work content for THIS workspace (optionally a thread/agent). */
     async recall(query: string, opts: RecallOptions = {}): Promise<MemoryRecord[]> {
-      const res = await client().search(query, {
+      const res = await (await client()).search(query, {
         userId,
         runId: opts.threadId,
         agentId: opts.agentId,
@@ -140,7 +141,7 @@ export function scopedMemory(workspaceId: string, userId: string) {
 
     /** Recall the user's cross-workspace preferences (content-free). */
     async recallPreferences(query: string, limit = 4): Promise<MemoryRecord[]> {
-      const res = await client().search(query, {
+      const res = await (await client()).search(query, {
         userId,
         limit,
         filters: { scope: "personal" },
@@ -150,7 +151,7 @@ export function scopedMemory(workspaceId: string, userId: string) {
 
     /** Delete all memory for this workspace (disconnect / erasure request). */
     async forgetWorkspace(): Promise<void> {
-      await client().deleteAll({ userId, filters: { workspaceId } });
+      await (await client()).deleteAll({ userId, filters: { workspaceId } });
     },
   };
 }
