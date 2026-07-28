@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { router, workspaceProcedure } from "@backend/server/trpc";
+import { router, workspaceProcedure, workspaceWriteProcedure } from "@backend/server/trpc";
 import { db } from "@backend/lib/db";
 
 export const conversationRouter = router({
@@ -11,7 +11,8 @@ export const conversationRouter = router({
         where: { workspaceId: ctx.workspace.id, userId: ctx.user.id },
         orderBy: { updatedAt: "desc" },
         take: input?.limit ?? 20,
-        select: { id: true, title: true, updatedAt: true },
+        // lastReadAt lets the client compute "unseen" (updatedAt > lastReadAt).
+        select: { id: true, title: true, updatedAt: true, lastReadAt: true },
       });
     }),
 
@@ -22,5 +23,16 @@ export const conversationRouter = router({
       return db.conversation.findFirst({
         where: { id: input.id, userId: ctx.user.id, workspaceId: ctx.workspace.id },
       });
+    }),
+
+  /** Mark a conversation as read (clears its "unseen reply" indicator). */
+  markRead: workspaceWriteProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.conversation.updateMany({
+        where: { id: input.id, userId: ctx.user.id, workspaceId: ctx.workspace.id },
+        data: { lastReadAt: new Date() },
+      });
+      return { ok: true };
     }),
 });

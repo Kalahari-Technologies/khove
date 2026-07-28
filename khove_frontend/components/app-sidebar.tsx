@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
+import { useConversations } from "@/lib/conversations/conversations-context";
 import {
   Bot,
   Layers,
@@ -363,7 +364,6 @@ function DetailPanel({
   user,
   isCollapsed,
   onToggle,
-  recentConversations,
   slug,
   workspace,
   workspaces,
@@ -373,12 +373,13 @@ function DetailPanel({
   user: User;
   isCollapsed: boolean;
   onToggle: () => void;
-  recentConversations: Conversation[];
   slug: string;
   workspace: WorkspaceInfo;
   workspaces: WorkspaceListItem[];
   onCreateWorkspace: () => void;
 }) {
+  const router = useRouter();
+  const { list: conversations, activeId } = useConversations();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["Quick Actions", "Views", "Suggested", "Recent"])
   );
@@ -466,21 +467,36 @@ function DetailPanel({
                 {isExpanded && (
                   <div className="mt-0.5 space-y-0.5">
                     {section.title === "Recent" && activeSection === "chat" ? (
-                      recentConversations.length === 0 ? (
+                      conversations.length === 0 ? (
                         <p className="px-2 py-2 text-[12px] text-white/30 font-sans leading-relaxed">
                           No conversations yet
                         </p>
                       ) : (
-                        recentConversations.map((conv) => (
-                          <Link key={conv.id} href={wsHref(slug, `/chat?conversationId=${conv.id}`)}>
-                            <span
-                              className="flex items-center gap-2.5 w-full px-2 py-[7px] rounded-md text-[13px] font-sans text-white/65 hover:text-white hover:bg-white/[0.06] cursor-pointer transition-all duration-[120ms]"
-                              style={{ transitionTimingFunction: ease }}
-                            >
-                              <span className="truncate flex-1 leading-snug">{conv.title}</span>
-                            </span>
-                          </Link>
-                        ))
+                        conversations.map((conv) => {
+                          const isActive = conv.id === activeId;
+                          return (
+                            <Link key={conv.id} href={wsHref(slug, `/chat?conversationId=${conv.id}`)}>
+                              <span
+                                className={[
+                                  "flex items-center gap-2 w-full px-2 py-[7px] rounded-md text-[13px] font-sans cursor-pointer transition-all duration-[120ms]",
+                                  isActive ? "bg-white/[0.08] text-white" : "text-white/65 hover:text-white hover:bg-white/[0.06]",
+                                ].join(" ")}
+                                style={{ transitionTimingFunction: ease }}
+                              >
+                                {conv.generating ? (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse flex-shrink-0" title="Generating…" />
+                                ) : conv.unseen ? (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" title="New reply" />
+                                ) : (
+                                  <span className="w-1.5 h-1.5 flex-shrink-0" />
+                                )}
+                                <span className={`truncate flex-1 leading-snug ${conv.unseen && !isActive ? "font-medium text-white/90" : ""}`}>
+                                  {conv.title}
+                                </span>
+                              </span>
+                            </Link>
+                          );
+                        })
                       )
                     ) : (
                       section.items.map((item) => {
@@ -521,10 +537,19 @@ function DetailPanel({
 
                         return (
                           <div key={item.label}>
-                            {item.href
-                              ? <Link href={item.href}>{inner}</Link>
-                              : <button type="button" className="w-full text-left">{inner}</button>
-                            }
+                            {item.href ? (
+                              <Link href={item.href}>{inner}</Link>
+                            ) : (
+                              <button
+                                type="button"
+                                className="w-full text-left"
+                                onClick={() => {
+                                  if (item.label === "New conversation") router.push(wsHref(slug, "/chat"));
+                                }}
+                              >
+                                {inner}
+                              </button>
+                            )}
                           </div>
                         );
                       })
@@ -581,13 +606,11 @@ export default function AppSidebar({
   user,
   workspace,
   workspaces = [],
-  recentConversations = [],
   pendingActions = 0,
 }: {
   user: User;
   workspace: WorkspaceInfo;
   workspaces?: WorkspaceListItem[];
-  recentConversations?: Conversation[];
   pendingActions?: number;
 }) {
   const pathname = usePathname();
@@ -611,7 +634,6 @@ export default function AppSidebar({
           user={user}
           isCollapsed={panelCollapsed}
           onToggle={() => setPanelCollapsed(true)}
-          recentConversations={recentConversations}
           slug={workspace.slug}
           workspace={workspace}
           workspaces={workspaces}

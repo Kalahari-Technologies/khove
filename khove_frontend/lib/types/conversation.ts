@@ -16,12 +16,19 @@ export type ConversationSummary = Prisma.ConversationGetPayload<{
  * Since Prisma types JSON as `Prisma.JsonValue`, callers must cast:
  *   `conversation.messages as unknown as ChatMessage[]`
  */
+export interface ChatStep {
+  tool: string;
+  label: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   /** ISO string — optional for backward compatibility with older records. */
   timestamp?: string;
   model?: string;
+  /** Assistant tool-process trail, shown as a collapsible block. */
+  steps?: ChatStep[];
 }
 
 /**
@@ -34,4 +41,5 @@ export interface ClientChatMessage {
   content: string;
   timestamp: Date;
   model?: string;
+  steps?: ChatStep[];
 }

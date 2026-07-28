@@ -314,9 +314,10 @@ model Conversation {
   id          String   @id @default(cuid())
   userId      String
   workspaceId String?
-  messages    Json     @default("[]") // Array of { role, content, timestamp }
+  messages    Json     @default("[]") // Array of { role, content, timestamp, steps? }
   summary     String?
   title       String?
+  lastReadAt  DateTime? // when the user last opened it; unseen = updatedAt > lastReadAt
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

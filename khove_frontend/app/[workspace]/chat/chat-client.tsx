@@ -2,10 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Paperclip, Send, ChevronRight } from "lucide-react";
+import { Paperclip, Send, ChevronRight, ChevronDown, Sparkles, Check } from "lucide-react";
 import type { ChatMessage, ClientChatMessage } from "@/lib/types";
-import { useWorkspace } from "@/lib/workspace/workspace-context";
-import { useBackendFetch } from "@/lib/trpc/api";
+import { useConversations, type StreamState } from "@/lib/conversations/conversations-context";
 import dynamic from "next/dynamic";
 
 const Spline = dynamic(() => import("@splinetool/react-spline"), { ssr: false });
@@ -303,6 +302,47 @@ function SuggestionChips({ onSelect }: { onSelect: (p: string) => void }) {
   );
 }
 
+// ─── Process block (AI tool-process trail) ────────────────────────────────────
+
+function ProcessBlock({
+  steps,
+  streaming = false,
+}: {
+  steps: Array<{ label: string; done?: boolean }>;
+  streaming?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  if (steps.length === 0) return null;
+  const anyRunning = streaming && steps.some((s) => !s.done);
+  const headline = anyRunning
+    ? `${steps[steps.length - 1].label}…`
+    : `${steps.length} step${steps.length > 1 ? "s" : ""}`;
+
+  return (
+    <div className="mb-2 rounded-lg border border-white/[0.07] bg-white/[0.02] overflow-hidden max-w-md">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 w-full px-3 py-1.5 text-left">
+        <Sparkles size={12} className={`flex-shrink-0 ${anyRunning ? "text-violet-300" : "text-white/40"}`} />
+        <span className="text-[11px] text-white/55 flex-1 truncate">{headline}</span>
+        <ChevronDown size={12} className={`text-white/30 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-3 pb-2 pt-0.5 space-y-1 border-t border-white/[0.05]">
+          {steps.map((s, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px] text-white/50">
+              {s.done ? (
+                <Check size={11} className="text-emerald-400/70 flex-shrink-0" />
+              ) : (
+                <span className="w-2.5 h-2.5 rounded-full border border-white/25 border-t-white/70 animate-spin flex-shrink-0" />
+              )}
+              <span className="truncate">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: ClientChatMessage }) {
@@ -329,6 +369,9 @@ function MessageBubble({ message }: { message: ClientChatMessage }) {
           </div>
         ) : (
           <div className="text-[14px] text-white/88 leading-relaxed max-w-2xl">
+            {message.steps && message.steps.length > 0 && (
+              <ProcessBlock steps={message.steps.map((s) => ({ label: s.label, done: true }))} />
+            )}
             <MessageContent content={message.content} />
           </div>
         )}
@@ -383,21 +426,45 @@ function formatInline(text: string): React.ReactNode {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function ChatClient({ userName, conversationId: initialConvId, initialMessages = [] }: ChatClientProps) {
-  const workspace = useWorkspace();
-  const backendFetch = useBackendFetch();
+export function ChatClient({ userName, initialMessages = [] }: ChatClientProps) {
+  const { activeStream, send, sending } = useConversations();
   const [messages, setMessages] = useState<ClientChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: crypto.randomUUID(),
       role: m.role,
       content: m.content,
       timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+      model: m.model,
+      steps: m.steps,
     }))
   );
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [conversationId, setConversationId] = useState(initialConvId);
-  const [isBlocked, setIsBlocked] = useState(false);
+  const foldedRef = useRef<StreamState | null>(null);
+  const isLoading = sending;
+
+  // Fold a completed live stream into the message list (dedup vs already-loaded history).
+  useEffect(() => {
+    if (!activeStream || activeStream.status === "streaming") return;
+    if (foldedRef.current === activeStream) return;
+    foldedRef.current = activeStream;
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant" && last.content === activeStream.assistantText) return prev;
+      return [
+        ...prev,
+        { id: crypto.randomUUID(), role: "user", content: activeStream.userMessage, timestamp: new Date() },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: activeStream.assistantText,
+          timestamp: new Date(),
+          steps: activeStream.steps.map((s) => ({ tool: s.tool, label: s.label })),
+        },
+      ];
+    });
+  }, [activeStream]);
+
+  const showLive = !!activeStream && foldedRef.current !== activeStream;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const splineContainerRef = useRef<HTMLDivElement>(null);
@@ -405,7 +472,7 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, activeStream]);
 
   // Make the Spline bot react when the user types — dispatch synthetic mousemove
   useEffect(() => {
@@ -431,52 +498,13 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
     ta.style.overflowY = ta.scrollHeight > fiveLineHeight ? "auto" : "hidden";
   }, [input]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback((text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || isLoading) return;
-
-    setMessages((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), role: "user", content: trimmed, timestamp: new Date() },
-    ]);
+    if (!trimmed || sending) return;
+    send(trimmed); // provider owns the streaming fetch (survives navigation)
     setInput("");
-    setIsLoading(true);
-
-    try {
-      const res = await backendFetch("/api/chat", {
-        method: "POST",
-        body: JSON.stringify({ message: trimmed, conversationId, workspaceId: workspace.id }),
-      });
-      const data = await res.json();
-
-      if (data.blocked) setIsBlocked(true);
-      if (data.conversationId) setConversationId(data.conversationId);
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.response ?? "Something went wrong. Please try again.",
-          timestamp: new Date(),
-          model: data.model,
-        },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "Network error. Please check your connection and try again.",
-          timestamp: new Date(),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-      textareaRef.current?.focus();
-    }
-  }, [isLoading, conversationId]);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [send, sending]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -485,7 +513,7 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
     }
   };
 
-  const isEmpty = messages.length === 0;
+  const isEmpty = messages.length === 0 && !showLive;
 
   return (
     <div className="h-full flex flex-col bg-black">
@@ -523,7 +551,7 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
                 onChange={setInput}
                 onSend={() => sendMessage(input)}
                 onKeyDown={handleKeyDown}
-                disabled={isLoading || isBlocked}
+                disabled={isLoading}
                 textareaRef={textareaRef}
               />
             </div>
@@ -533,28 +561,34 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
-            {isLoading && (
-              <div className="flex gap-3 items-center">
-                <div className="w-6 h-6 rounded-full flex-shrink-0 border border-white/[0.14] flex items-center justify-center text-[10px] font-semibold text-white/40">
-                  K
+            {showLive && activeStream && (
+              <>
+                <MessageBubble
+                  message={{ id: "live-user", role: "user", content: activeStream.userMessage, timestamp: new Date() }}
+                />
+                <div className="flex gap-3 flex-row">
+                  <div className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border border-white/[0.14]">
+                    <img src="/assets/khove-white.png" alt="Khove" className="w-3.5 h-3.5 object-contain" draggable={false} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {activeStream.steps.length > 0 && (
+                      <ProcessBlock steps={activeStream.steps} streaming={activeStream.status === "streaming"} />
+                    )}
+                    {activeStream.assistantText ? (
+                      <div className="text-[14px] text-white/88 leading-relaxed max-w-2xl">
+                        <MessageContent content={activeStream.assistantText} />
+                      </div>
+                    ) : activeStream.steps.length === 0 ? (
+                      <LoadingBreadcrumb />
+                    ) : null}
+                  </div>
                 </div>
-                <LoadingBreadcrumb />
-              </div>
+              </>
             )}
             <div ref={bottomRef} />
           </div>
         )}
       </div>
-
-      {/* Blocked banner */}
-      {isBlocked && (
-        <div className="w-full flex justify-center">
-          <div className="mx-6 mb-3 w-full max-w-2xl px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.10] text-[13px] text-white/55 flex items-center gap-2">
-            <span className="text-white/35">⚠</span>
-            <span>Monthly message limit reached. Upgrade your plan to continue.</span>
-          </div>
-        </div>
-      )}
 
       {/* Input bar (conversation mode) */}
       {!isEmpty && (
@@ -564,7 +598,7 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
             onChange={setInput}
             onSend={() => sendMessage(input)}
             onKeyDown={handleKeyDown}
-            disabled={isLoading || isBlocked}
+            disabled={isLoading}
             textareaRef={textareaRef}
           />
         </div>

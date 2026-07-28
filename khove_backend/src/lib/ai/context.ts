@@ -5,6 +5,8 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: string;
+  /** For assistant messages: the tool-process trail shown in the chat UI. */
+  steps?: Array<{ tool: string; label: string }>;
 }
 
 const MAX_CONVERSATION_MESSAGES = 40;
