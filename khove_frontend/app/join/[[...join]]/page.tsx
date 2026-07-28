@@ -91,10 +91,16 @@ export default function JoinPage() {
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [code, setCode] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!isLoaded) return;
+
+    if (!acceptedTerms) {
+      setError("Please accept the Terms & Conditions and Privacy Policy to continue.");
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -142,6 +148,10 @@ export default function JoinPage() {
 
   async function handleOAuth(provider: "oauth_google" | "oauth_github" | "oauth_atlassian") {
     if (!isLoaded) return;
+    if (!acceptedTerms) {
+      setError("Please accept the Terms & Conditions and Privacy Policy to continue.");
+      return;
+    }
     try {
       await signUp.authenticateWithRedirect({
         strategy: provider,
@@ -277,9 +287,39 @@ export default function JoinPage() {
                 )}
 
                 <BoxReveal duration={0.3} width="100%">
+                  <label className="flex cursor-pointer items-start gap-2.5 select-none">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-white/[0.20] bg-white/[0.03] accent-white"
+                    />
+                    <span className="text-[12px] leading-relaxed text-white/50">
+                      I agree to Khove&apos;s{" "}
+                      <Link
+                        href="/terms"
+                        target="_blank"
+                        className="text-white/75 underline underline-offset-2 hover:text-white transition-colors"
+                      >
+                        Terms &amp; Conditions
+                      </Link>{" "}
+                      and{" "}
+                      <Link
+                        href="/privacy"
+                        target="_blank"
+                        className="text-white/75 underline underline-offset-2 hover:text-white transition-colors"
+                      >
+                        Privacy Policy
+                      </Link>
+                      .
+                    </span>
+                  </label>
+                </BoxReveal>
+
+                <BoxReveal duration={0.3} width="100%">
                   <button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || !acceptedTerms}
                     className="group/btn relative w-full h-10 rounded-lg bg-white text-black text-[13px] font-medium hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer active:scale-[0.98]"
                     style={{ transitionTimingFunction: ease }}
                   >

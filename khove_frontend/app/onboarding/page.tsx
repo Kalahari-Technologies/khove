@@ -41,7 +41,7 @@ export default function OnboardingPage() {
 
     // If user already has a username, they've completed onboarding — redirect
     if (user.username) {
-      router.push("/");
+      router.push("/home");
       return;
     }
 

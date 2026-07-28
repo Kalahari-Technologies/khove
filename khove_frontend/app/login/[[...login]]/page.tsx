@@ -105,7 +105,7 @@ export default function LoginPage() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.push("/");
+        router.push("/home");
       }
     } catch (err: unknown) {
       const clerkError = err as { errors?: { message: string }[] };
@@ -121,7 +121,7 @@ export default function LoginPage() {
       await signIn.authenticateWithRedirect({
         strategy: provider,
         redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/",
+        redirectUrlComplete: "/home",
       });
     } catch {
       setError("OAuth sign-in failed. Please try again.");

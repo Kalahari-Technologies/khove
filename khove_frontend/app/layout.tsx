@@ -5,10 +5,12 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.khove.xyz"),
   title: "Khove — Your tools, finally thinking together",
   description:
     "AI-native platform connecting GitHub, Jira, and Google Calendar through a single conversational AI interface.",
   keywords: ["AI", "productivity", "GitHub", "Jira", "Google Calendar", "developer tools"],
+  alternates: { canonical: "/" },
 };
 
 export default function RootLayout({
