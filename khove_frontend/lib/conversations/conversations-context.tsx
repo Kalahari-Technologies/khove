@@ -14,8 +14,6 @@ import { useBackendFetch } from "@/lib/trpc/api";
 import { trpc } from "@/lib/trpc/client";
 import type { ChatStep } from "@/lib/types/conversation";
 
-const PENDING = "__pending__";
-
 export interface ConvListItem {
   id: string;
   title: string;
@@ -87,10 +85,19 @@ export function ConversationsProvider({
     })),
   );
   const [streams, setStreams] = useState<Record<string, StreamState>>({});
+  // Key of the in-flight NEW-conversation stream shown on a fresh /chat (before it
+  // gets a real id in the URL). Independent of activeId so no navigation race.
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const nonceRef = useRef(0);
   const nowRef = useRef<() => string>(() => new Date().toISOString());
+  const activeIdRef = useRef<string | null>(activeId);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
-  // Re-seed the list when the server data changes (e.g. after router.refresh),
-  // preserving any client-side generating/unseen flags for in-flight streams.
+  // Any real navigation (new chat, or switching conversations) drops the fresh
+  // new-stream reference so a finished stream never leaks onto another view.
+  useEffect(() => { setNewKey(null); }, [activeId]);
+
+  // Re-seed the list when server data changes, preserving in-flight flags.
   useEffect(() => {
     setList((prev) => {
       const byId = new Map(prev.map((p) => [p.id, p]));
@@ -115,7 +122,6 @@ export function ConversationsProvider({
     [markReadMut],
   );
 
-  // Clear the unseen flag whenever the user views a conversation.
   useEffect(() => {
     if (activeId) markRead(activeId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,33 +131,25 @@ export function ConversationsProvider({
     setStreams((prev) => (prev[key] ? { ...prev, [key]: fn(prev[key]) } : prev));
   }, []);
 
-  // Ref of the current activeId so an async completion can decide "unseen".
-  const activeIdRef = useRef<string | null>(activeId);
-  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
-
   const send = useCallback(
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
       const startId = activeId;
-      const key = startId ?? PENDING;
+      const isNew = !startId;
+      const key = startId ?? `new-${++nonceRef.current}`;
 
       setStreams((prev) => ({
         ...prev,
         [key]: { userMessage: trimmed, assistantText: "", steps: [], status: "streaming" },
       }));
+      if (isNew) {
+        setNewKey(key);
+      } else {
+        setList((prev) => prev.map((c) => (c.id === key ? { ...c, generating: true, updatedAt: nowRef.current() } : c)));
+      }
 
-      setList((prev) => {
-        if (startId) {
-          return prev.map((c) => (c.id === startId ? { ...c, generating: true, updatedAt: nowRef.current() } : c));
-        }
-        return [
-          { id: PENDING, title: trimmed.slice(0, 60), updatedAt: nowRef.current(), unseen: false, generating: true },
-          ...prev,
-        ];
-      });
-
-      let currentKey = key;
+      let realId = startId;
 
       (async () => {
         try {
@@ -169,28 +167,20 @@ export function ConversationsProvider({
           const handle = (e: Record<string, unknown>) => {
             const t = e.t as string;
             if (t === "meta") {
-              const real = e.conversationId as string;
-              if (currentKey !== real) {
-                setStreams((prev) => {
-                  const s = prev[currentKey];
-                  if (!s) return prev;
-                  const next = { ...prev, [real]: s };
-                  delete next[currentKey];
-                  return next;
-                });
-                setList((prev) => prev.map((c) => (c.id === currentKey ? { ...c, id: real } : c)));
-                if (key === PENDING) {
-                  const params = new URLSearchParams(searchParams.toString());
-                  params.set("conversationId", real);
-                  router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-                }
-                currentKey = real;
+              realId = e.conversationId as string;
+              if (isNew && realId) {
+                // Add the sidebar item now, with the REAL id (never a placeholder).
+                setList((prev) =>
+                  prev.some((c) => c.id === realId)
+                    ? prev
+                    : [{ id: realId as string, title: trimmed.slice(0, 60), updatedAt: nowRef.current(), unseen: false, generating: true }, ...prev],
+                );
               }
             } else if (t === "step") {
               const tool = e.tool as string;
               const label = e.label as string;
               const status = e.status as string;
-              patchStream(currentKey, (s) => {
+              patchStream(key, (s) => {
                 const idx = s.steps.findIndex((x) => x.tool === tool && !x.done);
                 if (status === "done" && idx >= 0) {
                   const steps = [...s.steps];
@@ -201,13 +191,13 @@ export function ConversationsProvider({
                 return s;
               });
             } else if (t === "text") {
-              patchStream(currentKey, (s) => ({ ...s, assistantText: s.assistantText + (e.delta as string) }));
+              patchStream(key, (s) => ({ ...s, assistantText: s.assistantText + (e.delta as string) }));
             } else if (t === "blocked") {
-              patchStream(currentKey, (s) => ({ ...s, assistantText: e.response as string, status: "done" }));
+              patchStream(key, (s) => ({ ...s, assistantText: e.response as string, status: "done" }));
             } else if (t === "error") {
-              patchStream(currentKey, (s) => ({ ...s, assistantText: s.assistantText + `\n\n_${e.message as string}_`, status: "error" }));
+              patchStream(key, (s) => ({ ...s, assistantText: s.assistantText + `\n\n_${e.message as string}_`, status: "error" }));
             } else if (t === "done") {
-              patchStream(currentKey, (s) => ({ ...s, status: "done", steps: s.steps.map((x) => ({ ...x, done: true })) }));
+              patchStream(key, (s) => ({ ...s, status: "done", steps: s.steps.map((x) => ({ ...x, done: true })) }));
             }
           };
 
@@ -223,24 +213,38 @@ export function ConversationsProvider({
             }
           }
 
-          // Finalize the list entry.
-          setList((prev) =>
-            prev.map((c) =>
-              c.id === currentKey
-                ? { ...c, generating: false, updatedAt: nowRef.current(), unseen: activeIdRef.current !== currentKey }
-                : c,
-            ),
-          );
+          patchStream(key, (s) => (s.status === "streaming" ? { ...s, status: "done" } : s));
+          if (realId) {
+            setList((prev) =>
+              prev.map((c) =>
+                c.id === realId
+                  ? { ...c, generating: false, updatedAt: nowRef.current(), unseen: activeIdRef.current !== realId }
+                  : c,
+              ),
+            );
+          }
+          // For a brand-new conversation, move to its real URL exactly once, at the
+          // end — so the next message continues it and a reload restores history.
+          if (isNew && realId && activeIdRef.current !== realId) {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set("conversationId", realId);
+            router.replace(`${pathname}?${params.toString()}`);
+          }
         } catch {
-          patchStream(currentKey, (s) => ({ ...s, status: "error", assistantText: s.assistantText || "Something went wrong. Please try again." }));
-          setList((prev) => prev.map((c) => (c.id === currentKey ? { ...c, generating: false } : c)));
+          patchStream(key, (s) => ({ ...s, status: "error", assistantText: s.assistantText || "Something went wrong. Please try again." }));
+          if (realId) setList((prev) => prev.map((c) => (c.id === realId ? { ...c, generating: false } : c)));
+          setNewKey((k) => (k === key ? null : k));
         }
       })();
     },
     [activeId, backendFetch, workspaceId, patchStream, router, pathname, searchParams],
   );
 
-  const activeStream = activeId ? streams[activeId] ?? null : streams[PENDING] ?? null;
+  const activeStream = activeId
+    ? streams[activeId] ?? null
+    : newKey
+      ? streams[newKey] ?? null
+      : null;
   const sending = activeStream?.status === "streaming";
 
   const value = useMemo<ConversationsCtx>(
