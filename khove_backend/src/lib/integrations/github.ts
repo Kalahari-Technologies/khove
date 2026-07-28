@@ -1,7 +1,7 @@
 import { Octokit } from "@octokit/rest";
 import { App } from "@octokit/app";
-import { db } from "@/lib/db";
-import { encrypt, decrypt } from "@/lib/encryption";
+import { db } from "@backend/lib/db";
+import { encrypt, decrypt } from "@backend/lib/encryption";
 
 // ---------------------------------------------------------------------------
 // Constants

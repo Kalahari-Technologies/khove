@@ -24,6 +24,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@backend/*": [
+        "./khove_backend/src/*"
       ]
     },
     "target": "ES2017"
@@ -35,6 +38,9 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "packages",
+    "khove_backend",
+    "khove_frontend"
   ]
 }

@@ -2,6 +2,10 @@
   "name": "khove",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "khove_backend"
+  ],
   "scripts": {
     "dev": "next dev",
     "inngest": "npx inngest-cli@latest dev",
