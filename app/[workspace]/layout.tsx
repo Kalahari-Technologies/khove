@@ -1,15 +1,9 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
-import { db } from "@/lib/db";
-import {
-  getWorkspaceBySlug,
-  getWorkspaceMembership,
-  getPersonalWorkspace,
-  getUserWorkspaces,
-} from "@/lib/workspace/get-workspace";
 import { WorkspaceProvider } from "@/lib/workspace/workspace-context";
+import { TRPCProvider } from "@/lib/trpc/Provider";
 import AppSidebar from "@/components/app-sidebar";
 import { RealtimeProvider } from "@/components/realtime-provider";
+import { serverTRPC } from "@/lib/trpc/server";
 
 export default async function WorkspaceLayout({
   children,
@@ -18,88 +12,67 @@ export default async function WorkspaceLayout({
   children: React.ReactNode;
   params: Promise<{ workspace: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug } = await params;
+  const base = await serverTRPC();
 
-  // Resolve workspace by slug
-  let workspace = await getWorkspaceBySlug(slug);
+  // Auth gate: current user + personal workspace (for fallbacks).
+  const me = await base.workspace.me.query().catch(() => null);
+  if (!me) redirect("/login");
 
-  // If workspace not found, redirect to personal workspace
-  if (!workspace) {
-    const personal = await getPersonalWorkspace(user.id);
-    if (personal) {
-      redirect(`/${personal.slug}/chat`);
-    }
-    // Shouldn't happen — ensurePersonalWorkspace runs in auth
+  // Resolve the workspace by slug (throws if missing / not a member).
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) {
+    if (me.personalWorkspaceSlug) redirect(`/${me.personalWorkspaceSlug}/chat`);
     redirect("/login");
   }
 
-  // Check membership
-  const membership = await getWorkspaceMembership(workspace.id, user.id);
-  if (!membership) {
-    // Not a member — redirect to personal workspace
-    const personal = await getPersonalWorkspace(user.id);
-    if (personal) {
-      redirect(`/${personal.slug}/chat`);
-    }
-    redirect("/login");
-  }
-
-  // Fetch workspace-scoped conversations
-  const recentConversations = await db.conversation.findMany({
-    where: { userId: user.id, workspaceId: workspace.id },
-    orderBy: { updatedAt: "desc" },
-    take: 10,
-    select: { id: true, title: true, updatedAt: true },
-  });
-
-  // Fetch all user's workspaces (for switcher)
-  const userWorkspaces = await getUserWorkspaces(user.id);
+  // Workspace-scoped reads need x-workspace-id.
+  const wsScoped = await serverTRPC(ws.id);
+  const [recentConversations, userWorkspaces] = await Promise.all([
+    wsScoped.conversation.list.query({ limit: 10 }),
+    base.workspace.list.query(),
+  ]);
 
   return (
     <WorkspaceProvider
       workspace={{
-        id: workspace.id,
-        slug: workspace.slug,
-        name: workspace.name,
-        isPersonal: workspace.isPersonal,
-        role: membership.role,
+        id: ws.id,
+        slug: ws.slug,
+        name: ws.name,
+        isPersonal: ws.isPersonal,
+        role: ws.currentRole,
       }}
     >
-      <div className="flex h-screen bg-black overflow-hidden">
-        <AppSidebar
-          user={{
-            name: user.name,
-            email: user.email,
-            planTier: user.planTier,
-          }}
-          workspace={{
-            id: workspace.id,
-            slug: workspace.slug,
-            name: workspace.name,
-            isPersonal: workspace.isPersonal,
-            gradient: workspace.gradient,
-          }}
-          workspaces={userWorkspaces.map((wm) => ({
-            id: wm.workspace.id,
-            slug: wm.workspace.slug,
-            name: wm.workspace.name,
-            isPersonal: wm.workspace.isPersonal,
-            gradient: wm.workspace.gradient,
-            planTier: wm.workspace.planTier,
-            role: wm.role,
-          }))}
-          recentConversations={recentConversations.map((c) => ({
-            id: c.id,
-            title: c.title ?? "Untitled conversation",
-            updatedAt: c.updatedAt.toISOString(),
-          }))}
-        />
-        <RealtimeProvider />
-        <main className="flex-1 overflow-hidden bg-black">{children}</main>
-      </div>
+      <TRPCProvider>
+        <div className="flex h-screen bg-black overflow-hidden">
+          <AppSidebar
+            user={{ name: me.user.name, email: me.user.email, planTier: me.user.planTier }}
+            workspace={{
+              id: ws.id,
+              slug: ws.slug,
+              name: ws.name,
+              isPersonal: ws.isPersonal,
+              gradient: ws.gradient,
+            }}
+            workspaces={userWorkspaces.map((w) => ({
+              id: w.id,
+              slug: w.slug,
+              name: w.name,
+              isPersonal: w.isPersonal,
+              gradient: w.gradient,
+              planTier: w.planTier,
+              role: w.role,
+            }))}
+            recentConversations={recentConversations.map((c) => ({
+              id: c.id,
+              title: c.title ?? "Untitled conversation",
+              updatedAt: c.updatedAt.toISOString(),
+            }))}
+          />
+          <RealtimeProvider />
+          <main className="flex-1 overflow-hidden bg-black">{children}</main>
+        </div>
+      </TRPCProvider>
     </WorkspaceProvider>
   );
 }
