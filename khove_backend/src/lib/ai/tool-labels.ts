@@ -1,8 +1,7 @@
 /**
  * Friendly, past-tense labels for the AI's tool calls — shown in the chat's live
- * "process" trail (e.g. `checkAvailability` → "Checked availability"). Shared so
- * the backend emits a ready-to-display label and the frontend can fall back for
- * any unmapped tool name.
+ * "process" trail (e.g. `checkAvailability` → "Checked availability"). Kept in the
+ * backend (emitted in the stream) so no cross-package runtime import is needed.
  */
 export const TOOL_LABELS: Record<string, string> = {
   // Tasks
@@ -33,7 +32,6 @@ export const TOOL_LABELS: Record<string, string> = {
 /** Label for a tool name, humanizing unknown names as a fallback. */
 export function labelForTool(name: string): string {
   if (TOOL_LABELS[name]) return TOOL_LABELS[name];
-  // camelCase → "Sentence case"
   const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

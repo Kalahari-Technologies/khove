@@ -8,7 +8,7 @@ import type { ChatMessage } from "./context";
 import { getUserMemory, updateUserMemory, shouldUpdateMemory } from "./memory";
 import { getToolsForContext } from "./tools";
 import { hasFeature } from "@backend/lib/billing/plans";
-import { labelForTool } from "@khove/shared";
+import { labelForTool } from "@backend/lib/ai/tool-labels";
 
 export interface RunAIConversationInput {
   userId: string;
