@@ -23,6 +23,17 @@ export default async function GitHubPage({
     ? (await trpc.task.list.query({ source: "GITHUB", limit: 100 })).items
     : [];
 
+  // Which PR Tasks are linked into a Connectivity Thread (for the thread chip).
+  const threads = isConnected ? await trpc.thread.list.query({}).catch(() => []) : [];
+  const threadByTaskId: Record<string, { id: string; title: string }> = {};
+  for (const thread of threads) {
+    for (const link of thread.links) {
+      if (link.kind === "GITHUB_PR") {
+        threadByTaskId[link.refId] = { id: thread.id, title: thread.title };
+      }
+    }
+  }
+
   return (
     <GitHubClient
       isConnected={isConnected}
@@ -30,6 +41,7 @@ export default async function GitHubPage({
       workspaceId={ws.id}
       githubLogin={(metadata?.login as string) ?? null}
       githubAvatar={(metadata?.avatarUrl as string) ?? null}
+      threadByTaskId={threadByTaskId}
       tasks={tasks.map((t) => ({
         id: t.id,
         title: t.title,

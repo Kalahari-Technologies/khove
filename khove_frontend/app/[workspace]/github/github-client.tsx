@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
-import { ExternalLink, GitPullRequest, CircleDot, Unplug } from "lucide-react";
+import { ExternalLink, GitPullRequest, CircleDot, Unplug, CheckCircle2, XCircle, Link2 } from "lucide-react";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -25,6 +25,7 @@ interface GitHubClientProps {
   githubLogin: string | null;
   githubAvatar: string | null;
   tasks: GitHubTask[];
+  threadByTaskId: Record<string, { id: string; title: string }>;
 }
 
 export function GitHubClient({
@@ -34,6 +35,7 @@ export function GitHubClient({
   githubLogin,
   githubAvatar,
   tasks,
+  threadByTaskId,
 }: GitHubClientProps) {
   const router = useRouter();
   const workspace = useWorkspace();
@@ -121,7 +123,12 @@ export function GitHubClient({
           ) : (
             <div className="space-y-1">
               {prs.map((task) => (
-                <TaskRow key={task.id} task={task} workspaceSlug={workspace.slug} />
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  workspaceSlug={workspace.slug}
+                  thread={threadByTaskId[task.id]}
+                />
               ))}
             </div>
           )}
@@ -151,24 +158,73 @@ export function GitHubClient({
   );
 }
 
-function TaskRow({ task, workspaceSlug }: { task: GitHubTask; workspaceSlug: string }) {
+function TaskRow({
+  task,
+  workspaceSlug,
+  thread,
+}: {
+  task: GitHubTask;
+  workspaceSlug: string;
+  thread?: { id: string; title: string };
+}) {
   const ghMeta = task.metadata?.github as Record<string, unknown> | undefined;
   const repo = ghMeta?.repo as string | undefined;
+  const isPr = ghMeta?.type === "pull_request";
+  const isDraft = ghMeta?.isDraft === true;
+  const reviewDecision = ghMeta?.reviewDecision as string | undefined;
+  const ciStatus = ghMeta?.ciStatus as string | undefined;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/[0.03] transition-colors group">
+    <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-white/[0.03] transition-colors group">
       <span
         className="w-2 h-2 rounded-full flex-shrink-0"
         style={{ backgroundColor: task.statusColor }}
       />
       <a
         href={`/${workspaceSlug}/tasks/${task.id}`}
-        className="flex-1 text-[13px] text-white/80 truncate hover:text-white hover:underline transition-colors"
+        className="flex-1 min-w-0 text-[13px] text-white/80 truncate hover:text-white hover:underline transition-colors"
       >
         {task.title}
       </a>
+
+      {/* PR state chips (from the Shepherd's synced metadata) */}
+      {isPr && isDraft && (
+        <span className="text-[10px] text-white/40 border border-white/[0.1] rounded px-1.5 py-0.5 flex-shrink-0">
+          Draft
+        </span>
+      )}
+      {isPr && reviewDecision === "changes_requested" && (
+        <span className="flex items-center gap-1 text-[10px] text-amber-400/90 flex-shrink-0" title="Changes requested">
+          <XCircle size={11} /> Changes
+        </span>
+      )}
+      {isPr && reviewDecision === "approved" && (
+        <span className="flex items-center gap-1 text-[10px] text-emerald-400/90 flex-shrink-0" title="Approved">
+          <CheckCircle2 size={11} /> Approved
+        </span>
+      )}
+      {isPr && ciStatus === "failure" && (
+        <span className="flex items-center gap-1 text-[10px] text-red-400/90 flex-shrink-0" title="CI failing">
+          <XCircle size={11} /> CI
+        </span>
+      )}
+      {isPr && ciStatus === "success" && (
+        <span className="flex items-center gap-1 text-[10px] text-emerald-400/80 flex-shrink-0" title="CI passing">
+          <CheckCircle2 size={11} /> CI
+        </span>
+      )}
+      {thread && (
+        <span
+          className="flex items-center gap-1 text-[10px] text-white/50 border border-white/[0.08] rounded px-1.5 py-0.5 flex-shrink-0 max-w-[140px]"
+          title={`Linked to thread: ${thread.title}`}
+        >
+          <Link2 size={10} />
+          <span className="truncate">{thread.title}</span>
+        </span>
+      )}
+
       {repo && (
-        <span className="text-[11px] text-white/25 flex-shrink-0 hidden group-hover:block">
+        <span className="text-[11px] text-white/25 flex-shrink-0 hidden lg:group-hover:block">
           {repo}
         </span>
       )}
