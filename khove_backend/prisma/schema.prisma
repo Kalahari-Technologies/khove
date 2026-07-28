@@ -411,6 +411,11 @@ model Thread {
   title       String
   summary     String?
   status      ThreadStatus @default(OPEN)
+  // Initiative fields: a Thread with a targetDate IS an initiative (delivery
+  // confidence is computed against it). See Connectivity Intelligence design.
+  startedAt   DateTime?
+  targetDate  DateTime?
+  health      String?      // ON_TRACK | AT_RISK | SLIPPING | DONE (computed, cached)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 

@@ -10,6 +10,8 @@ import {
   autoLinkMeeting,
 } from "@backend/lib/threads";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
+import { db } from "@backend/lib/db";
+import { computeInitiativeDelivery, refreshInitiativeHealth } from "@backend/lib/intelligence/delivery";
 
 const LINK_KINDS = ["TASK", "CALENDAR_EVENT", "GITHUB_PR", "GITHUB_ISSUE", "PERSON", "JIRA_ISSUE"] as const;
 
@@ -67,5 +69,36 @@ export const threadRouter = router({
       await unlinkFromThread(ctx.workspace.id, input.linkId);
       await publishWorkspaceEvent(ctx.workspace.id, { type: "thread.updated", threadId: input.threadId }).catch(() => {});
       return { ok: true };
+    }),
+
+  /** Make a thread an initiative (or clear it) by setting a target/start date. */
+  setTarget: workspaceWriteProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        targetDate: z.string().nullable(),
+        startedAt: z.string().nullable().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const thread = await getThread(ctx.workspace.id, input.id);
+      if (!thread) throw new TRPCError({ code: "NOT_FOUND" });
+      await db.thread.update({
+        where: { id: input.id },
+        data: {
+          targetDate: input.targetDate ? new Date(input.targetDate) : null,
+          ...(input.startedAt !== undefined && { startedAt: input.startedAt ? new Date(input.startedAt) : null }),
+        },
+      });
+      const delivery = await refreshInitiativeHealth(ctx.workspace.id, input.id);
+      await publishWorkspaceEvent(ctx.workspace.id, { type: "thread.updated", threadId: input.id }).catch(() => {});
+      return { ok: true, delivery };
+    }),
+
+  /** Delivery confidence for an initiative — burn-up, velocity, projection, health. */
+  delivery: workspaceProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return computeInitiativeDelivery(ctx.workspace.id, input.id);
     }),
 });
