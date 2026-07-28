@@ -177,64 +177,86 @@ export async function listAllCalendarEvents(
 }
 
 /** Create a calendar event and return it. */
+export interface CreateEventInput {
+  summary: string;
+  description?: string;
+  startDateTime: string;
+  endDateTime: string;
+  attendees?: string[];
+  location?: string;
+  /** Generate a Google Meet link (conferenceData.createRequest). */
+  generateMeetLink?: boolean;
+}
+
 export async function createEvent(
   workspaceId: string,
-  event: {
-    summary: string;
-    description?: string;
-    startDateTime: string;
-    endDateTime: string;
-    attendees?: string[];
-    location?: string;
-  },
+  event: CreateEventInput,
 ): Promise<calendar_v3.Schema$Event> {
   const { calendar, calendarId } = await getCalendarClient(workspaceId);
 
+  const requestBody: calendar_v3.Schema$Event = {
+    summary: event.summary,
+    description: event.description,
+    location: event.location,
+    start: { dateTime: event.startDateTime },
+    end: { dateTime: event.endDateTime },
+    attendees: event.attendees?.map((email) => ({ email })),
+  };
+
+  if (event.generateMeetLink) {
+    requestBody.conferenceData = {
+      createRequest: {
+        requestId: `khove-meet-${Date.now()}`,
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    };
+  }
+
   const res = await calendar.events.insert({
     calendarId,
-    requestBody: {
-      summary: event.summary,
-      description: event.description,
-      location: event.location,
-      start: { dateTime: event.startDateTime },
-      end: { dateTime: event.endDateTime },
-      attendees: event.attendees?.map((email) => ({ email })),
-    },
+    requestBody,
+    conferenceDataVersion: event.generateMeetLink ? 1 : undefined,
   });
 
   return res.data;
 }
 
 /**
- * Create a Google Calendar event AND mirror it into the local DB as a Task, so
- * an event the assistant/planner creates shows up immediately instead of waiting
- * for the next webhook/initial sync (fixes the create-event write asymmetry).
+ * Create a Google Calendar event AND mirror it into the local DB immediately.
+ * Mirrors as a Task when it's a genuine meeting (or `asTask` is forced), else as
+ * a calendar-only CalendarEntry — same rule as inbound sync classification.
  */
 export async function createCalendarEventAndTask(
   workspaceId: string,
-  event: {
-    summary: string;
-    description?: string;
-    startDateTime: string;
-    endDateTime: string;
-    attendees?: string[];
-    location?: string;
-  },
-): Promise<{ event: calendar_v3.Schema$Event; taskId: string | null }> {
+  event: CreateEventInput,
+  opts?: { asTask?: boolean },
+): Promise<{ event: calendar_v3.Schema$Event; taskId: string | null; entryId: string | null }> {
   const created = await createEvent(workspaceId, event);
   const { calendarId } = await getCalendarClient(workspaceId);
 
   let taskId: string | null = null;
+  let entryId: string | null = null;
+
   if (created.id) {
-    await upsertTaskFromEvent(workspaceId, created, calendarId);
-    const task = await db.task.findFirst({
-      where: { workspaceId, source: { has: "GOOGLE_CALENDAR" }, externalId: created.id },
-      select: { id: true },
-    });
-    taskId = task?.id ?? null;
+    const becomeTask = opts?.asTask || shouldBecomeTask(classifyEvent(created));
+    if (becomeTask) {
+      await upsertTaskFromEvent(workspaceId, created, calendarId);
+      const task = await db.task.findFirst({
+        where: { workspaceId, source: { has: "GOOGLE_CALENDAR" }, externalId: created.id },
+        select: { id: true },
+      });
+      taskId = task?.id ?? null;
+    } else {
+      await upsertCalendarEntry(workspaceId, created);
+      const entry = await db.calendarEntry.findUnique({
+        where: { workspaceId_externalId: { workspaceId, externalId: created.id } },
+        select: { id: true },
+      });
+      entryId = entry?.id ?? null;
+    }
   }
 
-  return { event: created, taskId };
+  return { event: created, taskId, entryId };
 }
 
 /** Check free/busy availability for a time range. */

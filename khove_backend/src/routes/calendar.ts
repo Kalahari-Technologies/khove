@@ -13,8 +13,17 @@ router.post("/events", async (req, res) => {
     const user = await getCurrentUser(req);
     if (!user) return res.status(401).json({ error: "Unauthorized" });
 
-    const { workspaceId, summary, startDateTime, endDateTime, description, attendees, location } =
-      req.body ?? {};
+    const {
+      workspaceId,
+      summary,
+      startDateTime,
+      endDateTime,
+      description,
+      attendees,
+      location,
+      generateMeetLink,
+      addAsTask,
+    } = req.body ?? {};
 
     if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
     if (!summary || typeof summary !== "string" || !summary.trim()) {
@@ -26,17 +35,24 @@ router.post("/events", async (req, res) => {
 
     await requireWorkspaceMembership(workspaceId, user.id);
 
-    const { event, taskId } = await createCalendarEventAndTask(workspaceId, {
-      summary: summary.trim(),
-      startDateTime,
-      endDateTime,
-      description: typeof description === "string" ? description : undefined,
-      attendees: Array.isArray(attendees) ? attendees : undefined,
-      location: typeof location === "string" ? location : undefined,
-    });
+    const { event, taskId, entryId } = await createCalendarEventAndTask(
+      workspaceId,
+      {
+        summary: summary.trim(),
+        startDateTime,
+        endDateTime,
+        description: typeof description === "string" ? description : undefined,
+        attendees: Array.isArray(attendees) ? attendees : undefined,
+        location: typeof location === "string" ? location : undefined,
+        generateMeetLink: generateMeetLink === true,
+      },
+      // A Meet link makes it a meeting; the user can also opt in explicitly.
+      { asTask: addAsTask === true || generateMeetLink === true },
+    );
 
-    await publishEvent(user.id, { type: "task.created", taskId: taskId ?? "" }).catch(() => {});
-    return res.status(201).json({ taskId, eventId: event.id });
+    if (taskId) await publishEvent(user.id, { type: "task.created", taskId }).catch(() => {});
+    else await publishEvent(user.id, { type: "refresh" }).catch(() => {});
+    return res.status(201).json({ taskId, entryId, eventId: event.id });
   } catch (error) {
     if (error instanceof Error && error.message === "Not a member of this workspace") {
       return res.status(403).json({ error: "Forbidden" });

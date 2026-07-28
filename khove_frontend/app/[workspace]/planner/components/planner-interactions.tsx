@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarClock, Link2, MapPin, Trash2, Video, X, ExternalLink } from "lucide-react";
+import { CalendarClock, Link2, ListTodo, MapPin, Trash2, Users, Video, X, ExternalLink } from "lucide-react";
 import { useBackendFetch } from "@/lib/trpc/api";
 import type { PlannerAttendee } from "@/lib/types";
 
@@ -23,6 +23,17 @@ export interface PlannerEventDetail {
   attendees?: PlannerAttendee[];
   threadId?: string | null;
   threadTitle?: string | null;
+}
+
+export interface CreateEventInput {
+  summary: string;
+  start: Date;
+  end: Date;
+  agenda?: string;
+  location?: string;
+  guests?: string[];
+  generateMeetLink?: boolean;
+  addAsTask?: boolean;
 }
 
 interface InteractionsCtx {
@@ -104,8 +115,8 @@ export function PlannerInteractionsProvider({
   );
 
   const createEvent = useCallback(
-    async (input: { summary: string; start: Date; end: Date; location?: string }) => {
-      await backendFetch(
+    async (input: CreateEventInput) => {
+      const res = await backendFetch(
         `/api/calendar/events`,
         {
           method: "POST",
@@ -114,11 +125,16 @@ export function PlannerInteractionsProvider({
             summary: input.summary,
             startDateTime: input.start.toISOString(),
             endDateTime: input.end.toISOString(),
+            description: input.agenda,
             location: input.location,
+            attendees: input.guests,
+            generateMeetLink: input.generateMeetLink,
+            addAsTask: input.addAsTask,
           }),
         },
         workspaceId,
       );
+      if (!res.ok) throw new Error("Failed to create event");
       router.refresh();
     },
     [backendFetch, workspaceId, router],
@@ -337,6 +353,43 @@ function EventPopover({
 // Create popover
 // ---------------------------------------------------------------------------
 
+function ToggleRow({
+  icon,
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2.5 w-full text-left"
+    >
+      <span className="text-white/40 flex-shrink-0">{icon}</span>
+      <span className="flex-1 min-w-0">
+        <span className="text-[12px] text-white/75 block leading-tight">{label}</span>
+        {hint && <span className="text-[11px] text-white/35">{hint}</span>}
+      </span>
+      <span
+        className={`w-9 h-5 rounded-full flex-shrink-0 relative transition-colors ${checked ? "bg-white" : "bg-white/[0.12]"}`}
+      >
+        <span
+          className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${checked ? "left-[18px] bg-black" : "left-0.5 bg-white/70"}`}
+        />
+      </span>
+    </button>
+  );
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function CreateEventPopover({
   at,
   onClose,
@@ -344,26 +397,59 @@ function CreateEventPopover({
 }: {
   at: Date;
   onClose: () => void;
-  onCreate: (input: { summary: string; start: Date; end: Date; location?: string }) => Promise<void>;
+  onCreate: (input: CreateEventInput) => Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [startInput, setStartInput] = useState(toLocalInput(at.toISOString()));
   const [durationMin, setDurationMin] = useState(60);
   const [location, setLocation] = useState("");
+  const [agenda, setAgenda] = useState("");
+  const [guests, setGuests] = useState<string[]>([]);
+  const [guestInput, setGuestInput] = useState("");
+  const [generateMeetLink, setGenerateMeetLink] = useState(false);
+  const [addAsTask, setAddAsTask] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function toggleMeet(v: boolean) {
+    setGenerateMeetLink(v);
+    if (v) setAddAsTask(true); // a Meet link makes it a meeting → track it as a task
+  }
+
+  function addGuest() {
+    const e = guestInput.trim().toLowerCase();
+    if (!e) return;
+    if (!EMAIL_RE.test(e)) { setError("Enter a valid email"); return; }
+    if (!guests.includes(e)) setGuests((g) => [...g, e]);
+    setGuestInput("");
+    setError(null);
+  }
 
   async function submit() {
     if (!title.trim() || busy) return;
     setBusy(true);
+    setError(null);
     try {
       const start = new Date(startInput);
       const end = new Date(start.getTime() + durationMin * 60000);
-      await onCreate({ summary: title.trim(), start, end, location: location.trim() || undefined });
+      await onCreate({
+        summary: title.trim(),
+        start,
+        end,
+        agenda: agenda.trim() || undefined,
+        location: location.trim() || undefined,
+        guests: guests.length ? guests : undefined,
+        generateMeetLink,
+        addAsTask,
+      });
       onClose();
-    } finally {
+    } catch {
+      setError("Couldn't create the event. Try again.");
       setBusy(false);
     }
   }
+
+  const inputCls = "w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[13px] text-white/85 placeholder:text-white/30 focus:outline-none focus:border-white/20";
 
   return (
     <Shell onClose={onClose}>
@@ -373,15 +459,15 @@ function CreateEventPopover({
           <X size={16} />
         </button>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-0.5">
         <input
           autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
           placeholder="Event title"
-          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[13px] text-white/85 placeholder:text-white/30 focus:outline-none focus:border-white/20"
+          className={inputCls}
         />
+
         <div className="flex items-center gap-2">
           <input
             type="datetime-local"
@@ -394,18 +480,76 @@ function CreateEventPopover({
             onChange={(e) => setDurationMin(Number(e.target.value))}
             className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-2.5 py-2 text-[12px] text-white/80 focus:outline-none focus:border-white/20 [color-scheme:dark]"
           >
+            <option value={15}>15m</option>
             <option value={30}>30m</option>
             <option value={60}>1h</option>
             <option value={90}>1.5h</option>
             <option value={120}>2h</option>
           </select>
         </div>
+
+        {/* Toggles */}
+        <div className="space-y-2.5 py-1 px-0.5">
+          <ToggleRow
+            icon={<Video size={14} />}
+            label="Add Google Meet"
+            hint={generateMeetLink ? "A Meet link will be generated" : undefined}
+            checked={generateMeetLink}
+            onChange={toggleMeet}
+          />
+          <ToggleRow
+            icon={<ListTodo size={14} />}
+            label="Track as a task"
+            hint="Show in Tasks + link work to it"
+            checked={addAsTask}
+            onChange={setAddAsTask}
+          />
+        </div>
+
+        {/* Guests */}
+        <div>
+          <div className="flex items-center gap-2 mb-1.5 text-[11px] uppercase tracking-wide text-white/30">
+            <Users size={12} /> Guests
+          </div>
+          {guests.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {guests.map((g) => (
+                <span key={g} className="flex items-center gap-1 bg-white/[0.06] border border-white/[0.1] rounded-full pl-2.5 pr-1 py-0.5 text-[11px] text-white/70">
+                  {g}
+                  <button onClick={() => setGuests((prev) => prev.filter((x) => x !== g))} className="text-white/40 hover:text-white/80">
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            value={guestInput}
+            onChange={(e) => setGuestInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addGuest(); } }}
+            onBlur={addGuest}
+            placeholder="guest@email.com"
+            className={inputCls}
+          />
+        </div>
+
+        <textarea
+          value={agenda}
+          onChange={(e) => setAgenda(e.target.value)}
+          placeholder="Agenda / description (optional)"
+          rows={2}
+          className={`${inputCls} resize-none`}
+        />
+
         <input
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           placeholder="Location (optional)"
-          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-[12px] text-white/75 placeholder:text-white/30 focus:outline-none focus:border-white/20"
+          className={inputCls}
         />
+
+        {error && <p className="text-[11px] text-red-400">{error}</p>}
+
         <button
           disabled={!title.trim() || busy}
           onClick={submit}
