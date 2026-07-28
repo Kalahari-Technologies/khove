@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { inngest } from "@backend/lib/inngest";
 import { db } from "@backend/lib/db";
 import {
@@ -42,6 +43,54 @@ async function findWorkspacesByInstallation(installationId: number | undefined) 
       metadata: { path: ["installationId"], equals: installationId },
     },
   });
+}
+
+/** Shallow-merge a patch into a task's `metadata.github`, preserving other keys. */
+async function patchGithubMeta(
+  task: { id: string; metadata: unknown },
+  patch: Record<string, unknown>,
+) {
+  const meta = (task.metadata ?? {}) as Record<string, unknown>;
+  const github = (meta.github ?? {}) as Record<string, unknown>;
+  await db.task.update({
+    where: { id: task.id },
+    data: { metadata: { ...meta, github: { ...github, ...patch } } as Prisma.InputJsonObject },
+  });
+}
+
+/** The Shepherd-relevant PR state derivable from a `pull_request` webhook object. */
+function derivePRState(pr: {
+  state?: string;
+  draft?: boolean;
+  requested_reviewers?: { login: string }[];
+  head?: { sha?: string };
+  user?: { login?: string };
+  updated_at?: string;
+  labels?: { name: string }[];
+}): Record<string, unknown> {
+  return {
+    state: pr.state,
+    isDraft: pr.draft,
+    requestedReviewers: (pr.requested_reviewers ?? []).map((r) => r.login),
+    headSha: pr.head?.sha,
+    author: pr.user?.login,
+    updatedAt: pr.updated_at,
+    labels: (pr.labels ?? []).map((l) => l.name),
+  };
+}
+
+/** Normalise a CI conclusion/status string to the Task's `ciStatus` field. */
+function mapCiStatus(raw: string | null | undefined): "success" | "failure" | "pending" | undefined {
+  if (!raw) return undefined;
+  const v = raw.toLowerCase();
+  if (v === "success") return "success";
+  if (["failure", "timed_out", "cancelled", "action_required", "startup_failure", "stale", "error"].includes(v)) {
+    return "failure";
+  }
+  if (["pending", "queued", "in_progress", "requested", "waiting", "neutral", "skipped"].includes(v)) {
+    return "pending";
+  }
+  return undefined; // unknown — don't clobber
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +150,7 @@ export const initialGitHubSync = inngest.createFunction(
                       requestedReviewers: pr.reviewers,
                       reviewDecision: "pending",
                       ciStatus: "pending",
+                      headSha: pr.headSha,
                       labels: pr.labels,
                       updatedAt: pr.updatedAt,
                     },
@@ -223,6 +273,8 @@ export const handleGitHubWebhook = inngest.createFunction(
           break;
         }
 
+        // opened, reopened, ready_for_review, converted_to_draft, synchronize,
+        // review_requested, review_request_removed, labeled, edited, closed
         case "pull_request": {
           const pr = payload as {
             action: string;
@@ -232,9 +284,11 @@ export const handleGitHubWebhook = inngest.createFunction(
               html_url: string;
               user: { login: string };
               draft: boolean;
+              state?: string;
               labels: { name: string }[];
               merged: boolean;
               requested_reviewers?: { login: string }[];
+              head?: { sha?: string };
               updated_at?: string;
             };
             repository: { full_name: string };
@@ -242,60 +296,143 @@ export const handleGitHubWebhook = inngest.createFunction(
 
           const integrations = await findWorkspacesByInstallation(installationId);
           const repo = pr.repository.full_name;
+          const prNum = pr.pull_request.number;
+          const externalId = `github-pr-${repo}-${prNum}`;
+          const derived = derivePRState(pr.pull_request);
 
           for (const integration of integrations) {
-            const externalId = `github-pr-${repo}-${pr.pull_request.number}`;
             const wsId = integration.workspaceId;
+            let task = await db.task.findFirst({ where: { externalId, workspaceId: wsId } });
 
-            if (pr.action === "opened" || pr.action === "reopened") {
+            if (!task) {
+              // Create if we missed the open (e.g. a mid-life event) so PRs never vanish.
               const defaultStatus = await db.workflowStatus.findFirst({
                 where: { category: "NOT_STARTED", workspaceId: wsId, isDefault: true },
               });
-
-              const existing = await db.task.findFirst({ where: { externalId, workspaceId: wsId } });
-              if (!existing) {
-                await db.task.create({
-                  data: {
-                    title: `PR #${pr.pull_request.number}: ${pr.pull_request.title}`,
-                    source: ["GITHUB"],
-                    externalId,
-                    externalUrl: pr.pull_request.html_url,
-                    userId: integration.userId,
-                    workspaceId: wsId,
-                    statusId: defaultStatus?.id ?? null,
-                    priority: "MEDIUM",
-                    metadata: {
-                      github: {
-                        type: "pull_request",
-                        repo,
-                        number: pr.pull_request.number,
-                        author: pr.pull_request.user.login,
-                        state: "open",
-                        isDraft: pr.pull_request.draft,
-                        requestedReviewers: (pr.pull_request.requested_reviewers ?? []).map((r) => r.login),
-                        reviewDecision: "pending",
-                        ciStatus: "pending",
-                        labels: pr.pull_request.labels.map((l) => l.name),
-                        updatedAt: pr.pull_request.updated_at,
-                      },
+              task = await db.task.create({
+                data: {
+                  title: `PR #${prNum}: ${pr.pull_request.title}`,
+                  source: ["GITHUB"],
+                  externalId,
+                  externalUrl: pr.pull_request.html_url,
+                  userId: integration.userId,
+                  workspaceId: wsId,
+                  statusId: defaultStatus?.id ?? null,
+                  priority: "MEDIUM",
+                  metadata: {
+                    github: {
+                      type: "pull_request",
+                      repo,
+                      number: prNum,
+                      reviewDecision: "pending",
+                      ciStatus: "pending",
+                      ...derived,
                     },
                   },
-                });
-              }
-
+                },
+              });
               await publishWorkspaceEvent(wsId, { type: "task.created", taskId: externalId });
-            } else if (pr.action === "closed") {
-              const task = await db.task.findFirst({ where: { externalId, workspaceId: wsId } });
-              if (task) {
-                const doneStatus = await db.workflowStatus.findFirst({
-                  where: { category: pr.pull_request.merged ? "DONE" : "CANCELLED", workspaceId: wsId },
+            } else {
+              await patchGithubMeta(task, derived);
+            }
+
+            if (pr.action === "closed") {
+              const doneStatus = await db.workflowStatus.findFirst({
+                where: { category: pr.pull_request.merged ? "DONE" : "CANCELLED", workspaceId: wsId },
+              });
+              await db.task.update({
+                where: { id: task.id },
+                data: { statusId: doneStatus?.id ?? null },
+              });
+            }
+            await publishWorkspaceEvent(wsId, { type: "task.updated", taskId: task.id });
+          }
+          break;
+        }
+
+        // Aggregate review decision — latest approved / changes_requested wins.
+        case "pull_request_review": {
+          const p = payload as {
+            action: string;
+            review: { state?: string };
+            pull_request: { number: number };
+            repository: { full_name: string };
+          };
+          const st = p.review.state?.toLowerCase();
+          const reviewDecision =
+            st === "changes_requested" ? "changes_requested" : st === "approved" ? "approved" : undefined;
+          if (!reviewDecision) break; // commented / dismissed — no decision change
+
+          const integrations = await findWorkspacesByInstallation(installationId);
+          const externalId = `github-pr-${p.repository.full_name}-${p.pull_request.number}`;
+          for (const integration of integrations) {
+            const task = await db.task.findFirst({
+              where: { externalId, workspaceId: integration.workspaceId },
+            });
+            if (task) {
+              await patchGithubMeta(task, { reviewDecision });
+              await publishWorkspaceEvent(integration.workspaceId, { type: "task.updated", taskId: task.id });
+            }
+          }
+          break;
+        }
+
+        // CI signals — matched to PR tasks by PR number and/or head SHA.
+        case "check_suite":
+        case "check_run":
+        case "workflow_run":
+        case "status": {
+          const integrations = await findWorkspacesByInstallation(installationId);
+          if (integrations.length === 0) break;
+
+          let headSha: string | undefined;
+          let prNumbers: number[] = [];
+          let raw: string | null | undefined;
+
+          if (eventType === "status") {
+            const p = payload as { sha: string; state: string };
+            headSha = p.sha;
+            raw = p.state;
+          } else {
+            const key = eventType === "check_suite" ? "check_suite" : eventType === "check_run" ? "check_run" : "workflow_run";
+            const node = (payload as Record<string, unknown>)[key] as {
+              head_sha?: string;
+              conclusion?: string | null;
+              status?: string;
+              pull_requests?: { number: number }[];
+            };
+            headSha = node.head_sha;
+            raw = node.conclusion ?? node.status;
+            prNumbers = (node.pull_requests ?? []).map((x) => x.number);
+          }
+
+          const ciStatus = mapCiStatus(raw);
+          if (!ciStatus) break;
+
+          const repoFull = (payload.repository as { full_name?: string } | undefined)?.full_name;
+
+          for (const integration of integrations) {
+            const wsId = integration.workspaceId;
+            const matched = new Map<string, { id: string; metadata: unknown }>();
+
+            if (repoFull) {
+              for (const n of prNumbers) {
+                const t = await db.task.findFirst({
+                  where: { externalId: `github-pr-${repoFull}-${n}`, workspaceId: wsId },
                 });
-                await db.task.update({
-                  where: { id: task.id },
-                  data: { statusId: doneStatus?.id ?? null },
-                });
-                await publishWorkspaceEvent(wsId, { type: "task.updated", taskId: task.id });
+                if (t) matched.set(t.id, t);
               }
+            }
+            if (headSha) {
+              const t = await db.task.findFirst({
+                where: { workspaceId: wsId, metadata: { path: ["github", "headSha"], equals: headSha } },
+              });
+              if (t) matched.set(t.id, t);
+            }
+
+            for (const t of matched.values()) {
+              await patchGithubMeta(t, { ciStatus });
+              await publishWorkspaceEvent(wsId, { type: "task.updated", taskId: t.id });
             }
           }
           break;

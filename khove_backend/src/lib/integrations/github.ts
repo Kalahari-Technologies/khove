@@ -252,6 +252,7 @@ export async function listPullRequests(
     draft: pr.draft,
     url: pr.html_url,
     author: pr.user?.login,
+    headSha: pr.head?.sha,
     createdAt: pr.created_at,
     updatedAt: pr.updated_at,
     mergedAt: pr.merged_at,
