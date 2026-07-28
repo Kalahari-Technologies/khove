@@ -1,4 +1,4 @@
-import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
+import type { PlannerTask, CalendarDisplayEntry, PlannerAttendee } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -22,6 +22,11 @@ export interface TimeSlotItem {
   color: string;
   isGoogleCalendar?: boolean;
   hasMeetLink?: boolean;
+  meetLink?: string | null;
+  location?: string | null;
+  attendees?: PlannerAttendee[];
+  threadId?: string | null;
+  threadTitle?: string | null;
   // Layout — assigned by layoutOverlappingEvents
   column?: number;
   totalColumns?: number;
@@ -61,6 +66,11 @@ export function taskToTimeSlot(task: PlannerTask): TimeSlotItem {
     color: task.status.color,
     isGoogleCalendar: task.source.includes("GOOGLE_CALENDAR"),
     hasMeetLink: task.hasMeetLink,
+    meetLink: task.meetLink ?? null,
+    location: task.location ?? null,
+    attendees: task.attendees ?? [],
+    threadId: task.threadId ?? null,
+    threadTitle: task.threadTitle ?? null,
   };
 }
 

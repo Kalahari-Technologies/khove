@@ -1,11 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
 import { ChevronLeft, ChevronRight, Plus, Unplug } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
+import { usePlannerInteractions, type PlannerEventDetail } from "./planner-interactions";
+
+function taskToDetail(t: PlannerTask): PlannerEventDetail {
+  return {
+    id: t.id,
+    title: t.title,
+    start: t.dueDate,
+    end: t.endDateTime,
+    isTask: true,
+    color: t.status.color,
+    meetLink: t.meetLink,
+    location: t.location,
+    attendees: t.attendees,
+    threadId: t.threadId,
+    threadTitle: t.threadTitle,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -73,11 +90,23 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
   const workspace = useWorkspace();
   const backendFetch = useBackendFetch();
   const connectIntegration = useConnectIntegration();
+  const { openItem, openCreate, rescheduleTask } = usePlannerInteractions();
   const today = new Date();
 
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [disconnecting, setDisconnecting] = useState(false);
+
+  const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+
+  // Drop a task chip on a day → keep its time-of-day, change the date.
+  function handleDrop(taskId: string, day: Date) {
+    const t = taskById.get(taskId);
+    if (!t) return;
+    const orig = new Date(t.dueDate);
+    const newStart = new Date(day.getFullYear(), day.getMonth(), day.getDate(), orig.getHours(), orig.getMinutes());
+    void rescheduleTask(taskId, newStart);
+  }
 
   // Group tasks by date key
   const itemsByDate: Record<string, CellItem[]> = {};
@@ -233,6 +262,11 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
           return (
             <div
               key={i}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                const id = e.dataTransfer.getData("text/taskId");
+                if (id) handleDrop(id, day);
+              }}
               className={`border-r border-b border-white/[0.05] p-2 flex flex-col gap-1 min-w-0 overflow-hidden ${!isCurrentMonth ? "bg-white/[0.035]" : ""}`}
             >
               <div className="flex items-center justify-start">
@@ -247,28 +281,46 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
                 )}
               </div>
 
-              {visible.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => { if (item.type === "task") router.push(`/${workspace.slug}/tasks/${item.id}`); }}
-                  className={`flex items-center gap-1 w-full text-left rounded-md px-1.5 py-0.5 transition-colors group ${
-                    item.type === "entry" ? "bg-white/[0.03] cursor-default" : "hover:bg-white/[0.09]"
-                  }`}
-                  style={item.type === "task" ? { backgroundColor: item.color } : undefined}
-                >
-                  {item.isGoogleCalendar && !item.hasMeetLink && <GoogleCalendarIcon size={9} />}
-                  {item.hasMeetLink && <img src="/assets/google-meet.svg" alt="" width={9} height={9} className="flex-shrink-0" />}
-                  <span className={`text-[10px] font-medium truncate transition-colors ${
-                    item.type === "entry" ? "text-white/30 italic" : "text-white group-hover:text-white/85"
-                  }`}>
-                    {item.title}
-                  </span>
-                </button>
-              ))}
+              {visible.map((item) => {
+                const task = item.type === "task" ? taskById.get(item.id) : undefined;
+                return (
+                  <button
+                    key={item.id}
+                    draggable={item.type === "task"}
+                    onDragStart={(e) => {
+                      if (item.type === "task") e.dataTransfer.setData("text/taskId", item.id);
+                    }}
+                    onClick={() => {
+                      if (task) openItem(taskToDetail(task));
+                    }}
+                    className={`flex items-center gap-1 w-full text-left rounded-md px-1.5 py-0.5 transition-colors group ${
+                      item.type === "entry" ? "bg-white/[0.03] cursor-default" : "hover:bg-white/[0.09] cursor-grab active:cursor-grabbing"
+                    }`}
+                    style={item.type === "task" ? { backgroundColor: item.color } : undefined}
+                  >
+                    {item.isGoogleCalendar && !item.hasMeetLink && <GoogleCalendarIcon size={9} />}
+                    {item.hasMeetLink && <img src="/assets/google-meet.svg" alt="" width={9} height={9} className="flex-shrink-0" />}
+                    <span className={`text-[10px] font-medium truncate transition-colors ${
+                      item.type === "entry" ? "text-white/30 italic" : "text-white group-hover:text-white/85"
+                    }`}>
+                      {item.title}
+                    </span>
+                  </button>
+                );
+              })}
 
               {overflow > 0 && (
                 <span className="text-[10px] text-white/30 pl-1">+{overflow} more</span>
               )}
+
+              {/* Empty space → click to create an event on this day (9am default). */}
+              <button
+                aria-label="Add event"
+                onClick={() => openCreate(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0))}
+                className="flex-1 min-h-[8px] w-full rounded-md hover:bg-white/[0.03] transition-colors group/add flex items-start justify-end pt-0.5"
+              >
+                <Plus size={11} className="text-white/0 group-hover/add:text-white/25 transition-colors" />
+              </button>
             </div>
           );
         })}

@@ -1,17 +1,15 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useWorkspace } from "@/lib/workspace/workspace-context";
 import {
   timeToPixelOffset,
   durationToPixelHeight,
   formatTimeRange,
   type TimeSlotItem,
 } from "../lib/time-utils";
+import { usePlannerInteractions } from "./planner-interactions";
 
 export function TimeEventBlock({ item }: { item: TimeSlotItem }) {
-  const router = useRouter();
-  const workspace = useWorkspace();
+  const { openItem } = usePlannerInteractions();
 
   const top = timeToPixelOffset(item.start);
   const height = durationToPixelHeight(item.start, item.end);
@@ -28,7 +26,19 @@ export function TimeEventBlock({ item }: { item: TimeSlotItem }) {
   return (
     <button
       onClick={() => {
-        if (isTask) router.push(`/${workspace.slug}/tasks/${item.id}`);
+        openItem({
+          id: item.id,
+          title: item.title,
+          start: item.start.toISOString(),
+          end: item.end.toISOString(),
+          isTask,
+          color: item.color,
+          meetLink: item.meetLink,
+          location: item.location,
+          attendees: item.attendees,
+          threadId: item.threadId,
+          threadTitle: item.threadTitle,
+        });
       }}
       className={[
         "absolute rounded overflow-hidden text-left transition-opacity",

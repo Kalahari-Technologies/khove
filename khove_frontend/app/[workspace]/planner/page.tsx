@@ -25,15 +25,24 @@ export default async function PlannerPage({
   const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
 
-  const [tasksResult, calendarEntries, googleIntegration, sync, insights] = await Promise.all([
+  const [tasksResult, calendarEntries, googleIntegration, sync, insights, threads] = await Promise.all([
     trpc.task.list.query({ hasDueDate: true, limit: 200 }),
     trpc.calendarEntry.list.query({ from: monthStart, to: monthEnd }),
     trpc.integration.get.query({ provider: "GOOGLE_CALENDAR" }),
     trpc.integration.syncStatus.query(),
     trpc.insight.getForRange.query({ from: monthStart, to: monthEnd }).catch(() => []),
+    trpc.thread.list.query().catch(() => []),
   ]);
 
   const tasks = tasksResult.items;
+
+  // Map each meeting task → the thread it's linked to (via TASK ThreadLinks).
+  const taskThread = new Map<string, { id: string; title: string }>();
+  for (const t of threads) {
+    for (const link of t.links) {
+      if (link.kind === "TASK") taskThread.set(link.refId, { id: t.id, title: t.title });
+    }
+  }
   const isGoogleConnected = !!googleIntegration;
   const isSyncing =
     (sync as { status?: string }).status === "syncing" &&
@@ -50,21 +59,33 @@ export default async function PlannerPage({
       canAdmin={canAdmin}
       workspaceId={ws.id}
       planTier={me.user.planTier}
-      tasks={tasks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        dueDate: t.dueDate!.toISOString(),
-        source: t.source,
+      tasks={tasks.map((t) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        hasMeetLink: !!(t.metadata as Record<string, any> | null)?.googleCalendar?.meetLink,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        endDateTime: (t.metadata as Record<string, any> | null)?.googleCalendar?.endDateTime ?? undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        isAllDay: (t.metadata as Record<string, any> | null)?.googleCalendar?.isAllDay ?? false,
-        status: t.status
-          ? { name: t.status.name, color: t.status.color }
-          : { name: "No status", color: "#666666" },
-      }))}
+        const gcal = (t.metadata as Record<string, any> | null)?.googleCalendar;
+        const thread = taskThread.get(t.id);
+        return {
+          id: t.id,
+          title: t.title,
+          dueDate: t.dueDate!.toISOString(),
+          source: t.source,
+          hasMeetLink: !!gcal?.meetLink,
+          meetLink: gcal?.meetLink ?? null,
+          location: gcal?.location ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          attendees: (gcal?.attendeeStatus as any[] | undefined)?.map((a) => ({
+            email: a.email,
+            displayName: a.displayName ?? null,
+            responseStatus: a.responseStatus ?? "needsAction",
+          })) ?? [],
+          endDateTime: gcal?.endDateTime ?? undefined,
+          isAllDay: gcal?.isAllDay ?? false,
+          threadId: thread?.id ?? null,
+          threadTitle: thread?.title ?? null,
+          status: t.status
+            ? { name: t.status.name, color: t.status.color }
+            : { name: "No status", color: "#666666" },
+        };
+      })}
       view={view}
       calendarEntries={calendarEntries.map((e) => ({
         id: e.id,

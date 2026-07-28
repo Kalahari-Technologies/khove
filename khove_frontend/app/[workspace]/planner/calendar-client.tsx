@@ -9,10 +9,12 @@ import {
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
 import { useConnectIntegration } from "@/lib/trpc/api";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
+import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { MonthView } from "./components/month-view";
 import { WeekView } from "./components/week-view";
 import { DayView } from "./components/day-view";
 import { InsightBanner, type PlannerInsight } from "./components/insight-banner";
+import { PlannerInteractionsProvider } from "./components/planner-interactions";
 
 // ---------------------------------------------------------------------------
 // Google Calendar logo
@@ -281,26 +283,34 @@ function PlannerCalendar({
   planTier: string;
   view?: "month" | "week" | "day";
 }) {
+  const workspace = useWorkspace();
   return (
-    <div className="flex flex-col h-full bg-black overflow-hidden">
-      {insights.length > 0 && <InsightBanner insights={insights} />}
-      {view === "month" && (
-        <MonthView
-          tasks={tasks}
-          calendarEntries={calendarEntries}
-          isGoogleConnected={isGoogleConnected}
-          canAdmin={canAdmin}
-          workspaceId={workspaceId}
-          planTier={planTier}
-        />
-      )}
-      {view === "week" && (
-        <WeekView tasks={tasks} calendarEntries={calendarEntries} />
-      )}
-      {view === "day" && (
-        <DayView tasks={tasks} calendarEntries={calendarEntries} />
-      )}
-    </div>
+    <PlannerInteractionsProvider
+      workspaceId={workspaceId}
+      slug={workspace.slug}
+      canWrite={true}
+      isGoogleConnected={isGoogleConnected}
+    >
+      <div className="flex flex-col h-full bg-black overflow-hidden">
+        {insights.length > 0 && <InsightBanner insights={insights} />}
+        {view === "month" && (
+          <MonthView
+            tasks={tasks}
+            calendarEntries={calendarEntries}
+            isGoogleConnected={isGoogleConnected}
+            canAdmin={canAdmin}
+            workspaceId={workspaceId}
+            planTier={planTier}
+          />
+        )}
+        {view === "week" && (
+          <WeekView tasks={tasks} calendarEntries={calendarEntries} />
+        )}
+        {view === "day" && (
+          <DayView tasks={tasks} calendarEntries={calendarEntries} />
+        )}
+      </div>
+    </PlannerInteractionsProvider>
   );
 }
 

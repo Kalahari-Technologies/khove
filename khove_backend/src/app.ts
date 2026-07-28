@@ -30,6 +30,7 @@ import {
 } from "@backend/lib/inngest/functions/email";
 import chatRouter from "@backend/routes/chat";
 import tasksRouter from "@backend/routes/tasks";
+import calendarRouter from "@backend/routes/calendar";
 import onboardingRouter from "@backend/routes/onboarding";
 import webhooksRouter from "@backend/routes/webhooks";
 import githubIntegrationRouter from "@backend/routes/integrations-github";
@@ -100,6 +101,7 @@ export function createApp() {
   // JSON REST API — express.json() applied per-router (GET routes ignore it).
   app.use("/api/chat", express.json(), chatRouter);
   app.use("/api/tasks", express.json(), tasksRouter);
+  app.use("/api/calendar", express.json(), calendarRouter);
   app.use("/api/onboarding", express.json(), onboardingRouter);
   app.use("/api/integrations/github", express.json(), githubIntegrationRouter);
   app.use("/api/integrations/google", express.json(), googleIntegrationRouter);

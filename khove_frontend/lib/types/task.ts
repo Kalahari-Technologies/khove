@@ -18,6 +18,12 @@ export type TaskWithDetails = Prisma.TaskGetPayload<{
   };
 }>;
 
+export interface PlannerAttendee {
+  email: string;
+  displayName?: string | null;
+  responseStatus?: string; // accepted | declined | tentative | needsAction
+}
+
 export interface PlannerTask {
   id: string;
   title: string;
@@ -25,10 +31,18 @@ export interface PlannerTask {
   dueDate: string;
   source: string[];
   hasMeetLink?: boolean;
+  /** Full Google Meet / conference URL (from metadata.googleCalendar.meetLink). */
+  meetLink?: string | null;
+  location?: string | null;
+  /** Per-attendee RSVP (from metadata.googleCalendar.attendeeStatus). */
+  attendees?: PlannerAttendee[];
   /** ISO string — from metadata.googleCalendar.endDateTime (GCal-synced tasks only). */
   endDateTime?: string;
   /** Whether this is an all-day event (from metadata.googleCalendar.isAllDay). */
   isAllDay?: boolean;
+  /** Connectivity Thread this meeting is linked to, if any. */
+  threadId?: string | null;
+  threadTitle?: string | null;
   status: {
     name: string;
     color: string;
