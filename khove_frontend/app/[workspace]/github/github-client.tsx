@@ -56,6 +56,7 @@ interface GitHubClientProps {
   workspaceId: string;
   githubLogin: string | null;
   githubAvatar: string | null;
+  repoCount: number | null;
   tasks: GitHubTask[];
   threadByTaskId: Record<string, { id: string; title: string }>;
   shepherdActions: AgentActionView[];
@@ -124,6 +125,7 @@ export function GitHubClient({
   workspaceId,
   githubLogin,
   githubAvatar,
+  repoCount,
   tasks,
   threadByTaskId,
   shepherdActions,
@@ -134,6 +136,7 @@ export function GitHubClient({
   const workspace = useWorkspace();
   const [disconnecting, setDisconnecting] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
   const [filter, setFilter] = useState<Bucket | null>(null);
   const syncing = useInitialSync(tasks.length > 0);
 
@@ -151,6 +154,11 @@ export function GitHubClient({
     for (const p of open) {
       if (p.repo) repoLoad[p.repo] = (repoLoad[p.repo] ?? 0) + 1;
       if (!p.isDraft) for (const r of p.reviewers) reviewerLoad[r] = (reviewerLoad[r] ?? 0) + 1;
+    }
+    // Count open issues per repo too, so a repo with only issues still appears.
+    for (const t of issueTasks) {
+      const repo = (t.metadata?.github as Record<string, unknown>)?.repo as string | undefined;
+      if (repo) repoLoad[repo] = (repoLoad[repo] ?? 0) + 1;
     }
     const stale = open.filter((p) => !p.isDraft && p.reviewDecision !== "approved" && daysSince(p.updatedAt) >= 3);
 
@@ -214,7 +222,25 @@ export function GitHubClient({
   }
 
   const b = insights.buckets;
-  const repoCount = insights.repoRows.length;
+  const displayRepoCount = repoCount ?? insights.repoRows.length;
+
+  async function handleResync() {
+    setResyncing(true);
+    try {
+      await backendFetch("/api/integrations/github/resync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+      // The sync runs in the background; refresh shortly to pick up new data.
+      setTimeout(() => {
+        router.refresh();
+        setResyncing(false);
+      }, 4000);
+    } catch {
+      setResyncing(false);
+    }
+  }
 
   const tiles: { key: Bucket; label: string; value: number; tone: Tone; icon: typeof Clock }[] = [
     { key: "awaiting", label: "Awaiting review", value: b.awaiting.length, tone: "warn", icon: Clock },
@@ -236,20 +262,31 @@ export function GitHubClient({
             <div>
               <h1 className="text-[19px] font-semibold text-white leading-tight">GitHub</h1>
               <p className="text-[12px] text-white/40">
-                <span className="text-white/60">@{githubLogin}</span> · {repoCount} repo{repoCount === 1 ? "" : "s"} ·{" "}
+                <span className="text-white/60">@{githubLogin}</span> · {displayRepoCount} repo{displayRepoCount === 1 ? "" : "s"} ·{" "}
                 {openPrs.length} open PR{openPrs.length === 1 ? "" : "s"}
               </p>
             </div>
           </div>
-          <button
-            onClick={handleDisconnect}
-            disabled={disconnecting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/40 border border-white/[0.08] hover:text-red-400 hover:border-red-400/20 transition-colors"
-            style={{ transitionTimingFunction: ease }}
-          >
-            <Unplug size={12} />
-            {disconnecting ? "Disconnecting..." : "Disconnect"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleResync}
+              disabled={resyncing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/60 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white/90 transition-colors disabled:opacity-50"
+              style={{ transitionTimingFunction: ease }}
+            >
+              <Loader2 size={12} className={resyncing ? "animate-spin" : ""} />
+              {resyncing ? "Syncing…" : "Re-sync"}
+            </button>
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/40 border border-white/[0.08] hover:text-red-400 hover:border-red-400/20 transition-colors"
+              style={{ transitionTimingFunction: ease }}
+            >
+              <Unplug size={12} />
+              {disconnecting ? "Disconnecting..." : "Disconnect"}
+            </button>
+          </div>
         </div>
 
         {syncing && <SyncBanner label="Syncing your pull requests and issues from GitHub…" />}
@@ -326,7 +363,15 @@ export function GitHubClient({
             <BreakdownList rows={insights.reviewerRows} color={EMERALD} emptyLabel="No reviewers requested yet" />
           </SectionCard>
           <SectionCard title="By repository" icon={<FolderGit2 size={13} className="text-white/40" />}>
-            <BreakdownList rows={insights.repoRows} color={EMERALD} emptyLabel="No repositories synced yet" />
+            <BreakdownList
+              rows={insights.repoRows}
+              color={EMERALD}
+              emptyLabel={
+                displayRepoCount > 0
+                  ? `Scanned ${displayRepoCount} repositor${displayRepoCount === 1 ? "y" : "ies"} — no open PRs or issues yet.`
+                  : "No repositories synced yet"
+              }
+            />
           </SectionCard>
         </div>
 

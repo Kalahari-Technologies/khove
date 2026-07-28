@@ -56,6 +56,7 @@ export default async function GitHubPage({
       workspaceId={ws.id}
       githubLogin={(metadata?.login as string) ?? null}
       githubAvatar={(metadata?.avatarUrl as string) ?? null}
+      repoCount={typeof metadata?.repoCount === "number" ? (metadata.repoCount as number) : null}
       threadByTaskId={threadByTaskId}
       shepherdActions={shepherdActions}
       tasks={tasks.map((t) => ({

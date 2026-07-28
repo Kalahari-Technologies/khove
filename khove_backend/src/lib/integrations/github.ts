@@ -233,9 +233,10 @@ export async function listPullRequests(
   owner: string,
   repo: string,
   state: "open" | "closed" | "all" = "open",
-  perPage = 20
+  perPage = 20,
+  client?: Octokit,
 ) {
-  const octokit = await getGitHubClient(workspaceId);
+  const octokit = client ?? (await getGitHubClient(workspaceId));
   const { data } = await octokit.pulls.list({
     owner,
     repo,
@@ -314,9 +315,10 @@ export async function listIssues(
   owner: string,
   repo: string,
   state: "open" | "closed" | "all" = "open",
-  perPage = 20
+  perPage = 20,
+  client?: Octokit,
 ) {
-  const octokit = await getGitHubClient(workspaceId);
+  const octokit = client ?? (await getGitHubClient(workspaceId));
   const { data } = await octokit.issues.listForRepo({
     owner,
     repo,

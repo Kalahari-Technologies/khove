@@ -6,6 +6,7 @@ import {
   listIssues,
   listUserRepos,
   listInstallationRepos,
+  getShepherdClient,
 } from "@backend/lib/integrations/github";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 import { linkPRToThreads } from "@backend/lib/threads";
@@ -118,13 +119,17 @@ export const initialGitHubSync = inngest.createFunction(
         });
 
       const repos = await resolveSyncableRepos(workspaceId);
+      // Prefer the installation client for listing so coverage matches the repos
+      // we discovered (org/collaborator repos the user token can't read).
+      const octokit = await getShepherdClient(workspaceId).catch(() => undefined);
       let issuesCreated = 0;
       let prsCreated = 0;
+      const scanned = repos.slice(0, 15);
 
       // Cap breadth to keep the initial sync within the step budget.
-      for (const repo of repos.slice(0, 15)) {
+      for (const repo of scanned) {
         try {
-          const prs = await listPullRequests(workspaceId, repo.owner, repo.name, "open", 20);
+          const prs = await listPullRequests(workspaceId, repo.owner, repo.name, "open", 20, octokit);
           for (const pr of prs) {
             const externalId = `github-pr-${repo.fullName}-${pr.number}`;
             const existing = await db.task.findFirst({
@@ -165,7 +170,7 @@ export const initialGitHubSync = inngest.createFunction(
             }
           }
 
-          const issues = await listIssues(workspaceId, repo.owner, repo.name, "open", 20);
+          const issues = await listIssues(workspaceId, repo.owner, repo.name, "open", 20, octokit);
           for (const issue of issues) {
             const externalId = `github-issue-${repo.fullName}-${issue.number}`;
             const existing = await db.task.findFirst({
@@ -196,12 +201,33 @@ export const initialGitHubSync = inngest.createFunction(
               issuesCreated++;
             }
           }
-        } catch {
-          // Skip repos that fail
+        } catch (err) {
+          console.error(`[github-sync] ${repo.fullName} failed:`, err);
         }
       }
 
-      return { prsCreated, issuesCreated, reposSynced: Math.min(repos.length, 15) };
+      // Persist the repos we actually scanned so the dashboard can show them even
+      // when a repo has no open PRs/issues (the sync used to throw this away).
+      const integration = await db.integration.findFirst({
+        where: { workspaceId, provider: "GITHUB", isActive: true },
+        select: { id: true, metadata: true },
+      });
+      if (integration) {
+        const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+        await db.integration.update({
+          where: { id: integration.id },
+          data: {
+            metadata: {
+              ...meta,
+              syncedRepos: scanned.map((r) => r.fullName),
+              repoCount: repos.length,
+              lastSyncAt: new Date().toISOString(),
+            } as Prisma.InputJsonObject,
+          },
+        });
+      }
+
+      return { prsCreated, issuesCreated, reposSynced: scanned.length, reposAccessible: repos.length };
     });
 
     await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "github-sync" });

@@ -136,4 +136,28 @@ router.post("/disconnect", async (req, res) => {
   return res.json({ success: true });
 });
 
+// POST /api/integrations/github/resync — re-run the initial sync. Admin-gated.
+router.post("/resync", async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const { workspaceId } = req.body ?? {};
+  if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
+
+  const membership = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId: user.id } },
+  });
+  if (!membership || !canAdminWorkspace(membership.role)) {
+    return res.status(403).json({ error: "Only workspace admins can sync integrations" });
+  }
+
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GITHUB", isActive: true },
+  });
+  if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
+
+  await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } });
+  return res.json({ success: true });
+});
+
 export default router;
