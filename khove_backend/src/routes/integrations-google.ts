@@ -8,6 +8,7 @@ import {
   createOAuth2Client,
   GOOGLE_CALENDAR_SCOPES,
 } from "@backend/lib/integrations/google-calendar";
+import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { inngest } from "@backend/lib/inngest";
 import { env } from "@backend/env";
 
@@ -28,36 +29,37 @@ router.get("/connect", async (req, res) => {
     return res.status(403).json({ error: "Only workspace admins can connect integrations" });
   }
 
+  const state = await createOAuthState("google", { userId: user.id, workspaceId });
   const oauth2 = createOAuth2Client();
   const url = oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     scope: GOOGLE_CALENDAR_SCOPES,
-    state: `${user.id}:${workspaceId}`,
+    state,
   });
   // Return the OAuth URL as JSON — the authenticated frontend redirects to it.
   return res.json({ url });
 });
 
-// GET /api/integrations/google/callback — redirects back to the FRONTEND origin
+// GET /api/integrations/google/callback — redirects back to the FRONTEND origin.
+// Identity comes from the single-use `state` nonce (no Clerk session exists on a
+// cross-origin browser redirect to the backend).
 router.get("/callback", async (req, res) => {
-  const user = await getCurrentUser(req);
-  if (!user) return res.redirect(`${env.FRONTEND_ORIGIN}/login`);
-
   const code = req.query.code as string | undefined;
-  const state = req.query.state as string | undefined;
   const error = req.query.error as string | undefined;
-  const [stateUserId, stateWorkspaceId] = (state ?? "").split(":");
+  const stateData = await consumeOAuthState("google", req.query.state as string | undefined);
 
-  const workspace = stateWorkspaceId
-    ? await db.workspace.findUnique({ where: { id: stateWorkspaceId }, select: { slug: true } })
+  const workspace = stateData
+    ? await db.workspace.findUnique({ where: { id: stateData.workspaceId }, select: { slug: true } })
     : null;
   const plannerPath = workspace ? `/${workspace.slug}/planner` : "/planner";
 
   if (error) return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?error=${error}`);
-  if (!code || !stateWorkspaceId || stateUserId !== user.id) {
+  if (!code || !stateData) {
     return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?error=invalid_state`);
   }
+
+  const { userId, workspaceId } = stateData;
 
   try {
     const oauth2 = createOAuth2Client();
@@ -72,12 +74,12 @@ router.get("/callback", async (req, res) => {
 
     await db.integration.upsert({
       where: {
-        provider_workspaceId: { provider: "GOOGLE_CALENDAR", workspaceId: stateWorkspaceId },
+        provider_workspaceId: { provider: "GOOGLE_CALENDAR", workspaceId },
       },
       create: {
         provider: "GOOGLE_CALENDAR",
-        userId: user.id,
-        workspaceId: stateWorkspaceId,
+        userId,
+        workspaceId,
         accessTokenEnc,
         refreshTokenEnc,
         tokenExpiresAt,
@@ -85,7 +87,7 @@ router.get("/callback", async (req, res) => {
         isActive: true,
       },
       update: {
-        userId: user.id,
+        userId,
         accessTokenEnc,
         ...(refreshTokenEnc && { refreshTokenEnc }),
         tokenExpiresAt,
@@ -95,7 +97,7 @@ router.get("/callback", async (req, res) => {
 
     await inngest.send({
       name: "google-calendar/initial-sync",
-      data: { userId: user.id, workspaceId: stateWorkspaceId },
+      data: { userId, workspaceId },
     });
 
     return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?syncing=true`);

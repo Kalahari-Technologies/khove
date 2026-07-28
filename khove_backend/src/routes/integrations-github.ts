@@ -4,6 +4,7 @@ import { db } from "@backend/lib/db";
 import { encrypt } from "@backend/lib/encryption";
 import { canAdminWorkspace } from "@backend/lib/workspace/authorization";
 import { createGitHubOAuthUrl, exchangeCodeForToken } from "@backend/lib/integrations/github";
+import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { publishEvent } from "@backend/lib/realtime";
 import { inngest } from "@backend/lib/inngest";
 import { env } from "@backend/env";
@@ -27,27 +28,28 @@ router.get("/connect", async (req, res) => {
 
   // Return the OAuth URL as JSON — the authenticated frontend redirects to it
   // (a cross-origin browser navigation to this route wouldn't carry the session).
-  return res.json({ url: createGitHubOAuthUrl(user.id, workspaceId) });
+  const state = await createOAuthState("github", { userId: user.id, workspaceId });
+  return res.json({ url: createGitHubOAuthUrl(state) });
 });
 
-// GET /api/integrations/github/callback — redirects back to the FRONTEND origin
+// GET /api/integrations/github/callback — redirects back to the FRONTEND origin.
+// Identity comes from the single-use `state` nonce (no Clerk session exists on a
+// cross-origin browser redirect to the backend).
 router.get("/callback", async (req, res) => {
-  const user = await getCurrentUser(req);
-  if (!user) return res.redirect(`${env.FRONTEND_ORIGIN}/login`);
-
   const code = req.query.code as string | undefined;
-  const state = req.query.state as string | undefined;
-  const [stateUserId, stateWorkspaceId] = (state ?? "").split(":");
+  const stateData = await consumeOAuthState("github", req.query.state as string | undefined);
 
-  const workspace = stateWorkspaceId
-    ? await db.workspace.findUnique({ where: { id: stateWorkspaceId }, select: { slug: true } })
+  const workspace = stateData
+    ? await db.workspace.findUnique({ where: { id: stateData.workspaceId }, select: { slug: true } })
     : null;
   const githubPath = workspace ? `/${workspace.slug}/github` : "/github";
 
   if (!code) return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?error=missing_code`);
-  if (!stateWorkspaceId || stateUserId !== user.id) {
+  if (!stateData) {
     return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?error=invalid_state`);
   }
+
+  const { userId, workspaceId } = stateData;
 
   try {
     const { accessToken } = await exchangeCodeForToken(code);
@@ -55,11 +57,11 @@ router.get("/callback", async (req, res) => {
     const { data: ghUser } = await octokit.users.getAuthenticated();
 
     await db.integration.upsert({
-      where: { provider_workspaceId: { provider: "GITHUB", workspaceId: stateWorkspaceId } },
+      where: { provider_workspaceId: { provider: "GITHUB", workspaceId } },
       create: {
         provider: "GITHUB",
-        userId: user.id,
-        workspaceId: stateWorkspaceId,
+        userId,
+        workspaceId,
         accessTokenEnc: encrypt(accessToken),
         isActive: true,
         metadata: {
@@ -70,7 +72,7 @@ router.get("/callback", async (req, res) => {
         },
       },
       update: {
-        userId: user.id,
+        userId,
         accessTokenEnc: encrypt(accessToken),
         isActive: true,
         metadata: {
@@ -84,9 +86,9 @@ router.get("/callback", async (req, res) => {
 
     await inngest.send({
       name: "github/initial-sync",
-      data: { userId: user.id, workspaceId: stateWorkspaceId },
+      data: { userId, workspaceId },
     });
-    await publishEvent(user.id, { type: "refresh" }).catch(() => {});
+    await publishEvent(userId, { type: "refresh" }).catch(() => {});
 
     return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?connected=true`);
   } catch (error) {

@@ -24,12 +24,12 @@ const GITHUB_REDIRECT_URI = `${process.env.BACKEND_URL ?? "http://localhost:4000
  * Generate GitHub OAuth authorization URL.
  * State parameter encodes userId:workspaceId for CSRF validation in callback.
  */
-export function createGitHubOAuthUrl(userId: string, workspaceId: string): string {
+export function createGitHubOAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
     redirect_uri: GITHUB_REDIRECT_URI,
     scope: GITHUB_OAUTH_SCOPES.join(" "),
-    state: `${userId}:${workspaceId}`,
+    state,
   });
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
