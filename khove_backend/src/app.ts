@@ -15,6 +15,7 @@ import {
   refreshExpiringTokens,
   renewCalendarWebhooks,
   disconnectCalendarCleanup,
+  handleCalendarTokenRevoked,
 } from "@backend/lib/inngest/functions/calendar-sync";
 import {
   initialGitHubSync,
@@ -71,6 +72,7 @@ export function createApp() {
         refreshExpiringTokens,
         renewCalendarWebhooks,
         disconnectCalendarCleanup,
+        handleCalendarTokenRevoked,
         initialGitHubSync,
         handleGitHubWebhook,
         sendWelcomeSignupEmail,

@@ -26,6 +26,23 @@ export function createOAuth2Client(): OAuth2Client {
 /** Scopes requested during OAuth consent. */
 export { SCOPES as GOOGLE_CALENDAR_SCOPES };
 
+/**
+ * True when an error is a fatal OAuth failure (revoked/expired refresh token).
+ * These are permanent — retrying is pointless; the integration must be marked
+ * inactive and the user prompted to reconnect (stops the invalid_grant storm).
+ */
+export function isAuthError(err: unknown): boolean {
+  const e = err as { message?: string; code?: string | number; response?: { data?: { error?: string } } };
+  const msg = String(e?.message ?? err ?? "");
+  const code = e?.response?.data?.error ?? e?.code;
+  return (
+    msg.includes("invalid_grant") ||
+    msg.includes("invalid_token") ||
+    code === "invalid_grant" ||
+    code === "invalid_token"
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Authenticated Calendar client
 // ---------------------------------------------------------------------------
@@ -130,13 +147,7 @@ export async function listAllCalendarEvents(
     if (!cal.id) continue;
 
     // Identify non-actionable calendar types
-    const isHolidayOrBirthday =
-      cal.accessRole === "reader" || // subscribed calendars (holidays, sports, etc.)
-      cal.id.includes("#holiday@") ||
-      cal.id.includes("#contacts@") ||
-      cal.id.includes("addressbook#") ||
-      (cal.summary?.toLowerCase().includes("holiday") ?? false) ||
-      (cal.summary?.toLowerCase().includes("birthday") ?? false);
+    const isHolidayOrBirthday = isNonActionableCalendar(cal);
 
     try {
       const res = await calendar.events.list({
@@ -191,6 +202,38 @@ export async function createEvent(
   });
 
   return res.data;
+}
+
+/**
+ * Create a Google Calendar event AND mirror it into the local DB as a Task, so
+ * an event the assistant/planner creates shows up immediately instead of waiting
+ * for the next webhook/initial sync (fixes the create-event write asymmetry).
+ */
+export async function createCalendarEventAndTask(
+  workspaceId: string,
+  event: {
+    summary: string;
+    description?: string;
+    startDateTime: string;
+    endDateTime: string;
+    attendees?: string[];
+    location?: string;
+  },
+): Promise<{ event: calendar_v3.Schema$Event; taskId: string | null }> {
+  const created = await createEvent(workspaceId, event);
+  const { calendarId } = await getCalendarClient(workspaceId);
+
+  let taskId: string | null = null;
+  if (created.id) {
+    await upsertTaskFromEvent(workspaceId, created, calendarId);
+    const task = await db.task.findFirst({
+      where: { workspaceId, source: { has: "GOOGLE_CALENDAR" }, externalId: created.id },
+      select: { id: true },
+    });
+    taskId = task?.id ?? null;
+  }
+
+  return { event: created, taskId };
 }
 
 /** Check free/busy availability for a time range. */
@@ -271,6 +314,23 @@ export async function stopWebhook(
  * 1. It's from the user's primary/writable calendar (not a holiday/birthday subscription)
  * 2. Its eventType is "default" (not "birthday", "focusTime", "outOfOffice", "workingLocation")
  */
+/**
+ * A calendar whose events are display-only noise (holidays, birthdays, subscribed
+ * read-only feeds, contacts) rather than actionable meetings.
+ */
+export function isNonActionableCalendar(
+  cal: calendar_v3.Schema$CalendarListEntry,
+): boolean {
+  return (
+    cal.accessRole === "reader" || // subscribed calendars (holidays, sports, etc.)
+    (cal.id?.includes("#holiday@") ?? false) ||
+    (cal.id?.includes("#contacts@") ?? false) ||
+    (cal.id?.includes("addressbook#") ?? false) ||
+    (cal.summary?.toLowerCase().includes("holiday") ?? false) ||
+    (cal.summary?.toLowerCase().includes("birthday") ?? false)
+  );
+}
+
 export function isActionableEvent(
   event: calendar_v3.Schema$Event & { _isHolidayOrBirthday?: boolean },
 ): boolean {
@@ -288,19 +348,74 @@ export function isActionableEvent(
 // Sync: Google → Khove
 // ---------------------------------------------------------------------------
 
-/** Build metadata JSON for a Google Calendar task. */
+/** Extract the Google Meet / video-conference link from an event, if any. */
+function extractMeetLink(event: calendar_v3.Schema$Event): string | null {
+  if (event.hangoutLink) return event.hangoutLink;
+  const video = event.conferenceData?.entryPoints?.find(
+    (e) => e.entryPointType === "video",
+  );
+  return video?.uri ?? null;
+}
+
+/**
+ * Build the `googleCalendar` metadata block for a synced Google Calendar task.
+ *
+ * NOTE: the caller namespaces this under `metadata.googleCalendar` (matching the
+ * outbound push path in routes/tasks.ts and every frontend reader). Attendees are
+ * kept as `string[]` (emails) for back-compat with existing readers/push-back, and
+ * the richer per-attendee RSVP info is added alongside as `attendeeStatus[]`.
+ */
 function buildEventMetadata(
   event: calendar_v3.Schema$Event,
   calendarId: string,
 ) {
+  const attendees = event.attendees ?? [];
+  const meetLink = extractMeetLink(event);
+
   return {
     calendarId,
+    eventId: event.id ?? null,
     endDateTime: event.end?.dateTime ?? event.end?.date ?? null,
     location: event.location ?? null,
-    attendees: (event.attendees?.map((a) => a.email).filter((e): e is string => !!e)) ?? [],
+    htmlLink: event.htmlLink ?? null,
+    // Back-compat: emails only. Existing readers + push-back rely on this shape.
+    attendees: attendees.map((a) => a.email).filter((e): e is string => !!e),
+    // Rich per-attendee RSVP (used by the planner popover + RSVP nudges).
+    attendeeStatus: attendees
+      .filter((a) => !!a.email)
+      .map((a) => ({
+        email: a.email as string,
+        displayName: a.displayName ?? null,
+        responseStatus: a.responseStatus ?? "needsAction",
+        organizer: a.organizer ?? false,
+        optional: a.optional ?? false,
+        self: a.self ?? false,
+      })),
+    organizer: event.organizer
+      ? {
+          email: event.organizer.email ?? null,
+          displayName: event.organizer.displayName ?? null,
+          self: event.organizer.self ?? false,
+        }
+      : null,
+    meetLink,
+    conferenceType:
+      event.conferenceData?.conferenceSolution?.name ?? (meetLink ? "Google Meet" : null),
+    recurringEventId: event.recurringEventId ?? null,
+    recurrence: event.recurrence ?? null,
+    reminders: event.reminders
+      ? {
+          useDefault: event.reminders.useDefault ?? true,
+          overrides: (event.reminders.overrides ?? []).map((o) => ({
+            method: o.method ?? null,
+            minutes: o.minutes ?? null,
+          })),
+        }
+      : null,
     eventStatus: event.status ?? "confirmed",
     isAllDay: !event.start?.dateTime,
     eventType: event.eventType ?? "default",
+    updated: event.updated ?? null,
   };
 }
 
@@ -342,9 +457,12 @@ export async function upsertTaskFromEvent(
     : event.start?.date
       ? new Date(event.start.date)
       : null;
-  const metadata = buildEventMetadata(event, calendarId);
+  // Namespace under `googleCalendar` (CLAUDE.md rule + aligns with the outbound
+  // push path and every frontend reader, which all read metadata.googleCalendar.*).
+  const gcalMeta = buildEventMetadata(event, calendarId);
 
   if (existing) {
+    const existingMeta = (existing.metadata ?? {}) as Record<string, unknown>;
     await db.task.update({
       where: { id: existing.id },
       data: {
@@ -352,7 +470,7 @@ export async function upsertTaskFromEvent(
         description: event.description ?? existing.description,
         dueDate,
         externalUrl: event.htmlLink ?? existing.externalUrl,
-        metadata,
+        metadata: { ...existingMeta, googleCalendar: gcalMeta },
       },
     });
     return "updated";
@@ -384,7 +502,7 @@ export async function upsertTaskFromEvent(
       statusId: defaultStatus?.id ?? null,
       userId: integration?.userId ?? "",
       workspaceId,
-      metadata,
+      metadata: { googleCalendar: gcalMeta },
     },
   });
   return "created";
@@ -492,6 +610,96 @@ export async function syncGoogleCalendar(
   }
 
   return { tasksCreated, tasksUpdated, entriesCreated };
+}
+
+/** True for a Google API "410 Gone" — the sync token has expired. */
+function isSyncTokenExpired(err: unknown): boolean {
+  const code = (err as { code?: number; response?: { status?: number } })?.code;
+  const status = (err as { response?: { status?: number } })?.response?.status;
+  return code === 410 || status === 410;
+}
+
+/**
+ * Incremental sync across ALL of the user's calendars using a per-calendar sync
+ * token (previously the webhook only re-synced `primary`, so changes on secondary
+ * calendars were missed). Tokens live in `Integration.metadata.syncTokens` keyed
+ * by calendarId; a 410 clears that calendar's token to force a full re-fetch.
+ * Throws on auth failure so the caller can deactivate the integration.
+ */
+export async function incrementalSyncAllCalendars(
+  workspaceId: string,
+): Promise<{ tasksUpserted: number; entriesUpserted: number }> {
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GOOGLE_CALENDAR", isActive: true },
+  });
+  if (!integration) return { tasksUpserted: 0, entriesUpserted: 0 };
+
+  const { calendar } = await getCalendarClient(workspaceId);
+  const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+  const syncTokens: Record<string, string> = { ...((meta.syncTokens as Record<string, string>) ?? {}) };
+  // Migrate the legacy single primary syncToken into the per-calendar map.
+  if (typeof meta.syncToken === "string" && !syncTokens["primary"]) {
+    syncTokens["primary"] = meta.syncToken as string;
+  }
+
+  const calListRes = await calendar.calendarList.list();
+  const calendars = calListRes.data.items ?? [];
+
+  let tasksUpserted = 0;
+  let entriesUpserted = 0;
+
+  for (const cal of calendars) {
+    if (!cal.id) continue;
+    const nonActionable = isNonActionableCalendar(cal);
+    const token = syncTokens[cal.id];
+
+    try {
+      let pageToken: string | undefined;
+      let nextSyncToken: string | undefined;
+      do {
+        const listParams: Record<string, unknown> = {
+          calendarId: cal.id,
+          singleEvents: true,
+          maxResults: 250,
+        };
+        if (pageToken) listParams.pageToken = pageToken;
+        else if (token) listParams.syncToken = token;
+        else listParams.timeMin = new Date().toISOString();
+
+        const res = await calendar.events.list(listParams as never);
+
+        for (const ev of res.data.items ?? []) {
+          if (isActionableEvent({ ...ev, _isHolidayOrBirthday: nonActionable })) {
+            await upsertTaskFromEvent(workspaceId, ev, cal.id);
+            tasksUpserted++;
+          } else {
+            await upsertCalendarEntry(workspaceId, ev);
+            entriesUpserted++;
+          }
+        }
+
+        pageToken = res.data.nextPageToken ?? undefined;
+        nextSyncToken = res.data.nextSyncToken ?? nextSyncToken;
+      } while (pageToken);
+
+      if (nextSyncToken) syncTokens[cal.id] = nextSyncToken;
+    } catch (err) {
+      if (isSyncTokenExpired(err)) {
+        delete syncTokens[cal.id]; // force a full re-fetch on the next push
+      } else if (isAuthError(err)) {
+        throw err; // let the caller deactivate the integration
+      }
+      // otherwise skip this calendar (permissions, transient) and continue
+    }
+  }
+
+  const { syncToken: _drop, ...restMeta } = meta;
+  await db.integration.update({
+    where: { id: integration.id },
+    data: { metadata: { ...restMeta, syncTokens } },
+  });
+
+  return { tasksUpserted, entriesUpserted };
 }
 
 // ---------------------------------------------------------------------------

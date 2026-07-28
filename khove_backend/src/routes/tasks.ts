@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { getCurrentUser } from "@backend/lib/auth";
 import { db } from "@backend/lib/db";
-import { pushTaskToGoogleCalendar } from "@backend/lib/integrations/google-calendar";
+import {
+  pushTaskToGoogleCalendar,
+  deleteGoogleCalendarEvent,
+} from "@backend/lib/integrations/google-calendar";
 import { publishEvent } from "@backend/lib/realtime";
 import { requireWorkspaceMembership } from "@backend/lib/workspace/resolve";
 
@@ -174,6 +177,32 @@ router.patch("/:id/due-date", async (req, res) => {
       try { await pushTaskToGoogleCalendar(updated.workspaceId ?? "", updated); } catch {}
     }
     await publishEvent(ctx.user.id, { type: "task.updated", taskId: req.params.id }).catch(() => {});
+    return res.json({ ok: true });
+  } catch {
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// DELETE /api/tasks/:id — explicit delete. Propagates the deletion to Google
+// Calendar for linked events (delete=explicit governance) so the webhook can't
+// re-sync it back. deleteGoogleCalendarEvent was previously dead code.
+router.delete("/:id", async (req, res) => {
+  try {
+    const ctx = await loadOwnedTask(req, res);
+    if (!ctx) return;
+    const { task } = ctx;
+
+    if (task.externalId && task.source.includes("GOOGLE_CALENDAR")) {
+      try {
+        await deleteGoogleCalendarEvent(task.workspaceId ?? "", task.externalId);
+      } catch {
+        // Non-fatal: event may already be gone on Google's side.
+      }
+    }
+
+    await db.task.delete({ where: { id: task.id } });
+    // TODO(stage-d): writeAudit({ actorType: "USER", action: "calendar.event.deleted", ... })
+    await publishEvent(ctx.user.id, { type: "task.deleted", taskId: task.id }).catch(() => {});
     return res.json({ ok: true });
   } catch {
     return res.status(500).json({ error: "Internal server error" });

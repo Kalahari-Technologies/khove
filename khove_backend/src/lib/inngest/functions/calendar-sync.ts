@@ -4,13 +4,12 @@ import { encrypt, decrypt } from "@backend/lib/encryption";
 import {
   createOAuth2Client,
   syncGoogleCalendar,
-  isActionableEvent,
-  upsertTaskFromEvent,
-  upsertCalendarEntry,
+  incrementalSyncAllCalendars,
+  isAuthError,
   registerWebhook,
   stopWebhook,
 } from "@backend/lib/integrations/google-calendar";
-import { google } from "googleapis";
+import { sendEmail, renderTemplate } from "@backend/lib/email";
 import { publishEvent, publishWorkspaceEvent } from "@backend/lib/realtime";
 import { env } from "@backend/env";
 import { Redis } from "@upstash/redis";
@@ -200,60 +199,11 @@ export const handleCalendarWebhook = inngest.createFunction(
 
     if (!integration) return { skipped: true, reason: "no active integration" };
 
-    await step.run("sync-changes", async () => {
-      const oauth2 = createOAuth2Client();
-      const accessToken = decrypt(integration.accessTokenEnc);
-      const refreshToken = integration.refreshTokenEnc
-        ? decrypt(integration.refreshTokenEnc)
-        : undefined;
-
-      oauth2.setCredentials({
-        access_token: accessToken,
-        refresh_token: refreshToken,
-        expiry_date: integration.tokenExpiresAt
-          ? new Date(integration.tokenExpiresAt).getTime()
-          : undefined,
-      });
-
-      const calendar = google.calendar({ version: "v3", auth: oauth2 });
-      const metadata = integration.metadata as Record<string, unknown>;
-      const calendarId = (metadata?.calendarId as string) ?? "primary";
-      const syncToken = metadata?.syncToken as string | undefined;
-
-      const params: Record<string, unknown> = {
-        calendarId,
-        singleEvents: true,
-        maxResults: 50,
-      };
-      if (syncToken) {
-        params.syncToken = syncToken;
-      } else {
-        params.timeMin = new Date().toISOString();
-      }
-
+    const result = await step.run("sync-changes", async () => {
       try {
-        const res = await calendar.events.list(params as never);
-
-        let tasksUpserted = 0;
-        let entriesUpserted = 0;
-        for (const ev of res.data.items ?? []) {
-          if (isActionableEvent(ev)) {
-            await upsertTaskFromEvent(workspaceId, ev, calendarId);
-            tasksUpserted++;
-          } else {
-            await upsertCalendarEntry(workspaceId, ev);
-            entriesUpserted++;
-          }
-        }
-
-        if (res.data.nextSyncToken) {
-          await db.integration.update({
-            where: { id: integration.id },
-            data: {
-              metadata: { ...metadata, syncToken: res.data.nextSyncToken },
-            },
-          });
-        }
+        // Incremental sync across ALL calendars via per-calendar sync tokens
+        // (the 410-expiry + token persistence live inside this helper).
+        const { tasksUpserted, entriesUpserted } = await incrementalSyncAllCalendars(workspaceId);
 
         if (tasksUpserted > 0 || entriesUpserted > 0) {
           await publishWorkspaceEvent(workspaceId, {
@@ -263,19 +213,25 @@ export const handleCalendarWebhook = inngest.createFunction(
             entriesCreated: entriesUpserted,
           });
         }
-
-        return { eventsProcessed: res.data.items?.length ?? 0, tasksUpserted, entriesUpserted };
-      } catch (err: unknown) {
-        if (err && typeof err === "object" && "code" in err && (err as { code: number }).code === 410) {
+        return { tasksUpserted, entriesUpserted };
+      } catch (err) {
+        // A revoked token surfaces here too — deactivate + prompt reconnect.
+        if (isAuthError(err)) {
           await db.integration.update({
             where: { id: integration.id },
-            data: { metadata: { ...metadata, syncToken: undefined } },
+            data: { isActive: false, refreshTokenEnc: null, tokenExpiresAt: null },
           });
-          return { eventsProcessed: 0, syncTokenCleared: true };
+          await inngest.send({
+            name: "google-calendar/token-revoked",
+            data: { userId: integration.userId, workspaceId: integration.workspaceId },
+          });
+          return { revoked: true };
         }
         throw err;
       }
     });
+
+    return result;
   },
 );
 
@@ -302,6 +258,7 @@ export const refreshExpiringTokens = inngest.createFunction(
     });
 
     let refreshed = 0;
+    let revoked = 0;
 
     for (const integration of expiring) {
       await step.run(`refresh-${integration.id}`, async () => {
@@ -315,21 +272,83 @@ export const refreshExpiringTokens = inngest.createFunction(
 
         oauth2.setCredentials({ access_token: accessToken, refresh_token: refreshToken });
 
-        const { credentials } = await oauth2.refreshAccessToken();
+        try {
+          const { credentials } = await oauth2.refreshAccessToken();
 
-        const data: Record<string, unknown> = {};
-        if (credentials.access_token) data.accessTokenEnc = encrypt(credentials.access_token);
-        if (credentials.refresh_token) data.refreshTokenEnc = encrypt(credentials.refresh_token);
-        if (credentials.expiry_date) data.tokenExpiresAt = new Date(credentials.expiry_date);
+          const data: Record<string, unknown> = {};
+          if (credentials.access_token) data.accessTokenEnc = encrypt(credentials.access_token);
+          if (credentials.refresh_token) data.refreshTokenEnc = encrypt(credentials.refresh_token);
+          if (credentials.expiry_date) data.tokenExpiresAt = new Date(credentials.expiry_date);
 
-        if (Object.keys(data).length > 0) {
-          await db.integration.update({ where: { id: integration.id }, data });
+          if (Object.keys(data).length > 0) {
+            await db.integration.update({ where: { id: integration.id }, data });
+          }
+          refreshed++;
+        } catch (err) {
+          // A revoked/expired refresh token is permanent — deactivate the
+          // integration so the cron stops retrying (the invalid_grant storm),
+          // and prompt the user to reconnect.
+          if (isAuthError(err)) {
+            await db.integration.update({
+              where: { id: integration.id },
+              data: { isActive: false, refreshTokenEnc: null, tokenExpiresAt: null },
+            });
+            await inngest.send({
+              name: "google-calendar/token-revoked",
+              data: { userId: integration.userId, workspaceId: integration.workspaceId },
+            });
+            revoked++;
+            return;
+          }
+          throw err;
         }
-        refreshed++;
       });
     }
 
-    return { found: expiring.length, refreshed };
+    return { found: expiring.length, refreshed, revoked };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Token revoked — prompt the user to reconnect (fired on invalid_grant)
+// ---------------------------------------------------------------------------
+
+export const handleCalendarTokenRevoked = inngest.createFunction(
+  {
+    id: "google-calendar-token-revoked",
+    triggers: [{ event: "google-calendar/token-revoked" }],
+  },
+  async ({ event, step }) => {
+    const { userId, workspaceId } = event.data as { userId: string; workspaceId: string };
+
+    // Nudge any open client to refresh (the planner will show a disconnected state).
+    await publishEvent(userId, { type: "calendar.disconnected" }).catch(() => {});
+
+    const sent = await step.run("send-reconnect-email", async () => {
+      const user = await db.user.findUnique({ where: { id: userId } });
+      const workspace = await db.workspace.findUnique({ where: { id: workspaceId }, select: { slug: true, name: true } });
+      if (!user) return { skipped: true, reason: "user not found" };
+
+      const firstName = user.name?.split(" ")[0] || user.email.split("@")[0];
+      const reconnectUrl = workspace
+        ? `${env.FRONTEND_ORIGIN}/${workspace.slug}/planner`
+        : `${env.FRONTEND_ORIGIN}`;
+
+      const html = renderTemplate("calendar-reconnect", {
+        first_name: firstName,
+        workspace_name: workspace?.name ?? "your workspace",
+        reconnect_url: reconnectUrl,
+        current_year: new Date().getFullYear().toString(),
+      });
+
+      return sendEmail({
+        to: user.email,
+        subject: "Reconnect your Google Calendar",
+        html,
+      });
+    });
+
+    return { userId, workspaceId, sent };
   },
 );
 

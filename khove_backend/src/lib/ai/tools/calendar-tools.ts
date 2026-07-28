@@ -2,7 +2,7 @@ import { tool, zodSchema } from "ai";
 import { z } from "zod";
 import {
   listUpcomingEvents,
-  createEvent,
+  createCalendarEventAndTask,
   checkAvailability,
 } from "@backend/lib/integrations/google-calendar";
 
@@ -94,7 +94,7 @@ export function getCalendarTools(workspaceId: string) {
         location,
       }) => {
         try {
-          const event = await createEvent(workspaceId, {
+          const { event, taskId } = await createCalendarEventAndTask(workspaceId, {
             summary,
             startDateTime,
             endDateTime,
@@ -107,6 +107,7 @@ export function getCalendarTools(workspaceId: string) {
             success: true,
             event: {
               id: event.id,
+              taskId,
               summary: event.summary,
               start: event.start?.dateTime ?? event.start?.date,
               end: event.end?.dateTime ?? event.end?.date,
