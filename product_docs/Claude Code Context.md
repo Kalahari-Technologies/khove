@@ -8,11 +8,21 @@ Version 1.0  ·  2025  ·  Kigali & Lagos
 
 ## **What Khove Is**
 
-Khove (khove.io) is an AI-native SaaS platform that connects GitHub, Jira/Atlassian, and Google Calendar through a single conversational AI interface. It is not a task manager, not a project management replacement, and not another ClickUp. Khove sits between the tools teams already use and makes them function as a single coherent system.
+Khove (khove.io) is an AI-native **orchestration platform** for Product & Dev teams. It connects GitHub, Jira/Atlassian, and Google Calendar into a single **connectivity thread**, and runs **agents** across that thread to kill the context-switching that fragments modern work. It is not a task manager, not a project-management replacement, not another ClickUp — and, critically, **not a code-writer.**
 
 The one-sentence pitch: Your tools, finally thinking together.
 
-The core differentiation: ClickUp tries to replace your tools. Linear owns dev workflows but has no AI and no Calendar. Khove connects everything you already use, and adds AI that actually takes action — not just talks.
+**Positioning discipline (V4 — non-negotiable):** Khove is an **orchestrator, not a code-writer.** It sits *above the repo*: it turns product intent into dispatched dev work and tracks it home. It does **not** compete with Cursor / Claude Code / Codex / GitHub's coding agent — it hands off to them and owns the connective layer above them. The defensible moat is the Thread (durable cross-context memory of a team's work), not code generation.
+
+The core differentiation: ClickUp tries to replace your tools. Cursor / Copilot Workspace / Devin own AI *inside the repo*. Linear owns dev workflow but has no cross-tool AI or calendar. Khove owns the orchestration layer that connects product intent to dev execution across every tool, with agents operating on a shared thread.
+
+**Forward direction (not yet built — treat as roadmap, not current code):**
+- **Connectivity Thread** — one work item whose lifecycle spans GitHub / Jira / Calendar / people; the evolution of today's multi-source `Task` model.
+- **Agents across the thread** — durable, event-driven workers; first is the **GitHub PR Shepherd** (webhook-triggered; propose→approve gated).
+- **Khove-as-a-provider via MCP** — expose Threads + actions so Khove context is usable inside Cursor / Claude Code / Codex. First "outside Khove" surface; plugins/marketplace + CLI are Act 2.
+- **Metering** evolves from AI actions → agent-runs + platform entitlements, always plan-gated.
+
+The shipped product today is still the conversational layer (see the rest of this note and the Technical PRD V1.3 §11–14 for the direction).
 
 ## **Who It Is For**
 

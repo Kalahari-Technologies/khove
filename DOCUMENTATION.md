@@ -1,7 +1,30 @@
 # Khove — Developer Documentation
 
-> AI-native task and workflow intelligence for individuals and dev teams.
-> Connects GitHub, Jira/Atlassian, and Google Calendar through a single conversational AI interface.
+> AI-native **orchestration** for Product & Dev teams.
+> Connects GitHub, Jira/Atlassian, and Google Calendar into a single connectivity thread,
+> with a conversational AI layer today and agents on the roadmap.
+
+---
+
+## 0. Product Direction — V4 Pivot (roadmap, not yet built)
+
+Khove is pivoting from *conversational AI over your tools* to an **AI-native orchestration
+platform**. The rest of this manual documents the **shipped** system (conversational layer);
+this section is the forward roadmap. See `product_docs/Technical PRD.md` §11–14 and Concept
+Note V4 for detail.
+
+- **Orchestrator, not code-writer.** Khove sits above the repo and dispatches to Cursor /
+  Claude Code / Codex — it never competes with them. The moat is cross-context memory, not code.
+- **Connectivity Thread** — the target core primitive: one work item spanning GitHub / Jira /
+  Calendar / people. Evolves from today's `Task.source[]` + namespaced `metadata`.
+- **Agents** run on the existing Inngest substrate (durable steps, cron, concurrency) as
+  event-driven workers. First: **GitHub PR Shepherd** (webhook-triggered; propose→approve
+  gated; audited via `AiUsageLog` + SSE events).
+- **MCP server (Khove-as-provider)** — exposes Threads + actions so Khove context is usable
+  inside external coding agents. First "outside Khove" surface; plugins/marketplace + CLI = Act 2.
+- **Metering** evolves from AI actions → agent-runs + platform entitlements, always plan-gated.
+- **Pilot:** Thread + PR Shepherd + minimal MCP. Prerequisite: fix the GitHub webhook secret
+  env-name mismatch (`GITHUB_WEBHOOK_SECRET` vs `GITHUB_APP_WEBHOOK_SECRET`) so webhooks work.
 
 ---
 
@@ -16,27 +39,34 @@
 - **Google Cloud** project (Calendar OAuth)
 - **Inngest** account (background jobs — optional for local dev)
 
-### Setup
+### Setup (monorepo — two services)
+
+The repo is an npm-workspaces monorepo: **`khove_frontend`** (Next.js :3000), **`khove_backend`**
+(Express :4000), and **`packages/shared`**. Each service has its own `.env.local`.
 
 ```bash
-# Clone
+# Clone + install all workspaces (single root lockfile)
 git clone https://github.com/Kalahari-Technologies/khove.git
 cd khove
-
-# Install
 npm install
 
-# Environment
-cp .env.example .env.local
-# Fill in all values (see Section 4 for details)
+# Environment — TWO files:
+cp khove_backend/.env.example  khove_backend/.env.local    # all secrets (DB, Redis, AI, Clerk, OAuth…)
+cp khove_frontend/.env.example khove_frontend/.env.local   # public keys + Clerk secret + backend URLs
 
-# Database
-npx prisma db push
+# Prisma (backend owns the schema; reads khove_backend/.env.local via dotenv-cli)
+npm run db:generate
+npm run db:push
 
-# Run (two terminals)
-npm run dev          # Next.js on port 3000
-npx inngest-cli dev  # Inngest dev server on port 8288
+# Run
+npm run dev            # backend (:4000) + frontend (:3000) concurrently
+# or separately:  npm run dev:backend   /   npm run dev:frontend
+npm run inngest        # (optional) Inngest CLI dev, pointed at :4000/api/inngest
 ```
+
+OAuth in dev: register the `:4000` callback URIs (`/api/integrations/{github,google}/callback`)
+in the GitHub App / Google Cloud consoles, and add `http://localhost:3000` to Clerk's allowed
+origins. Inngest local dev uses `INNGEST_DEV=1` (signing keys stay unset).
 
 ### First Login
 

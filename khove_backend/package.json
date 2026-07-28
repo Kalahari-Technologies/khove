@@ -1,0 +1,53 @@
+{
+  "name": "khove_backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "prisma generate",
+    "inngest": "npx inngest-cli@latest dev -u http://localhost:4000/api/inngest",
+    "db:generate": "dotenv -e .env.local -- prisma generate",
+    "db:migrate": "dotenv -e .env.local -- prisma migrate dev",
+    "db:push": "dotenv -e .env.local -- prisma db push",
+    "db:seed": "dotenv -e .env.local -- tsx prisma/seed.ts",
+    "db:studio": "dotenv -e .env.local -- prisma studio"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.63",
+    "@ai-sdk/google": "^3.0.53",
+    "@clerk/backend": "^2",
+    "@clerk/express": "^1",
+    "@khove/shared": "*",
+    "@octokit/app": "^16.1.2",
+    "@octokit/rest": "^22.0.1",
+    "@octokit/webhooks": "^14.2.0",
+    "@prisma/client": "^6",
+    "@trpc/server": "^11",
+    "@upstash/redis": "^1",
+    "ai": "^6.0.137",
+    "cors": "^2.8.5",
+    "dotenv": "^16",
+    "express": "^4.21.2",
+    "googleapis": "^171.4.0",
+    "inngest": "^4.0.5",
+    "resend": "^6.10.0",
+    "socket.io": "^4.8.1",
+    "superjson": "^2",
+    "svix": "^1",
+    "swagger-ui-express": "^5.0.1",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20",
+    "@types/swagger-ui-express": "^4.1.8",
+    "dotenv-cli": "^11.0.0",
+    "prisma": "^6",
+    "tsx": "^4.23.1",
+    "typescript": "^5"
+  }
+}
