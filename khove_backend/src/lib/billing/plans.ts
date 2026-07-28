@@ -20,6 +20,10 @@ export interface PlanConfig {
     memoryRetentionDays: number; // 7 for free, -1 = unlimited for paid
     standupAutomation: boolean;
     customAiInstructions: boolean;
+    // Proactive agent — read/observe insights are free for all tiers; executing
+    // an approved write action (block focus, reschedule, RSVP nudge) is PRO+.
+    // Becomes the paid gate once billing ships.
+    agentActions: boolean;
     // Team features
     teamWorkspace: boolean;
     teamMemory: boolean;
@@ -60,6 +64,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
       memoryRetentionDays: 7,
       standupAutomation: false,
       customAiInstructions: false,
+      agentActions: false,
       teamWorkspace: false,
       teamMemory: false,
       sprintIntelligence: false,
@@ -84,6 +89,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
       memoryRetentionDays: -1,
       standupAutomation: true,
       customAiInstructions: true,
+      agentActions: true,
       teamWorkspace: false,
       teamMemory: false,
       sprintIntelligence: false,
@@ -108,6 +114,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
       memoryRetentionDays: -1,
       standupAutomation: true,
       customAiInstructions: true,
+      agentActions: true,
       teamWorkspace: true,
       teamMemory: true,
       sprintIntelligence: false,
@@ -132,6 +139,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
       memoryRetentionDays: -1,
       standupAutomation: true,
       customAiInstructions: true,
+      agentActions: true,
       teamWorkspace: true,
       teamMemory: true,
       sprintIntelligence: true,
@@ -156,6 +164,7 @@ export const PLANS: Record<PlanTier, PlanConfig> = {
       memoryRetentionDays: -1,
       standupAutomation: true,
       customAiInstructions: true,
+      agentActions: true,
       teamWorkspace: true,
       teamMemory: true,
       sprintIntelligence: true,

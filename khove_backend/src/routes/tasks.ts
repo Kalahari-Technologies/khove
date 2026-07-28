@@ -5,6 +5,7 @@ import {
   pushTaskToGoogleCalendar,
   deleteGoogleCalendarEvent,
 } from "@backend/lib/integrations/google-calendar";
+import { writeAudit } from "@backend/lib/agent/audit";
 import { publishEvent } from "@backend/lib/realtime";
 import { requireWorkspaceMembership } from "@backend/lib/workspace/resolve";
 
@@ -201,7 +202,17 @@ router.delete("/:id", async (req, res) => {
     }
 
     await db.task.delete({ where: { id: task.id } });
-    // TODO(stage-d): writeAudit({ actorType: "USER", action: "calendar.event.deleted", ... })
+    if (task.workspaceId) {
+      await writeAudit({
+        workspaceId: task.workspaceId,
+        actorType: "USER",
+        actorId: ctx.user.id,
+        action: task.externalId ? "calendar.event.deleted" : "task.deleted",
+        targetType: "Task",
+        targetId: task.id,
+        metadata: { title: task.title, source: task.source },
+      });
+    }
     await publishEvent(ctx.user.id, { type: "task.deleted", taskId: task.id }).catch(() => {});
     return res.json({ ok: true });
   } catch {

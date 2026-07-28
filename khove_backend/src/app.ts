@@ -21,6 +21,7 @@ import {
   initialGitHubSync,
   handleGitHubWebhook,
 } from "@backend/lib/inngest/functions/github-sync";
+import { calendarIntelligenceScan } from "@backend/lib/inngest/functions/agent-actions";
 import {
   sendWelcomeSignupEmail,
   sendWelcomeBackEmail,
@@ -75,6 +76,7 @@ export function createApp() {
         handleCalendarTokenRevoked,
         initialGitHubSync,
         handleGitHubWebhook,
+        calendarIntelligenceScan,
         sendWelcomeSignupEmail,
         sendWelcomeBackEmail,
         sendOtpEmail,

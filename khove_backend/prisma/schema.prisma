@@ -107,6 +107,25 @@ enum ThreadLinkKind {
   JIRA_ISSUE
 }
 
+// Approval-gated proactive agent actions.
+enum AgentActionType {
+  BLOCK_FOCUS_TIME
+  RESCHEDULE_EVENT
+  RSVP_NUDGE
+  CREATE_EVENT
+  SUGGEST_THREAD
+}
+
+enum AgentActionStatus {
+  PENDING
+  APPROVED
+  EXECUTED
+  REJECTED
+  FAILED
+  EXPIRED
+  DISMISSED
+}
+
 // ─────────────────────────────────────────────
 // Core Tables
 // ─────────────────────────────────────────────
@@ -157,6 +176,8 @@ model Workspace {
   aiUsageLogs       AiUsageLog[]
   subscriptions     Subscription[]
   threads           Thread[]
+  agentActions      AgentAction[]
+  auditLogs         AuditLog[]
 }
 
 model WorkspaceMember {
@@ -408,4 +429,53 @@ model ThreadLink {
   @@unique([threadId, kind, refId])
   @@index([threadId])
   @@index([kind, refId])
+}
+
+// ─────────────────────────────────────────────
+// Agent actions + audit (governance: read auto / write approval / delete explicit)
+// ─────────────────────────────────────────────
+
+// A proactive action the agent proposes; PENDING until a human approves, then
+// executed and audited. Write-action execution is plan-gated (PRO+).
+model AgentAction {
+  id          String            @id @default(cuid())
+  workspaceId String
+  threadId    String?
+  type        AgentActionType
+  status      AgentActionStatus @default(PENDING)
+  title       String
+  rationale   String
+  confidence  Float?
+  sources     Json              @default("[]")
+  payload     Json              @default("{}")
+  dedupeKey   String
+  proposedBy  String // "agent:calendar-intelligence" | userId
+  approvedBy  String?
+  approvedAt  DateTime?
+  executedAt  DateTime?
+  error       String?
+  expiresAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, status])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  actorType   String // USER | AGENT
+  actorId     String
+  action      String // "agent_action.approved" | "calendar.event.deleted" | ...
+  targetType  String?
+  targetId    String?
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
 }

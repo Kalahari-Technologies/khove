@@ -7,6 +7,7 @@ import { conversationRouter } from "@backend/server/routers/conversation";
 import { calendarEntryRouter } from "@backend/server/routers/calendar-entry";
 import { insightRouter } from "@backend/server/routers/insight";
 import { threadRouter } from "@backend/server/routers/thread";
+import { agentActionRouter } from "@backend/server/routers/agent-action";
 
 export const appRouter = router({
   task: taskRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   calendarEntry: calendarEntryRouter,
   insight: insightRouter,
   thread: threadRouter,
+  agentAction: agentActionRouter,
 });
 
 export type AppRouter = typeof appRouter;
