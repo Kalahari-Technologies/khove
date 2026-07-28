@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Paperclip, Send, ChevronRight, ChevronDown, Sparkles, Check } from "lucide-react";
+import { useUser } from "@clerk/nextjs";
 import type { ChatMessage, ClientChatMessage } from "@/lib/types";
 import { useConversations, type StreamState } from "@/lib/conversations/conversations-context";
 import dynamic from "next/dynamic";
@@ -319,8 +320,8 @@ function ProcessBlock({
     : `${steps.length} step${steps.length > 1 ? "s" : ""}`;
 
   return (
-    <div className="mb-2 rounded-lg border border-white/[0.07] bg-white/[0.02] overflow-hidden max-w-md">
-      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 w-full px-3 py-1.5 text-left">
+    <div className="mb-2 rounded-lg border border-white/[0.07] bg-white/[0.02] overflow-hidden w-fit min-w-[150px] max-w-md">
+      <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 w-full px-2.5 py-1.5 text-left">
         <Sparkles size={12} className={`flex-shrink-0 ${anyRunning ? "text-violet-300" : "text-white/40"}`} />
         <span className="text-[11px] text-white/55 flex-1 truncate">{headline}</span>
         <ChevronDown size={12} className={`text-white/30 transition-transform ${open ? "rotate-180" : ""}`} />
@@ -347,17 +348,24 @@ function ProcessBlock({
 
 function MessageBubble({ message }: { message: ClientChatMessage }) {
   const isUser = message.role === "user";
+  const { user } = useUser();
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       <div
-        className={`w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center text-[10px] font-semibold ${
+        className={`w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center overflow-hidden text-[10px] font-semibold ${
           isUser
             ? "bg-white text-black"
             : "border border-white/[0.14]"
         }`}
       >
-        {isUser ? "U" : (
+        {isUser ? (
+          user?.imageUrl ? (
+            <img src={user.imageUrl} alt="You" className="w-full h-full object-cover" draggable={false} />
+          ) : (
+            (user?.firstName?.[0] ?? "U").toUpperCase()
+          )
+        ) : (
           <img src="/assets/khove-white.png" alt="Khove" className="w-3.5 h-3.5 object-contain" draggable={false} />
         )}
       </div>

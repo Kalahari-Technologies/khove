@@ -7,11 +7,12 @@ export default async function PlannerPage({
   searchParams,
 }: {
   params: Promise<{ workspace: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; syncing?: string }>;
 }) {
   const { workspace: slug } = await params;
-  const { view: rawView } = await searchParams;
+  const { view: rawView, syncing: rawSyncing } = await searchParams;
   const view = rawView === "week" || rawView === "day" ? rawView : ("month" as const);
+  const justConnected = rawSyncing === "true";
 
   const base = await serverTRPC();
   const me = await base.workspace.me.query().catch(() => null);
@@ -46,10 +47,15 @@ export default async function PlannerPage({
     }
   }
   const isGoogleConnected = !!googleIntegration;
+  const syncStatus = (sync as { status?: string }).status;
+  const noGoogleData =
+    tasks.filter((t) => t.source.includes("GOOGLE_CALENDAR")).length === 0 &&
+    calendarEntries.length === 0;
+  // Show the spinner while the sync job runs, OR right after connecting (?syncing=true)
+  // before the job has flipped the Redis flag — until data arrives or the job reports done.
   const isSyncing =
-    (sync as { status?: string }).status === "syncing" &&
     isGoogleConnected &&
-    tasks.filter((t) => t.source.includes("GOOGLE_CALENDAR")).length === 0;
+    (syncStatus === "syncing" || (justConnected && syncStatus !== "done" && noGoogleData));
 
   const isFirstTime = tasks.length === 0 && calendarEntries.length === 0 && !isSyncing;
 
