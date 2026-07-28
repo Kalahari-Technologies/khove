@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 import { clerkMiddleware } from "@clerk/express";
+import { openApiSpec } from "@backend/openapi";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { serve as inngestServe } from "inngest/express";
 import { env } from "@backend/env";
@@ -50,6 +52,10 @@ export function createApp() {
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
   });
+
+  // API docs — Swagger UI at /docs, raw spec at /openapi.json.
+  app.get("/openapi.json", (_req, res) => res.json(openApiSpec));
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
 
   // Inngest serve handler (manages its own body parsing). 11 functions.
   app.use(
