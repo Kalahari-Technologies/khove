@@ -1,11 +1,49 @@
 # Khove — Claude Code Working Guide
 
-AI-native task and workflow intelligence for individuals and dev teams. Connects GitHub,
-Google Calendar, and (planned) Jira behind a single conversational AI interface.
+AI-native **orchestration** for Product & Dev teams. Connects GitHub, Google Calendar, and
+(planned) Jira into a single connectivity thread, with a conversational AI layer today and
+agents on the roadmap.
 
 > This file is the authoritative checkpoint and lives **inside the repo**. `DOCUMENTATION.md`
 > is the long-form developer manual; this file is the short, load-bearing context Claude needs.
 > Verified against the code on 2026-07-21.
+
+---
+
+## Product Direction — V4 Pivot (read before proposing features)
+
+Khove is pivoting from *conversational AI over your tools* to an **AI-native orchestration
+platform**. The shipped code today is still the conversational layer; the pivot below is
+**direction, not yet built** (see `product_docs/Technical PRD.md` §11–14, Concept Note V4).
+
+- **Orchestrator, not code-writer.** Khove sits *above the repo*, turns product intent into
+  dispatched dev work, and tracks it home. It does **not** compete with Cursor / Claude Code /
+  Codex — it hands off to them. Never build repo-level code generation.
+- **Connectivity Thread** is the target core primitive — one work item spanning GitHub / Jira /
+  Calendar / people; the evolution of the existing `Task.source[]` + `metadata` model.
+- **Agents across the thread.** First agent: **GitHub PR Shepherd** (webhook-triggered;
+  Inngest is the runtime). Agent writes are **gated behind human approval by default**; every
+  action is audited.
+- **Khove-as-a-provider via MCP** — expose Threads + actions so Khove context is usable inside
+  Cursor / Claude Code / Codex. First "outside Khove" surface; plugins/marketplace + CLI = Act 2.
+- **Metering** evolves from AI actions → agent-runs + platform entitlements, always plan-gated.
+- **Memory = mem0 (self-hosted).** Supersedes the Redis blob in `lib/ai/memory.ts`. Backed by
+  `pgvector` on Supabase + Gemini embeddings (no new vendor; data stays in-house). Isolation
+  boundary is **`workspaceId`** — never call mem0 raw; go through a `scopedMemory(workspaceId,
+  userId)` wrapper. Two scopes: **workspace memory** (work content, never crosses a workspace) and
+  **personal memory** (preferences only, content-free, travels across a user's own workspaces).
+  Three tiers: conversation / Thread (`run_id=threadId`) / agent (`agent_id+workspaceId`).
+- **Positioning:** *companies have a context problem, not a project-management problem.*
+  **Proactive, not a chatbot.** Loop = **Observe → Understand → Predict → Recommend → Act**.
+  All agent output is **evidence-backed** (signal + confidence + sources). Governance =
+  **read auto / write approval / delete explicit**, always audited. *MCP is plumbing, not the moat.*
+- **AI provider:** Anthropic + Google **direct** for the pilot (default no-training terms + DPA).
+  **ZDR is not a pilot toggle** — request it when an enterprise deal needs it. Bedrock / Vertex are
+  provider-swaps behind `lib/ai/providers/`, added when a customer requires in-cloud data residency
+  — do **not** pre-build a multi-provider gateway.
+- **Pilot:** Thread + PR Shepherd + minimal MCP server + mem0 memory (fixing the GitHub webhook bug
+  below is a prerequisite — the sensor is currently deaf). See `product_docs/Technical PRD.md`
+  §15–18 for scope and the explicit "not building yet" list.
 
 ---
 
@@ -254,3 +292,14 @@ Observed while auditing; none are blocking, none have been "fixed" silently.
   `workspaceAdminProcedure` — verify the in-handler ownership check.
 - Email template values are interpolated without HTML escaping.
 - `calendar-client.tsx`'s `GithubIcon` has `alt="Jira"` (copy-paste).
+- **GitHub webhook is deaf (env-name mismatch).** `lib/integrations/github.ts` reads
+  `process.env.GITHUB_WEBHOOK_SECRET`, but `.env.local` defines `GITHUB_APP_WEBHOOK_SECRET`, so
+  the secret is `undefined` and `verifyWebhookSignature` rejects every webhook. No incremental
+  GitHub sync. Blocks the PR Shepherd — fix before the pilot.
+- **Sidebar `action: true` items are dead buttons.** In `components/app-sidebar.tsx`, items with
+  `action: true` (`Connect GitHub`, `New conversation`, `New task`, `Filter`) render as a
+  `<button>` with no `onClick`. Only `href` items work. The only working GitHub connect entry is
+  the button on the `/github` page.
+- The GitHub page is a one-time snapshot: initial sync only covers **owned** repos and **open**
+  items (`type: "owner"`), has no refresh/re-sync, and never renders repo activity. "Code
+  complete" ≠ usable — real PRs in org/collaborator repos never appear.

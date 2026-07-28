@@ -1,7 +1,30 @@
 # Khove — Developer Documentation
 
-> AI-native task and workflow intelligence for individuals and dev teams.
-> Connects GitHub, Jira/Atlassian, and Google Calendar through a single conversational AI interface.
+> AI-native **orchestration** for Product & Dev teams.
+> Connects GitHub, Jira/Atlassian, and Google Calendar into a single connectivity thread,
+> with a conversational AI layer today and agents on the roadmap.
+
+---
+
+## 0. Product Direction — V4 Pivot (roadmap, not yet built)
+
+Khove is pivoting from *conversational AI over your tools* to an **AI-native orchestration
+platform**. The rest of this manual documents the **shipped** system (conversational layer);
+this section is the forward roadmap. See `product_docs/Technical PRD.md` §11–14 and Concept
+Note V4 for detail.
+
+- **Orchestrator, not code-writer.** Khove sits above the repo and dispatches to Cursor /
+  Claude Code / Codex — it never competes with them. The moat is cross-context memory, not code.
+- **Connectivity Thread** — the target core primitive: one work item spanning GitHub / Jira /
+  Calendar / people. Evolves from today's `Task.source[]` + namespaced `metadata`.
+- **Agents** run on the existing Inngest substrate (durable steps, cron, concurrency) as
+  event-driven workers. First: **GitHub PR Shepherd** (webhook-triggered; propose→approve
+  gated; audited via `AiUsageLog` + SSE events).
+- **MCP server (Khove-as-provider)** — exposes Threads + actions so Khove context is usable
+  inside external coding agents. First "outside Khove" surface; plugins/marketplace + CLI = Act 2.
+- **Metering** evolves from AI actions → agent-runs + platform entitlements, always plan-gated.
+- **Pilot:** Thread + PR Shepherd + minimal MCP. Prerequisite: fix the GitHub webhook secret
+  env-name mismatch (`GITHUB_WEBHOOK_SECRET` vs `GITHUB_APP_WEBHOOK_SECRET`) so webhooks work.
 
 ---
 
