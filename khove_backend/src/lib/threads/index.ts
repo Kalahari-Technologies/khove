@@ -5,6 +5,7 @@ import { resolvePeople } from "@backend/lib/threads/resolve-people";
 
 export { parseGitHubRefs } from "@backend/lib/threads/parse-github-refs";
 export { resolvePeople } from "@backend/lib/threads/resolve-people";
+export { linkPRToThreads } from "@backend/lib/threads/link-pr";
 
 const threadWithLinks = { include: { links: { orderBy: { createdAt: "asc" } } } } as const;
 

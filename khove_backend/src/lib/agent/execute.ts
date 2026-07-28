@@ -4,7 +4,7 @@ import {
   createCalendarEventAndTask,
   pushTaskToGoogleCalendar,
 } from "@backend/lib/integrations/google-calendar";
-import { createThread, autoLinkMeeting } from "@backend/lib/threads";
+import { createThread, autoLinkMeeting, linkToThread, linkPRToThreads } from "@backend/lib/threads";
 
 /**
  * Apply an approved agent action's payload via existing write paths. Throws on
@@ -59,6 +59,22 @@ export async function executeAgentAction(action: AgentAction): Promise<{ summary
 
     case "SUGGEST_THREAD": {
       const thread = await createThread(action.workspaceId, { title: p.title as string });
+
+      // Seeded from a PR (Shepherd): link the PR + its author/reviewers.
+      if (p.prTaskId) {
+        const prTask = await db.task.findUnique({ where: { id: p.prTaskId as string } });
+        if (prTask) {
+          await linkToThread(action.workspaceId, thread.id, {
+            kind: "GITHUB_PR",
+            refId: prTask.id,
+            refUrl: prTask.externalUrl,
+            title: prTask.title,
+          });
+        }
+        await linkPRToThreads(action.workspaceId, p.prTaskId as string);
+        return { summary: `Thread created for ${prTask?.title ?? "the pull request"}.` };
+      }
+
       const linked = await autoLinkMeeting(action.workspaceId, thread.id, p.taskId as string);
       return { summary: `Thread created with ${linked.github} GitHub link(s) and ${linked.people} person(s).` };
     }

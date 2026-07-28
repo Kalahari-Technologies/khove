@@ -8,6 +8,7 @@ import {
   listInstallationRepos,
 } from "@backend/lib/integrations/github";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
+import { linkPRToThreads } from "@backend/lib/threads";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,7 +130,7 @@ export const initialGitHubSync = inngest.createFunction(
               where: { externalId, workspaceId },
             });
             if (!existing) {
-              await db.task.create({
+              const created = await db.task.create({
                 data: {
                   title: `PR #${pr.number}: ${pr.title}`,
                   source: ["GITHUB"],
@@ -157,6 +158,8 @@ export const initialGitHubSync = inngest.createFunction(
                   },
                 },
               });
+              // Upgrade any placeholder Thread link that cited this PR by URL.
+              await linkPRToThreads(workspaceId, created.id).catch(() => {});
               prsCreated++;
             }
           }
@@ -345,6 +348,8 @@ export const handleGitHubWebhook = inngest.createFunction(
                 data: { statusId: doneStatus?.id ?? null },
               });
             }
+            // Enrich any Thread that already references this PR (never auto-creates).
+            await linkPRToThreads(wsId, task.id).catch(() => {});
             await publishWorkspaceEvent(wsId, { type: "task.updated", taskId: task.id });
           }
           break;
