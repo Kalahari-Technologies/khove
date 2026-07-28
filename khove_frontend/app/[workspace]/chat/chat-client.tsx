@@ -164,6 +164,8 @@ const letterVariants = {
   },
 };
 
+const MAX_INPUT_HEIGHT = 184; // ~7 lines before the textarea scrolls internally
+
 interface AIChatInputProps {
   value: string;
   onChange: (v: string) => void;
@@ -194,18 +196,17 @@ function AIChatInput({ value, onChange, onSend, onKeyDown, disabled, textareaRef
 
   return (
     <motion.div
-      className="w-full max-w-3xl rounded-[28px] bg-white/[0.07] border border-white/[0.10] overflow-hidden cursor-text"
+      className="w-full max-w-3xl rounded-[24px] bg-white/[0.07] border border-white/[0.10] cursor-text"
       style={{
         boxShadow: expanded
           ? "0 0 0 1px rgba(255,255,255,0.12), 0 8px 32px rgba(0,0,0,0.5)"
           : "0 0 0 1px rgba(255,255,255,0.08)",
       }}
-      animate={{ height: expanded ? 96 : 56 }}
-      transition={{ type: "spring", stiffness: 120, damping: 18 }}
+      transition={{ type: "spring", stiffness: 200, damping: 26 }}
       onClick={() => { setIsActive(true); textareaRef.current?.focus(); }}
     >
-      {/* Input row */}
-      <div className="flex items-center gap-1 px-2 h-14 flex-shrink-0">
+      {/* Input row — items-end keeps the buttons at the bottom as the text grows */}
+      <div className="flex items-end gap-1 px-2 pt-1.5 pb-1.5">
         <button
           type="button"
           disabled={disabled}
@@ -217,7 +218,7 @@ function AIChatInput({ value, onChange, onSend, onKeyDown, disabled, textareaRef
         </button>
 
         {/* Textarea + animated placeholder */}
-        <div className="relative flex-1 h-full flex items-center">
+        <div className="relative flex-1 min-w-0 py-1.5">
           <textarea
             ref={textareaRef}
             value={value}
@@ -227,13 +228,13 @@ function AIChatInput({ value, onChange, onSend, onKeyDown, disabled, textareaRef
             onBlur={() => { if (!value) setIsActive(false); }}
             disabled={disabled}
             rows={1}
-            className="relative z-10 w-full bg-transparent border-none outline-none resize-none text-[15px] text-white leading-relaxed py-0 disabled:opacity-40"
-            style={{ minHeight: 24, maxHeight: 64 }}
+            className="block relative z-10 w-full bg-transparent border-none outline-none resize-none text-[15px] text-white leading-relaxed disabled:opacity-40"
+            style={{ maxHeight: MAX_INPUT_HEIGHT }}
           />
 
           {/* Animated placeholder */}
           {!value && !isActive && (
-            <div className="absolute inset-0 flex items-center pointer-events-none">
+            <div className="absolute inset-x-0 top-1.5 flex items-center pointer-events-none">
               <AnimatePresence mode="wait">
                 {showPlaceholder && (
                   <motion.span
@@ -272,15 +273,22 @@ function AIChatInput({ value, onChange, onSend, onKeyDown, disabled, textareaRef
         </button>
       </div>
 
-      {/* Hint when expanded */}
-      <motion.p
-        className="text-center text-[11px] text-white/25 pb-2 leading-none"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: expanded ? 1 : 0 }}
-        transition={{ duration: 0.18, delay: expanded ? 0.1 : 0 }}
-      >
-        Enter to send · Shift+Enter for new line
-      </motion.p>
+      {/* Hint when expanded — sits below the text, never overlapping */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            className="overflow-hidden"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.16 }}
+          >
+            <p className="text-center text-[11px] text-white/25 leading-none pb-2">
+              Enter to send · Shift+Enter for new line
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -594,10 +602,9 @@ export function ChatClient({ userName, initialMessages = [] }: ChatClientProps) 
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    const fiveLineHeight = 122; // 15px font × 1.625 leading-relaxed × 5 lines
-    const newHeight = Math.min(ta.scrollHeight, fiveLineHeight);
+    const newHeight = Math.min(ta.scrollHeight, MAX_INPUT_HEIGHT);
     ta.style.height = `${newHeight}px`;
-    ta.style.overflowY = ta.scrollHeight > fiveLineHeight ? "auto" : "hidden";
+    ta.style.overflowY = ta.scrollHeight > MAX_INPUT_HEIGHT ? "auto" : "hidden";
   }, [input]);
 
   const sendMessage = useCallback((text: string) => {
