@@ -7,6 +7,7 @@ import {
   Home,
 } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
+import { useConnectIntegration } from "@/lib/trpc/api";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { MonthView } from "./components/month-view";
 import { WeekView } from "./components/week-view";
@@ -162,24 +163,28 @@ function OrbitRing({
 
 function PlannerEmptyState({ planTier, canAdmin, workspaceId }: { planTier: string; canAdmin: boolean; workspaceId: string }) {
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
+  const [upgradeFeature] = useState<string | undefined>();
+  const [connecting, setConnecting] = useState(false);
+  const connectIntegration = useConnectIntegration();
 
-  const canCalendar = true;
-
-  function handleConnect(feature: string, href: string | undefined) {
-    if (!href) return;
-    if (feature === "calendarTools" && !canCalendar) {
-      setUpgradeFeature(feature);
-      setUpgradeOpen(true);
-      return;
+  async function handleConnect(provider: "google" | "github" | "jira", enabled: boolean) {
+    if (!enabled || connecting) return;
+    // Authenticated fetch to the BACKEND connect route → { url } → redirect.
+    // (A relative /api/... nav would 404 on the frontend origin post-split.)
+    if (provider === "google") {
+      setConnecting(true);
+      try {
+        await connectIntegration("google", workspaceId);
+      } catch {
+        setConnecting(false); // stay on page if the connect request failed
+      }
     }
-    window.location.href = href;
   }
 
-  const CTA_BUTTONS: Array<{ label: string; icon: React.ReactNode; href: string | undefined; feature: string }> = [
-    { label: "Google Calendar", icon: <GoogleCalendarIcon size={13} />, href: `/api/integrations/google/connect?workspaceId=${workspaceId}`, feature: "calendarTools" },
-    { label: "GitHub", icon: <GitBranch size={13} />, href: undefined, feature: "githubTools" },
-    { label: "Jira", icon: <JiraIcon size={13} />, href: undefined, feature: "jiraTools" },
+  const CTA_BUTTONS: Array<{ label: string; icon: React.ReactNode; provider: "google" | "github" | "jira"; enabled: boolean }> = [
+    { label: "Google Calendar", icon: <GoogleCalendarIcon size={13} />, provider: "google", enabled: true },
+    { label: "GitHub", icon: <GitBranch size={13} />, provider: "github", enabled: false },
+    { label: "Jira", icon: <JiraIcon size={13} />, provider: "jira", enabled: false },
   ];
 
   return (
@@ -228,17 +233,17 @@ function PlannerEmptyState({ planTier, canAdmin, workspaceId }: { planTier: stri
           </p>
           {canAdmin && (
             <div className="flex items-center gap-2 mt-1 flex-wrap justify-center">
-              {CTA_BUTTONS.map(({ label, icon, href, feature }) => (
+              {CTA_BUTTONS.map(({ label, icon, provider, enabled }) => (
                 <button
                   key={label}
-                  onClick={() => handleConnect(feature, href)}
+                  onClick={() => handleConnect(provider, enabled)}
                   className={`flex items-center gap-1.5 border border-white/[0.15] rounded-full px-4 py-2 text-[13px] text-white/70 hover:bg-white/[0.06] hover:text-white/90 transition-colors ${
-                    !href ? "opacity-40 cursor-not-allowed" : ""
+                    !enabled || connecting ? "opacity-40 cursor-not-allowed" : ""
                   }`}
-                  disabled={!href}
+                  disabled={!enabled || connecting}
                 >
                   {icon}
-                  {label}
+                  {provider === "google" && connecting ? "Connecting…" : label}
                 </button>
               ))}
             </div>
