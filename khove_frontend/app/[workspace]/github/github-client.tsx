@@ -33,6 +33,8 @@ import {
 } from "@/components/integrations/insight-ui";
 import { Loader2 } from "lucide-react";
 import { AgentActionCard, type AgentActionView } from "@/components/agent/agent-action-card";
+import { GitHubScopeDialog } from "@/components/integrations/github-scope-dialog";
+import { SlidersHorizontal } from "lucide-react";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 const EMERALD = "rgba(16,185,129,0.55)";
@@ -137,6 +139,7 @@ export function GitHubClient({
   const [disconnecting, setDisconnecting] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [resyncing, setResyncing] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Bucket | null>(null);
   const syncing = useInitialSync(tasks.length > 0);
 
@@ -269,6 +272,13 @@ export function GitHubClient({
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setScopeOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/60 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white/90 transition-colors"
+              style={{ transitionTimingFunction: ease }}
+            >
+              <SlidersHorizontal size={12} /> Scope
+            </button>
+            <button
               onClick={handleResync}
               disabled={resyncing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/60 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white/90 transition-colors disabled:opacity-50"
@@ -388,6 +398,8 @@ export function GitHubClient({
           )}
         </SectionCard>
       </div>
+
+      {scopeOpen && <GitHubScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
     </div>
   );
 }

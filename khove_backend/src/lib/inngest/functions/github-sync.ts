@@ -31,16 +31,31 @@ type SyncRepo = { owner: string; name: string; fullName: string };
  * connecting user's owned repos when no installation is recorded.
  */
 async function resolveSyncableRepos(workspaceId: string): Promise<SyncRepo[]> {
+  let repos: SyncRepo[] = [];
   try {
-    const repos = await listInstallationRepos(workspaceId);
-    if (repos.length > 0) {
-      return repos.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
-    }
+    const installed = await listInstallationRepos(workspaceId);
+    repos = installed.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
   } catch {
     // No installation token / listing failed — fall back to owned repos below.
   }
-  const owned = await listUserRepos(workspaceId, { per_page: 30 });
-  return owned.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
+  if (repos.length === 0) {
+    const owned = await listUserRepos(workspaceId, { per_page: 30 });
+    repos = owned.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
+  }
+
+  // Honor the workspace's chosen scope (the product boundary). If a selection is
+  // set, sync only those repos; if it no longer matches anything, fall back to all.
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GITHUB", isActive: true },
+    select: { metadata: true },
+  });
+  const scope = ((integration?.metadata ?? {}) as Record<string, unknown>).scope as { repos?: string[] } | undefined;
+  if (scope?.repos?.length) {
+    const set = new Set(scope.repos);
+    const filtered = repos.filter((r) => set.has(r.fullName));
+    if (filtered.length) return filtered;
+  }
+  return repos;
 }
 
 /** Find all active workspaces for a given App installation id. */

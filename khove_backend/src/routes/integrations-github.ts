@@ -3,7 +3,12 @@ import { getCurrentUser } from "@backend/lib/auth";
 import { db } from "@backend/lib/db";
 import { encrypt } from "@backend/lib/encryption";
 import { canAdminWorkspace } from "@backend/lib/workspace/authorization";
-import { createGitHubInstallUrl, exchangeCodeForToken } from "@backend/lib/integrations/github";
+import {
+  createGitHubInstallUrl,
+  exchangeCodeForToken,
+  listInstallationRepos,
+  listUserRepos,
+} from "@backend/lib/integrations/github";
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { publishEvent } from "@backend/lib/realtime";
 import { inngest } from "@backend/lib/inngest";
@@ -155,6 +160,74 @@ router.post("/resync", async (req, res) => {
     where: { workspaceId, provider: "GITHUB", isActive: true },
   });
   if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
+
+  await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } });
+  return res.json({ success: true });
+});
+
+// GET /api/integrations/github/repos?workspaceId=xxx — candidate repos (from the
+// installation) + the current scope selection. Admin-gated.
+router.get("/repos", async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const workspaceId = req.query.workspaceId as string | undefined;
+  if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
+
+  const membership = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId: user.id } },
+  });
+  if (!membership || !canAdminWorkspace(membership.role)) {
+    return res.status(403).json({ error: "Only workspace admins can manage scope" });
+  }
+
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GITHUB", isActive: true },
+    select: { metadata: true },
+  });
+  if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
+
+  let repos: { fullName: string; private: boolean }[] = [];
+  try {
+    repos = (await listInstallationRepos(workspaceId)).map((r) => ({ fullName: r.fullName, private: r.private }));
+  } catch {
+    // fall through to owned repos
+  }
+  if (repos.length === 0) {
+    repos = (await listUserRepos(workspaceId, { per_page: 100 })).map((r) => ({ fullName: r.fullName, private: r.private }));
+  }
+
+  const scope = ((integration.metadata ?? {}) as Record<string, unknown>).scope as { repos?: string[] } | undefined;
+  return res.json({ repos, selected: scope?.repos ?? [] });
+});
+
+// POST /api/integrations/github/scope { workspaceId, repos: string[] } — save the
+// product boundary and re-sync. Empty array means "all". Admin-gated.
+router.post("/scope", async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const { workspaceId, repos } = req.body ?? {};
+  if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
+  if (!Array.isArray(repos)) return res.status(400).json({ error: "repos must be an array" });
+
+  const membership = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId: user.id } },
+  });
+  if (!membership || !canAdminWorkspace(membership.role)) {
+    return res.status(403).json({ error: "Only workspace admins can manage scope" });
+  }
+
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GITHUB", isActive: true },
+  });
+  if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
+
+  const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+  await db.integration.update({
+    where: { id: integration.id },
+    data: { metadata: { ...meta, scope: { repos: (repos as string[]).filter(Boolean) } } },
+  });
 
   await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } });
   return res.json({ success: true });
