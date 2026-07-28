@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { X } from "lucide-react";
 import { WORKSPACE_GRADIENTS, getGradientStyle } from "@/lib/workspace/gradients";
+import { useBackendFetch } from "@/lib/trpc/api";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -29,6 +30,7 @@ interface CreateWorkspaceDialogProps {
 }
 
 export function CreateWorkspaceDialog({ open, onClose }: CreateWorkspaceDialogProps) {
+  const backendFetch = useBackendFetch();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
@@ -80,9 +82,8 @@ export function CreateWorkspaceDialog({ open, onClose }: CreateWorkspaceDialogPr
     setError(null);
 
     try {
-      const res = await fetch("/api/trpc/workspace.create", {
+      const res = await backendFetch("/trpc/workspace.create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           json: { name: name.trim(), slug: slug || undefined, gradient },
         }),

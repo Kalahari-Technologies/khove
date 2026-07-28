@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
+import { useBackendFetch } from "@/lib/trpc/api";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronRight,
@@ -995,6 +996,7 @@ function KanbanBoard({
 
 export function TasksClient({ tasks, statuses, isPersonalWorkspace }: TasksClientProps) {
   const workspace = useWorkspace();
+  const backendFetch = useBackendFetch();
   const [viewMode, setViewMode] = useState<"table" | "kanban">("table");
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
@@ -1007,7 +1009,7 @@ export function TasksClient({ tasks, statuses, isPersonalWorkspace }: TasksClien
   const handleDueDateChange = async (taskId: string, date: Date) => {
     setPendingDueDates(p => ({ ...p, [taskId]: date }));
     try {
-      const res = await fetch(`/api/tasks/${taskId}/due-date`, {
+      const res = await backendFetch(`/api/tasks/${taskId}/due-date`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dueDate: date.toISOString() }),
@@ -1023,7 +1025,7 @@ export function TasksClient({ tasks, statuses, isPersonalWorkspace }: TasksClien
     // Optimistic update
     setPendingStatusIds(p => ({ ...p, [taskId]: statusId }));
     try {
-      const res = await fetch(`/api/tasks/${taskId}/status`, {
+      const res = await backendFetch(`/api/tasks/${taskId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ statusId }),
@@ -1044,7 +1046,7 @@ export function TasksClient({ tasks, statuses, isPersonalWorkspace }: TasksClien
     const prev = pendingPriorityIds[taskId] ?? tasks.find(t => t.id === taskId)?.priority;
     setPendingPriorityIds(p => ({ ...p, [taskId]: priority }));
     try {
-      const res = await fetch(`/api/tasks/${taskId}/priority`, {
+      const res = await backendFetch(`/api/tasks/${taskId}/priority`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ priority }),

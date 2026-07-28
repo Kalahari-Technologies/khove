@@ -35,7 +35,8 @@ router.get("/connect", async (req, res) => {
     scope: GOOGLE_CALENDAR_SCOPES,
     state: `${user.id}:${workspaceId}`,
   });
-  return res.redirect(url);
+  // Return the OAuth URL as JSON — the authenticated frontend redirects to it.
+  return res.json({ url });
 });
 
 // GET /api/integrations/google/callback — redirects back to the FRONTEND origin

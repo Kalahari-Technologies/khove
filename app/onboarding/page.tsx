@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { WORKSPACE_GRADIENTS, getGradientStyle, randomGradientKey } from "@/lib/workspace/gradients";
+import { useBackendFetch } from "@/lib/trpc/api";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -25,6 +26,7 @@ function sanitizeSlug(input: string): string {
 
 export default function OnboardingPage() {
   const { user, isLoaded } = useUser();
+  const backendFetch = useBackendFetch();
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [gradient, setGradient] = useState(() => randomGradientKey());
@@ -68,9 +70,8 @@ export default function OnboardingPage() {
       await user.update({ username: slug });
 
       // 2. Update personal workspace slug + name + gradient
-      const res = await fetch("/api/onboarding", {
+      const res = await backendFetch("/api/onboarding", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: slug, gradient }),
       });
 

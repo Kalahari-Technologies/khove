@@ -25,7 +25,9 @@ router.get("/connect", async (req, res) => {
     return res.status(403).json({ error: "Only workspace admins can connect integrations" });
   }
 
-  return res.redirect(createGitHubOAuthUrl(user.id, workspaceId));
+  // Return the OAuth URL as JSON — the authenticated frontend redirects to it
+  // (a cross-origin browser navigation to this route wouldn't carry the session).
+  return res.json({ url: createGitHubOAuthUrl(user.id, workspaceId) });
 });
 
 // GET /api/integrations/github/callback — redirects back to the FRONTEND origin

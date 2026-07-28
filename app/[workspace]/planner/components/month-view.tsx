@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
+import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
 import { ChevronLeft, ChevronRight, Plus, Unplug } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
 
@@ -70,6 +71,8 @@ interface MonthViewProps {
 export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin, workspaceId, planTier }: MonthViewProps) {
   const router = useRouter();
   const workspace = useWorkspace();
+  const backendFetch = useBackendFetch();
+  const connectIntegration = useConnectIntegration();
   const today = new Date();
 
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
@@ -126,9 +129,8 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
   async function handleDisconnect() {
     setDisconnecting(true);
     try {
-      await fetch("/api/integrations/google/disconnect", {
+      await backendFetch("/api/integrations/google/disconnect", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
       });
       window.location.reload();
@@ -181,7 +183,7 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
             </span>
           ) : canAdmin ? (
             <button
-              onClick={() => { window.location.href = `/api/integrations/google/connect?workspaceId=${workspaceId}`; }}
+              onClick={() => connectIntegration("google", workspaceId)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.15] text-[12px] text-white/50 hover:bg-white/[0.06] hover:text-white/70 transition-colors"
             >
               <GoogleCalendarIcon size={12} />

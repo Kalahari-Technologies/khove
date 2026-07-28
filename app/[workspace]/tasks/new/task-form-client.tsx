@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
+import { useBackendFetch } from "@/lib/trpc/api";
 import {
   Home,
   ChevronRight,
@@ -594,6 +595,7 @@ function GoogleCalendarSection({
 
 export function TaskFormClient({ statuses, connectedProviders }: TaskFormClientProps) {
   const workspace = useWorkspace();
+  const backendFetch = useBackendFetch();
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -646,9 +648,8 @@ export function TaskFormClient({ statuses, connectedProviders }: TaskFormClientP
     setSubmitting(true);
     try {
       const combinedDate = dueDate ? combineDatetime(dueDate, dueTime) : null;
-      const res = await fetch("/api/tasks", {
+      const res = await backendFetch("/api/tasks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim() || undefined,

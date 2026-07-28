@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
+import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
 import { ExternalLink, GitPullRequest, CircleDot, Unplug } from "lucide-react";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -36,12 +37,14 @@ export function GitHubClient({
 }: GitHubClientProps) {
   const router = useRouter();
   const workspace = useWorkspace();
+  const backendFetch = useBackendFetch();
+  const connectIntegration = useConnectIntegration();
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
     setDisconnecting(true);
     try {
-      await fetch("/api/integrations/github/disconnect", {
+      await backendFetch("/api/integrations/github/disconnect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
@@ -63,13 +66,13 @@ export function GitHubClient({
             Track pull requests, issues, and repository activity. Your PRs and issues will appear as tasks in Khove.
           </p>
         </div>
-        <a
-          href={`/api/integrations/github/connect?workspaceId=${workspaceId}`}
+        <button
+          onClick={() => connectIntegration("github", workspaceId)}
           className="px-5 py-2.5 rounded-xl text-[13px] font-medium bg-white text-black hover:bg-white/90 transition-colors active:scale-[0.98]"
           style={{ transitionTimingFunction: ease }}
         >
           Connect GitHub
-        </a>
+        </button>
       </div>
     );
   }

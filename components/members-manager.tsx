@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
+import { useBackendFetch } from "@/lib/trpc/api";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -27,6 +28,7 @@ export function MembersManager({
   currentUserRole,
   members: initialMembers,
 }: MembersManagerProps) {
+  const backendFetch = useBackendFetch();
   const [members, setMembers] = useState(initialMembers);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"MEMBER" | "ADMIN" | "VIEWER">("MEMBER");
@@ -44,7 +46,7 @@ export function MembersManager({
     setError(null);
 
     try {
-      const res = await fetch("/api/trpc/workspace.inviteMember", {
+      const res = await backendFetch("/trpc/workspace.inviteMember", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -73,7 +75,7 @@ export function MembersManager({
 
   async function handleRemove(userId: string) {
     try {
-      await fetch("/api/trpc/workspace.removeMember", {
+      await backendFetch("/trpc/workspace.removeMember", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

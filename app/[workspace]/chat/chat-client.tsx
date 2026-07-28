@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Paperclip, Send, ChevronRight } from "lucide-react";
 import type { ChatMessage, ClientChatMessage } from "@/lib/types";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
+import { useBackendFetch } from "@/lib/trpc/api";
 import dynamic from "next/dynamic";
 
 const Spline = dynamic(() => import("@splinetool/react-spline"), { ssr: false });
@@ -384,6 +385,7 @@ function formatInline(text: string): React.ReactNode {
 
 export function ChatClient({ userName, conversationId: initialConvId, initialMessages = [] }: ChatClientProps) {
   const workspace = useWorkspace();
+  const backendFetch = useBackendFetch();
   const [messages, setMessages] = useState<ClientChatMessage[]>(() =>
     initialMessages.map((m) => ({
       id: crypto.randomUUID(),
@@ -441,9 +443,8 @@ export function ChatClient({ userName, conversationId: initialConvId, initialMes
     setIsLoading(true);
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await backendFetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: trimmed, conversationId, workspaceId: workspace.id }),
       });
       const data = await res.json();
