@@ -35,7 +35,7 @@ export function useBackendFetch() {
 export function useConnectIntegration() {
   const backendFetch = useBackendFetch();
   return useCallback(
-    async (provider: "github" | "google", workspaceId: string) => {
+    async (provider: "github" | "google" | "jira", workspaceId: string) => {
       const res = await backendFetch(
         `/api/integrations/${provider}/connect?workspaceId=${workspaceId}`
       );

@@ -36,6 +36,7 @@ import onboardingRouter from "@backend/routes/onboarding";
 import webhooksRouter from "@backend/routes/webhooks";
 import githubIntegrationRouter from "@backend/routes/integrations-github";
 import googleIntegrationRouter from "@backend/routes/integrations-google";
+import jiraIntegrationRouter from "@backend/routes/integrations-jira";
 
 export function createApp() {
   const app = express();
@@ -107,6 +108,7 @@ export function createApp() {
   app.use("/api/onboarding", express.json(), onboardingRouter);
   app.use("/api/integrations/github", express.json(), githubIntegrationRouter);
   app.use("/api/integrations/google", express.json(), googleIntegrationRouter);
+  app.use("/api/integrations/jira", express.json(), jiraIntegrationRouter);
 
   return app;
 }

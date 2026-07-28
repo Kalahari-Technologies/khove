@@ -178,10 +178,11 @@ function PlannerEmptyState({ planTier, canAdmin, workspaceId }: { planTier: stri
     if (!enabled || connecting) return;
     // Authenticated fetch to the BACKEND connect route → { url } → redirect.
     // (A relative /api/... nav would 404 on the frontend origin post-split.)
-    if (provider === "google") {
+    // GitHub connects from its own page; here we handle Google + Jira.
+    if (provider === "google" || provider === "jira") {
       setConnecting(true);
       try {
-        await connectIntegration("google", workspaceId);
+        await connectIntegration(provider, workspaceId);
       } catch {
         setConnecting(false); // stay on page if the connect request failed
       }
@@ -191,7 +192,7 @@ function PlannerEmptyState({ planTier, canAdmin, workspaceId }: { planTier: stri
   const CTA_BUTTONS: Array<{ label: string; icon: React.ReactNode; provider: "google" | "github" | "jira"; enabled: boolean }> = [
     { label: "Google Calendar", icon: <GoogleCalendarIcon size={13} />, provider: "google", enabled: true },
     { label: "GitHub", icon: <GitBranch size={13} />, provider: "github", enabled: false },
-    { label: "Jira", icon: <JiraIcon size={13} />, provider: "jira", enabled: false },
+    { label: "Jira", icon: <JiraIcon size={13} />, provider: "jira", enabled: true },
   ];
 
   return (
