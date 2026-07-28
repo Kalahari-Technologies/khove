@@ -57,9 +57,12 @@ export function createApp() {
   app.get("/openapi.json", (_req, res) => res.json(openApiSpec));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
 
-  // Inngest serve handler (manages its own body parsing). 11 functions.
+  // Inngest serve handler. `inngest/express` reads req.body, so it needs a JSON
+  // parser in front of it (missing → "Missing body when syncing" on the Cloud PUT
+  // sync). Raised limit because the sync payload carries every function's config.
   app.use(
     "/api/inngest",
+    express.json({ limit: "5mb" }),
     inngestServe({
       client: inngest,
       functions: [
