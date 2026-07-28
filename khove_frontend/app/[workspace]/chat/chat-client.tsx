@@ -4,6 +4,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Paperclip, Send, ChevronRight, ChevronDown, Sparkles, Check } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatMessage, ClientChatMessage } from "@/lib/types";
 import { useConversations, type StreamState } from "@/lib/conversations/conversations-context";
 import dynamic from "next/dynamic";
@@ -192,7 +194,7 @@ function AIChatInput({ value, onChange, onSend, onKeyDown, disabled, textareaRef
 
   return (
     <motion.div
-      className="w-full max-w-2xl rounded-[28px] bg-white/[0.07] border border-white/[0.10] overflow-hidden cursor-text"
+      className="w-full max-w-3xl rounded-[28px] bg-white/[0.07] border border-white/[0.10] overflow-hidden cursor-text"
       style={{
         boxShadow: expanded
           ? "0 0 0 1px rgba(255,255,255,0.12), 0 8px 32px rgba(0,0,0,0.5)"
@@ -287,7 +289,7 @@ function AIChatInput({ value, onChange, onSend, onKeyDown, disabled, textareaRef
 
 function SuggestionChips({ onSelect }: { onSelect: (p: string) => void }) {
   return (
-    <div className="flex flex-wrap justify-center gap-2 max-w-2xl w-full px-2">
+    <div className="flex flex-wrap justify-center gap-2 max-w-3xl w-full px-2">
       {SUGGESTED_PROMPTS.map((prompt) => (
         <button
           key={prompt}
@@ -320,7 +322,7 @@ function ProcessBlock({
     : `${steps.length} step${steps.length > 1 ? "s" : ""}`;
 
   return (
-    <div className="mb-2 rounded-lg border border-white/[0.07] bg-white/[0.02] overflow-hidden w-fit min-w-[150px] max-w-md">
+    <div className="mb-2 rounded-lg border border-white/[0.07] bg-white/[0.02] overflow-hidden w-fit min-w-[210px] max-w-md">
       <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 w-full px-2.5 py-1.5 text-left">
         <Sparkles size={12} className={`flex-shrink-0 ${anyRunning ? "text-violet-300" : "text-white/40"}`} />
         <span className="text-[11px] text-white/55 flex-1 truncate">{headline}</span>
@@ -376,7 +378,7 @@ function MessageBubble({ message }: { message: ClientChatMessage }) {
             {message.content}
           </div>
         ) : (
-          <div className="text-[14px] text-white/88 leading-relaxed max-w-2xl">
+          <div className="text-[14px] text-white/88 leading-relaxed max-w-3xl">
             {message.steps && message.steps.length > 0 && (
               <ProcessBlock steps={message.steps.map((s) => ({ label: s.label, done: true }))} />
             )}
@@ -399,37 +401,97 @@ function MessageBubble({ message }: { message: ClientChatMessage }) {
 
 // ─── Message Content (markdown) ───────────────────────────────────────────────
 
+const MARKDOWN_COMPONENTS: Components = {
+  p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 mb-2 marker:text-white/30">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 mb-2 marker:text-white/40">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer" className="text-violet-300 underline underline-offset-2 hover:text-violet-200">
+      {children}
+    </a>
+  ),
+  h1: ({ children }) => <p className="font-semibold text-white text-[15px] mt-2 mb-1.5">{children}</p>,
+  h2: ({ children }) => <p className="font-semibold text-white/95 mt-2 mb-1">{children}</p>,
+  h3: ({ children }) => <p className="font-medium text-white/90 mt-1.5 mb-1">{children}</p>,
+  blockquote: ({ children }) => <blockquote className="border-l-2 border-white/15 pl-3 text-white/70 my-2">{children}</blockquote>,
+  hr: () => <hr className="border-white/10 my-3" />,
+  code: ({ className, children }) =>
+    className ? (
+      <code className={`${className} text-[12.5px]`}>{children}</code>
+    ) : (
+      <code className="font-mono text-[12px] bg-white/[0.08] px-1.5 py-0.5 rounded text-white/85">{children}</code>
+    ),
+  pre: ({ children }) => (
+    <pre className="bg-white/[0.05] border border-white/[0.08] rounded-lg p-3 overflow-x-auto font-mono my-2">{children}</pre>
+  ),
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="text-[13px] border-collapse">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => <th className="border border-white/10 px-2 py-1 text-left font-medium">{children}</th>,
+  td: ({ children }) => <td className="border border-white/10 px-2 py-1">{children}</td>,
+};
+
 function MessageContent({ content }: { content: string }) {
-  const lines = content.split("\n");
   return (
-    <div className="space-y-1.5">
-      {lines.map((line, i) => {
-        if (line.startsWith("# "))  return <p key={i} className="font-semibold text-white text-base">{line.slice(2)}</p>;
-        if (line.startsWith("## ")) return <p key={i} className="font-medium text-white">{line.slice(3)}</p>;
-        if (line.startsWith("- ") || line.startsWith("• ")) {
-          return (
-            <div key={i} className="flex gap-2">
-              <span className="text-white/30 mt-0.5 flex-shrink-0">·</span>
-              <span>{formatInline(line.slice(2))}</span>
-            </div>
-          );
-        }
-        if (line.trim() === "") return <div key={i} className="h-1" />;
-        return <p key={i}>{formatInline(line)}</p>;
-      })}
+    <div className="markdown-body">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
 
-function formatInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**"))
-      return <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
-    if (part.startsWith("`") && part.endsWith("`"))
-      return <code key={i} className="font-mono text-[12px] bg-white/[0.08] px-1.5 py-0.5 rounded text-white/80">{part.slice(1, -1)}</code>;
-    return <span key={i}>{part}</span>;
-  });
+/**
+ * Smoothly reveals `target` character-by-character while `active` (streaming), so
+ * the text types in evenly instead of jumping in network-sized chunks. Catches up
+ * proportionally to the backlog so it never lags far behind.
+ */
+function useSmoothReveal(target: string, active: boolean): string {
+  const [shown, setShown] = useState(() => (active ? "" : target));
+  const targetRef = useRef(target);
+  targetRef.current = target;
+  useEffect(() => {
+    if (!active) {
+      setShown(targetRef.current);
+      return;
+    }
+    const id = window.setInterval(() => {
+      setShown((cur) => {
+        const t = targetRef.current;
+        if (cur.length >= t.length) return t;
+        const backlog = t.length - cur.length;
+        return t.slice(0, cur.length + Math.max(1, Math.ceil(backlog / 12)));
+      });
+    }, 20);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return shown;
+}
+
+/** The live (streaming) assistant turn — process trail + smoothly-typed markdown. */
+function LiveAssistant({ stream }: { stream: StreamState }) {
+  const streaming = stream.status === "streaming";
+  const revealed = useSmoothReveal(stream.assistantText, streaming);
+  return (
+    <div className="flex-1 min-w-0">
+      {stream.steps.length > 0 && <ProcessBlock steps={stream.steps} streaming={streaming} />}
+      {revealed ? (
+        <div className="text-[14px] text-white/88 leading-relaxed">
+          <MessageContent content={revealed} />
+          {streaming && (
+            <span className="inline-block align-middle w-[6px] h-[15px] ml-0.5 rounded-[1px] bg-white/50 animate-pulse" />
+          )}
+        </div>
+      ) : stream.steps.length === 0 ? (
+        <LoadingBreadcrumb />
+      ) : null}
+    </div>
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -565,7 +627,7 @@ export function ChatClient({ userName, initialMessages = [] }: ChatClientProps) 
             </div>
           </div>
         ) : (
-          <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
+          <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
             {messages.map((msg) => (
               <MessageBubble key={msg.id} message={msg} />
             ))}
@@ -578,18 +640,7 @@ export function ChatClient({ userName, initialMessages = [] }: ChatClientProps) 
                   <div className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center border border-white/[0.14]">
                     <img src="/assets/khove-white.png" alt="Khove" className="w-3.5 h-3.5 object-contain" draggable={false} />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    {activeStream.steps.length > 0 && (
-                      <ProcessBlock steps={activeStream.steps} streaming={activeStream.status === "streaming"} />
-                    )}
-                    {activeStream.assistantText ? (
-                      <div className="text-[14px] text-white/88 leading-relaxed max-w-2xl">
-                        <MessageContent content={activeStream.assistantText} />
-                      </div>
-                    ) : activeStream.steps.length === 0 ? (
-                      <LoadingBreadcrumb />
-                    ) : null}
-                  </div>
+                  <LiveAssistant key={activeStream.userMessage} stream={activeStream} />
                 </div>
               </>
             )}
