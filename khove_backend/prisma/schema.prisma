@@ -90,6 +90,23 @@ enum SubStatus {
   INCOMPLETE
 }
 
+// Connectivity Thread — one work item spanning Calendar / GitHub / people.
+enum ThreadStatus {
+  OPEN
+  ACTIVE
+  RESOLVED
+  ARCHIVED
+}
+
+enum ThreadLinkKind {
+  TASK
+  CALENDAR_EVENT
+  GITHUB_PR
+  GITHUB_ISSUE
+  PERSON
+  JIRA_ISSUE
+}
+
 // ─────────────────────────────────────────────
 // Core Tables
 // ─────────────────────────────────────────────
@@ -139,6 +156,7 @@ model Workspace {
   conversations     Conversation[]
   aiUsageLogs       AiUsageLog[]
   subscriptions     Subscription[]
+  threads           Thread[]
 }
 
 model WorkspaceMember {
@@ -352,4 +370,42 @@ model CalendarEntry {
   @@index([userId])
   @@index([workspaceId])
   @@index([startDate])
+}
+
+// ─────────────────────────────────────────────
+// Connectivity Thread — the V4 core primitive
+// ─────────────────────────────────────────────
+
+// One work item spanning Calendar / GitHub / people. Never auto-created — formed
+// manually or by approving a SUGGEST_THREAD agent action; links are attached after.
+model Thread {
+  id          String       @id @default(cuid())
+  workspaceId String
+  title       String
+  summary     String?
+  status      ThreadStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  links     ThreadLink[]
+
+  @@index([workspaceId, status])
+}
+
+model ThreadLink {
+  id        String         @id @default(cuid())
+  threadId  String
+  kind      ThreadLinkKind
+  refId     String // Task.id | Google eventId | User.id | attendee email | github externalId
+  refUrl    String?
+  title     String?
+  metadata  Json           @default("{}")
+  createdAt DateTime       @default(now())
+
+  thread Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, kind, refId])
+  @@index([threadId])
+  @@index([kind, refId])
 }

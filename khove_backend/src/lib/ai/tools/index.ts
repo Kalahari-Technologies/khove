@@ -2,6 +2,7 @@ import type { PlanTier } from "@prisma/client";
 import { getTaskTools } from "./task-tools";
 import { getCalendarTools } from "./calendar-tools";
 import { getGitHubTools } from "./github-tools";
+import { getThreadTools } from "./thread-tools";
 import { getAvailableToolCategories } from "@backend/lib/billing/enforcement";
 
 /**
@@ -23,6 +24,8 @@ export function getToolsForContext(
 
   if (categories.includes("tasks")) {
     Object.assign(tools, getTaskTools(userId, workspaceId));
+    // Threads are workspace-scoped and always available alongside task tools.
+    Object.assign(tools, getThreadTools(workspaceId));
   }
 
   // Calendar and GitHub tools are workspace-scoped

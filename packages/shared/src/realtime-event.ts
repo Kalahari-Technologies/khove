@@ -8,4 +8,6 @@ export type RealtimeEvent =
   | { type: "task.deleted"; taskId: string }
   | { type: "calendar.synced"; tasksCreated: number; tasksUpdated: number; entriesCreated: number }
   | { type: "calendar.disconnected" }
+  | { type: "thread.updated"; threadId: string }
+  | { type: "agent-action.created"; actionId: string }
   | { type: "refresh" };
