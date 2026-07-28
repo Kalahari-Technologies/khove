@@ -7,7 +7,6 @@ import { UserButton } from "@clerk/nextjs";
 import { useConversations } from "@/lib/conversations/conversations-context";
 import {
   Bot,
-  Layers,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -86,7 +85,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "planner",  path: "/planner",  assets: ["/assets/planner.svg", "/assets/planner-outlined.svg"],   label: "Planner",  locked: false, glowColor: "#F43F5E" },       // rose
   { id: "github",   path: "/github",   assets: ["/assets/github.svg", "/assets/github.svg"],             label: "GitHub",   locked: false, glowColor: "#10B981" },       // emerald
   { id: "agent",    path: "/agent",    icon: Bot,      label: "Agent",    locked: false, glowColor: "#14B8A6" },       // teal
-  { id: "jira",     path: "/jira",     icon: Layers,   label: "Jira",     locked: true, lockedLabel: "Phase 5", glowColor: "#6366F1" }, // indigo
+  { id: "jira",     path: "/jira",     assets: ["/assets/jira.svg", "/assets/jira.svg"], label: "Jira", locked: false, glowColor: "#6366F1" }, // indigo
 ];
 
 const SETTINGS_GLOW = "#F59E0B"; // amber
@@ -224,7 +223,20 @@ function getSections(section: string, slug: string): { title: string; sections: 
     jira: {
       title: "Jira",
       sections: [
-        { items: [{ label: "Jira integration arrives in Phase 5.", sub: "placeholder" }] },
+        {
+          title: "Views",
+          items: [
+            { label: "All issues", href: wsHref(slug, "/jira"), icon: List },
+            { label: "In progress", href: wsHref(slug, "/jira?filter=in_progress"), icon: Clock },
+            { label: "Open bugs", href: wsHref(slug, "/jira?filter=bugs"), icon: Filter },
+          ],
+        },
+        {
+          title: "About",
+          items: [
+            { label: "Khove syncs your Jira issues and can create, comment, and transition them from chat.", sub: "placeholder" },
+          ],
+        },
       ],
     },
   };

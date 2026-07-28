@@ -46,11 +46,11 @@ router.get("/callback", async (req, res) => {
   const workspace = stateData
     ? await db.workspace.findUnique({ where: { id: stateData.workspaceId }, select: { slug: true } })
     : null;
-  const plannerPath = workspace ? `/${workspace.slug}/planner` : "/planner";
+  const jiraPath = workspace ? `/${workspace.slug}/jira` : "/jira";
 
-  if (oauthError) return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?error=${oauthError}`);
+  if (oauthError) return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?error=${oauthError}`);
   if (!code || !stateData) {
-    return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?error=invalid_state`);
+    return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?error=invalid_state`);
   }
 
   const { userId, workspaceId } = stateData;
@@ -62,7 +62,7 @@ router.get("/callback", async (req, res) => {
     const resources = await getAccessibleResources(tokens.access_token);
     const site = resources[0];
     if (!site) {
-      return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?error=no_jira_site`);
+      return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?error=no_jira_site`);
     }
 
     const accessTokenEnc = encrypt(tokens.access_token);
@@ -95,10 +95,10 @@ router.get("/callback", async (req, res) => {
     await inngest.send({ name: "jira/initial-sync", data: { userId, workspaceId } });
     await publishEvent(userId, { type: "refresh" }).catch(() => {});
 
-    return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?connected=jira`);
+    return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?connected=jira`);
   } catch (err) {
     console.error("[Jira] OAuth callback error:", err);
-    return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?error=jira_auth_failed`);
+    return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?error=jira_auth_failed`);
   }
 });
 
