@@ -12,6 +12,7 @@ import {
 } from "@backend/lib/integrations/google-calendar";
 import { google } from "googleapis";
 import { publishEvent, publishWorkspaceEvent } from "@backend/lib/realtime";
+import { env } from "@backend/env";
 import { Redis } from "@upstash/redis";
 
 function getSyncRedis(): Redis {
@@ -57,7 +58,7 @@ export const initialCalendarSync = inngest.createFunction(
 
     // Register webhook for real-time push notifications (production only)
     await step.run("register-webhook", async () => {
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+      const appUrl = env.BACKEND_URL; // Google webhook callback lives on the backend
       if (!appUrl || appUrl.includes("localhost")) return { skipped: true, reason: "local dev" };
 
       try {
@@ -145,7 +146,7 @@ export const renewCalendarWebhooks = inngest.createFunction(
         }
 
         // Register new channel
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+        const appUrl = env.BACKEND_URL; // Google webhook callback lives on the backend
         if (!appUrl || appUrl.includes("localhost")) return;
 
         try {

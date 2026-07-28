@@ -1,6 +1,7 @@
 import { inngest } from "@backend/lib/inngest";
 import { db } from "@backend/lib/db";
 import { sendEmail, renderTemplate } from "@backend/lib/email";
+import { env } from "@backend/env";
 import { createClerkClient } from "@clerk/backend";
 
 // Backend Clerk client singleton (replaces @clerk/nextjs `clerkClient()`).
@@ -173,7 +174,7 @@ export const sendNewDeviceEmail = inngest.createFunction(
         .join(", ") || "Unknown";
 
       const os = deviceInfo.isMobile ? "Mobile" : "Desktop";
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://khove.xyz";
+      const appUrl = env.FRONTEND_ORIGIN; // user-facing links → frontend origin
 
       const html = renderTemplate("new-device-email", {
         sign_in_method: "Browser session",
