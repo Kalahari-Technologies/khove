@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Paperclip, Send, ChevronRight, Sparkles, Check, Brain, Wrench, ListTodo, Calendar, GitBranch, Link2 } from "lucide-react";
+import { Paperclip, Send, ChevronRight, Sparkles, Check, Brain, Wrench, ListTodo, Calendar, GitBranch, Link2, SquareKanban } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -327,6 +327,7 @@ const CATEGORY_ICON: Record<string, typeof Wrench> = {
   tasks: ListTodo,
   calendar: Calendar,
   github: GitBranch,
+  jira: SquareKanban,
   threads: Link2,
   other: Wrench,
 };

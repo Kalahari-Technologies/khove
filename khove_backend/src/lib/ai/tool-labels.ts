@@ -23,6 +23,13 @@ export const TOOL_LABELS: Record<string, string> = {
   listIssues: "Listed issues",
   createGitHubIssue: "Created an issue",
   getRepoActivity: "Checked repo activity",
+  // Jira
+  listJiraProjects: "Listed Jira projects",
+  listJiraIssues: "Searched Jira issues",
+  getJiraIssue: "Opened a Jira issue",
+  createJiraIssue: "Created a Jira issue",
+  commentJiraIssue: "Commented on a Jira issue",
+  transitionJiraIssue: "Moved a Jira issue",
   // Threads
   listThreads: "Listed threads",
   getThread: "Opened a thread",

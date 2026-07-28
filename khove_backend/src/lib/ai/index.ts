@@ -49,6 +49,7 @@ export interface ProcessItem {
 function toolCategory(name: string): string {
   if (/task/i.test(name)) return "tasks";
   if (/calendar|event|availability|conflict|focus|reschedule/i.test(name)) return "calendar";
+  if (/jira/i.test(name)) return "jira"; // before github — Jira tool names contain "Issue"
   if (/repo|pull|issue|github/i.test(name)) return "github";
   if (/thread/i.test(name)) return "threads";
   return "other";
@@ -61,7 +62,7 @@ function stepDetail(input: unknown): string | undefined {
   if (typeof o.owner === "string" && typeof o.repo === "string") {
     return `${o.owner}/${o.repo}${o.pullNumber != null ? `#${String(o.pullNumber)}` : ""}`;
   }
-  const first = o.title ?? o.summary ?? o.query ?? o.repo ?? o.status ?? o.threadId ?? o.name;
+  const first = o.title ?? o.summary ?? o.issueKey ?? o.jql ?? o.query ?? o.repo ?? o.status ?? o.threadId ?? o.name;
   if (typeof first === "string" && first.trim()) return first.slice(0, 48);
   return undefined;
 }

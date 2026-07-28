@@ -2,6 +2,7 @@ import type { PlanTier } from "@prisma/client";
 import { getTaskTools } from "./task-tools";
 import { getCalendarTools } from "./calendar-tools";
 import { getGitHubTools } from "./github-tools";
+import { getJiraTools } from "./jira-tools";
 import { getThreadTools } from "./thread-tools";
 import { getAvailableToolCategories } from "@backend/lib/billing/enforcement";
 
@@ -37,10 +38,9 @@ export function getToolsForContext(
     Object.assign(tools, getGitHubTools(workspaceId));
   }
 
-  // Phase 5: jira tools
-  // if (categories.includes("jira")) {
-  //   Object.assign(tools, getJiraTools(userId));
-  // }
+  if (categories.includes("jira")) {
+    Object.assign(tools, getJiraTools(workspaceId));
+  }
 
   return tools;
 }
