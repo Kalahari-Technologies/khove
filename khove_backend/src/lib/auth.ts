@@ -1,24 +1,26 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { getAuth } from "@clerk/express";
+import { createClerkClient } from "@clerk/backend";
+import type { Request } from "express";
 import { db } from "@backend/lib/db";
 import { ensurePersonalWorkspace } from "@backend/lib/workspace/create-personal";
 import type { User } from "@prisma/client";
 
+const clerkBackend = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+
 /**
- * Get the current Prisma User from the Clerk session.
- * Auto-creates the user record if Clerk session exists but DB record doesn't
- * (handles the case where the Clerk webhook hasn't fired yet).
+ * Get the current Prisma User from the Express request's Clerk session
+ * (populated by `@clerk/express` clerkMiddleware). Auto-creates the user record
+ * if the Clerk session exists but the DB row doesn't (webhook race).
  */
-export async function getCurrentUser(): Promise<User | null> {
-  const { userId: clerkId } = await auth();
+export async function getCurrentUser(req: Request): Promise<User | null> {
+  const { userId: clerkId } = getAuth(req);
   if (!clerkId) return null;
 
   const existing = await db.user.findUnique({ where: { clerkId } });
   if (existing) return existing;
 
-  // User is authenticated in Clerk but not yet in DB — upsert from Clerk session
-  const clerkUser = await currentUser();
-  if (!clerkUser) return null;
-
+  // Authenticated in Clerk but not yet in DB — upsert from the Clerk Backend API.
+  const clerkUser = await clerkBackend.users.getUser(clerkId);
   const primaryEmail = clerkUser.emailAddresses.find(
     (e) => e.id === clerkUser.primaryEmailAddressId
   );
@@ -37,7 +39,6 @@ export async function getCurrentUser(): Promise<User | null> {
     update: {},
   });
 
-  // Ensure personal workspace exists (handles webhook race condition)
   await ensurePersonalWorkspace({
     id: user.id,
     name: user.name,
@@ -47,24 +48,16 @@ export async function getCurrentUser(): Promise<User | null> {
   return user;
 }
 
-/**
- * Get the current Prisma User — throws if not authenticated.
- * Use in server actions and API routes that require auth.
- */
-export async function requireUser(): Promise<User> {
-  const user = await getCurrentUser();
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
+/** Get the current Prisma User — throws "Unauthorized" if not authenticated. */
+export async function requireUser(req: Request): Promise<User> {
+  const user = await getCurrentUser(req);
+  if (!user) throw new Error("Unauthorized");
   return user;
 }
 
-/**
- * Get Clerk user ID from session — lightweight, no DB call.
- * Use when you only need the ID for a query.
- */
-export async function requireClerkId(): Promise<string> {
-  const { userId: clerkId } = await auth();
+/** Get the Clerk user ID from the request — throws if unauthenticated. */
+export function requireClerkId(req: Request): string {
+  const { userId: clerkId } = getAuth(req);
   if (!clerkId) throw new Error("Unauthorized");
   return clerkId;
 }

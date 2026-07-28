@@ -13,7 +13,8 @@ const GITHUB_APP_ID = process.env.GITHUB_APP_ID!;
 const GITHUB_APP_PRIVATE_KEY = (process.env.GITHUB_APP_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
 
 const GITHUB_OAUTH_SCOPES = ["read:user", "user:email", "repo"];
-const GITHUB_REDIRECT_URI = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/api/integrations/github/callback`;
+// OAuth callback is hosted on the BACKEND origin (Express), not the frontend.
+const GITHUB_REDIRECT_URI = `${process.env.BACKEND_URL ?? "http://localhost:4000"}/api/integrations/github/callback`;
 
 // ---------------------------------------------------------------------------
 // OAuth URL generation

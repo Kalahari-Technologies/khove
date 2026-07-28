@@ -24,6 +24,12 @@ import {
   sendOtpEmail,
   sendNewDeviceEmail,
 } from "@backend/lib/inngest/functions/email";
+import chatRouter from "@backend/routes/chat";
+import tasksRouter from "@backend/routes/tasks";
+import onboardingRouter from "@backend/routes/onboarding";
+import webhooksRouter from "@backend/routes/webhooks";
+import githubIntegrationRouter from "@backend/routes/integrations-github";
+import googleIntegrationRouter from "@backend/routes/integrations-google";
 
 export function createApp() {
   const app = express();
@@ -66,7 +72,10 @@ export function createApp() {
     })
   );
 
-  // tRPC over Express (superjson transformer is set on the router init).
+  // Webhooks — RAW body for signature verification (BEFORE any json parser).
+  app.use("/api/webhooks", express.raw({ type: "*/*" }), webhooksRouter);
+
+  // tRPC over Express (the adapter parses its own body; superjson on router init).
   app.use(
     "/trpc",
     createExpressMiddleware({
@@ -75,8 +84,12 @@ export function createApp() {
     })
   );
 
-  // NOTE: migrated REST / webhook / OAuth routes are mounted in Stage 4,
-  // including raw-body parsers on webhook paths before any global json parser.
+  // JSON REST API — express.json() applied per-router (GET routes ignore it).
+  app.use("/api/chat", express.json(), chatRouter);
+  app.use("/api/tasks", express.json(), tasksRouter);
+  app.use("/api/onboarding", express.json(), onboardingRouter);
+  app.use("/api/integrations/github", express.json(), githubIntegrationRouter);
+  app.use("/api/integrations/google", express.json(), googleIntegrationRouter);
 
   return app;
 }
