@@ -21,7 +21,10 @@ export interface CalendarEventLike {
   start: Date;
   end: Date;
   isAllDay: boolean;
-  source: "meeting" | "entry";
+  // "meeting" = a genuine timed meeting (counted by conflict/overload/focus).
+  // "task" = a Khove/non-meeting task with a due date (context only).
+  // "entry" = a calendar-only display event (context only).
+  source: "meeting" | "task" | "entry";
 }
 
 export type InsightType = "conflict" | "focus_gap" | "overload";
@@ -100,6 +103,10 @@ export async function loadWorkspaceEvents(
     const end = gcal.endDateTime
       ? new Date(gcal.endDateTime as string)
       : new Date(start.getTime() + 60 * 60 * 1000);
+    // Only a genuine, timed Google-Calendar meeting counts toward conflict /
+    // overload / focus math. Non-meeting tasks (Khove todos, all-day items) are
+    // context only.
+    const isMeeting = gcal.isMeeting === true && !isAllDay;
     events.push({
       id: `task:${t.id}`,
       taskId: t.id,
@@ -107,7 +114,7 @@ export async function loadWorkspaceEvents(
       start,
       end: end > start ? end : new Date(start.getTime() + 60 * 60 * 1000),
       isAllDay,
-      source: "meeting",
+      source: isMeeting ? "meeting" : "task",
     });
   }
 

@@ -3,6 +3,7 @@ import { OAuth2Client } from "google-auth-library";
 import type { Task } from "@prisma/client";
 import { db } from "@backend/lib/db";
 import { encrypt, decrypt } from "@backend/lib/encryption";
+import { classifyEvent, shouldBecomeTask } from "@backend/lib/calendar/classify";
 
 // ---------------------------------------------------------------------------
 // OAuth2 client factory
@@ -331,17 +332,19 @@ export function isNonActionableCalendar(
   );
 }
 
-export function isActionableEvent(
+/**
+ * Whether a synced Google event should become a Khove Task.
+ *
+ * Only genuine meetings (conference link OR real attendees) become tasks; every
+ * other event — birthdays, appointments, travel, focus blocks, personal/all-day —
+ * stays calendar-only (a CalendarEntry). Events from holiday/birthday/subscribed
+ * calendars are never tasks. See lib/calendar/classify.ts.
+ */
+export function eventBecomesTask(
   event: calendar_v3.Schema$Event & { _isHolidayOrBirthday?: boolean },
 ): boolean {
-  // Events from holiday/birthday/subscribed calendars are never actionable
   if (event._isHolidayOrBirthday) return false;
-
-  // Non-default event types are never actionable
-  const eventType = event.eventType ?? "default";
-  if (eventType !== "default") return false;
-
-  return true;
+  return shouldBecomeTask(classifyEvent(event));
 }
 
 // ---------------------------------------------------------------------------
@@ -371,10 +374,18 @@ function buildEventMetadata(
 ) {
   const attendees = event.attendees ?? [];
   const meetLink = extractMeetLink(event);
+  const classification = classifyEvent(event);
 
   return {
     calendarId,
     eventId: event.id ?? null,
+    // Normalized classification (see lib/calendar/classify.ts).
+    type: classification.type,
+    isMeeting: classification.isMeeting,
+    meetingProvider: classification.provider,
+    joinUrl: classification.joinUrl ?? meetLink ?? null,
+    attendeeCount: classification.attendeeCount,
+    classificationConfidence: classification.confidence,
     endDateTime: event.end?.dateTime ?? event.end?.date ?? null,
     location: event.location ?? null,
     htmlLink: event.htmlLink ?? null,
@@ -416,6 +427,27 @@ function buildEventMetadata(
     isAllDay: !event.start?.dateTime,
     eventType: event.eventType ?? "default",
     updated: event.updated ?? null,
+  };
+}
+
+/**
+ * Metadata for a calendar-only entry (non-meeting event). Lighter than the task
+ * metadata but still carries the classification + any join link, so the planner
+ * can show the event's type/provider even though it isn't a task.
+ */
+function buildEntryMetadata(event: calendar_v3.Schema$Event) {
+  const c = classifyEvent(event);
+  const meetLink = extractMeetLink(event);
+  return {
+    eventType: event.eventType ?? "default",
+    location: event.location ?? null,
+    type: c.type,
+    isMeeting: c.isMeeting,
+    meetingProvider: c.provider,
+    joinUrl: c.joinUrl ?? meetLink ?? null,
+    attendeeCount: c.attendeeCount,
+    isAllDay: !event.start?.dateTime,
+    attendees: (event.attendees ?? []).map((a) => a.email).filter((e): e is string => !!e),
   };
 }
 
@@ -555,7 +587,7 @@ export async function upsertCalendarEntry(
   if (existing) {
     await db.calendarEntry.update({
       where: { id: existing.id },
-      data: { title, startDate, endDate, isAllDay },
+      data: { title, startDate, endDate, isAllDay, metadata: buildEntryMetadata(event) },
     });
     return "updated";
   }
@@ -570,10 +602,7 @@ export async function upsertCalendarEntry(
       isAllDay,
       externalId: event.id,
       source: "GOOGLE_CALENDAR",
-      metadata: {
-        eventType: event.eventType ?? "default",
-        location: event.location ?? null,
-      },
+      metadata: buildEntryMetadata(event),
     },
   });
   return "created";
@@ -599,7 +628,7 @@ export async function syncGoogleCalendar(
   let entriesCreated = 0;
 
   for (const event of events) {
-    if (isActionableEvent(event)) {
+    if (eventBecomesTask(event)) {
       const result = await upsertTaskFromEvent(workspaceId, event, event._calendarId);
       if (result === "created") tasksCreated++;
       if (result === "updated") tasksUpdated++;
@@ -669,7 +698,7 @@ export async function incrementalSyncAllCalendars(
         const res = await calendar.events.list(listParams as never);
 
         for (const ev of res.data.items ?? []) {
-          if (isActionableEvent({ ...ev, _isHolidayOrBirthday: nonActionable })) {
+          if (eventBecomesTask({ ...ev, _isHolidayOrBirthday: nonActionable })) {
             await upsertTaskFromEvent(workspaceId, ev, cal.id);
             tasksUpserted++;
           } else {
