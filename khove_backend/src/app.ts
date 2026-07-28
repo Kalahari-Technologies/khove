@@ -24,6 +24,14 @@ import {
 import { calendarIntelligenceScan } from "@backend/lib/inngest/functions/agent-actions";
 import { shepherdScan } from "@backend/lib/inngest/functions/shepherd";
 import {
+  jiraInitialSync,
+  jiraPollSync,
+  handleJiraWebhook,
+  refreshJiraTokens,
+  renewJiraWebhooks,
+  jiraDisconnectCleanup,
+} from "@backend/lib/inngest/functions/jira-sync";
+import {
   sendWelcomeSignupEmail,
   sendWelcomeBackEmail,
   sendOtpEmail,
@@ -81,6 +89,12 @@ export function createApp() {
         handleGitHubWebhook,
         calendarIntelligenceScan,
         shepherdScan,
+        jiraInitialSync,
+        jiraPollSync,
+        handleJiraWebhook,
+        refreshJiraTokens,
+        renewJiraWebhooks,
+        jiraDisconnectCleanup,
         sendWelcomeSignupEmail,
         sendWelcomeBackEmail,
         sendOtpEmail,

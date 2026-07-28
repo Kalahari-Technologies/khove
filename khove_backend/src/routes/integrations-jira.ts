@@ -7,6 +7,7 @@ import {
   createJiraOAuthUrl,
   exchangeCodeForTokens,
   getAccessibleResources,
+  deleteJiraWebhooks,
 } from "@backend/lib/integrations/jira";
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { publishEvent } from "@backend/lib/realtime";
@@ -120,6 +121,11 @@ router.post("/disconnect", async (req, res) => {
     where: { workspaceId, provider: "JIRA", isActive: true },
   });
   if (!integration) return res.status(404).json({ error: "No active Jira integration found." });
+
+  // Delete the dynamic webhook while the token is still valid, then deactivate.
+  const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+  const webhookIds = Array.isArray(meta.webhookIds) ? (meta.webhookIds as number[]) : [];
+  if (webhookIds.length) await deleteJiraWebhooks(workspaceId, webhookIds).catch(() => {});
 
   await db.integration.update({ where: { id: integration.id }, data: { isActive: false } });
   await inngest.send({ name: "jira/disconnected", data: { userId: user.id, workspaceId } });

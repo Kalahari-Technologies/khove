@@ -34,6 +34,35 @@ router.post("/github", async (req, res) => {
   return res.json({ received: true }); // 200 immediately — never process synchronously
 });
 
+// POST /api/webhooks/jira/:secret — the secret in the path is the auth check.
+router.post("/jira/:secret", async (req, res) => {
+  const secret = req.params.secret;
+  if (!secret) return res.status(400).json({ error: "Missing secret" });
+
+  const integration = await db.integration.findFirst({
+    where: {
+      provider: "JIRA",
+      isActive: true,
+      metadata: { path: ["webhookSecret"], equals: secret },
+    },
+    select: { userId: true, workspaceId: true },
+  });
+  // Always 200 (a non-2xx makes Atlassian back off / disable the webhook).
+  if (!integration) return res.json({ ok: true });
+
+  try {
+    const payload = JSON.parse(rawBody(req));
+    await inngest.send({
+      name: "jira/webhook.received",
+      data: { userId: integration.userId, workspaceId: integration.workspaceId, payload },
+    });
+  } catch {
+    // ignore malformed payloads
+  }
+
+  return res.json({ ok: true });
+});
+
 // POST /api/webhooks/google-calendar
 router.post("/google-calendar", async (req, res) => {
   const channelId = req.header("x-goog-channel-id");

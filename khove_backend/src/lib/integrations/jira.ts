@@ -230,3 +230,127 @@ export function textToADF(text: string): unknown {
   }));
   return { type: "doc", version: 1, content: paragraphs.length ? paragraphs : [{ type: "paragraph", content: [] }] };
 }
+
+// ---------------------------------------------------------------------------
+// Dynamic webhooks (secret-in-URL). Expire after 30 days unless refreshed.
+// ---------------------------------------------------------------------------
+
+const WEBHOOK_EVENTS = ["jira:issue_created", "jira:issue_updated", "jira:issue_deleted"];
+
+/** Build the receiver URL — the secret in the path is the authenticity check. */
+export function jiraWebhookUrl(secret: string): string {
+  return `${process.env.BACKEND_URL ?? "http://localhost:4000"}/api/webhooks/jira/${secret}`;
+}
+
+/**
+ * Register a dynamic webhook scoped to the given projects. Best-effort — returns
+ * the created webhook id, or null if registration fails (sync still works via
+ * the poll cron).
+ */
+export async function registerJiraWebhook(
+  workspaceId: string,
+  secret: string,
+  projectKeys: string[],
+): Promise<{ id: number } | null> {
+  if (projectKeys.length === 0) return null;
+  const jqlFilter = `project in (${projectKeys.join(",")})`;
+  try {
+    const resp = await jiraFetch<{ webhookRegistrationResult: { createdWebhookId?: number; errors?: string[] }[] }>(
+      workspaceId,
+      "/rest/api/3/webhook",
+      {
+        method: "POST",
+        body: JSON.stringify({ url: jiraWebhookUrl(secret), webhooks: [{ jqlFilter, events: WEBHOOK_EVENTS }] }),
+      },
+    );
+    const first = resp.webhookRegistrationResult?.[0];
+    return first?.createdWebhookId ? { id: first.createdWebhookId } : null;
+  } catch (err) {
+    console.error("[jira] webhook registration failed (non-fatal):", err);
+    return null;
+  }
+}
+
+/** Extend the 30-day expiry on registered webhooks. Returns the new expiry ISO. */
+export async function refreshJiraWebhooks(workspaceId: string, webhookIds: number[]): Promise<string | null> {
+  if (webhookIds.length === 0) return null;
+  try {
+    const resp = await jiraFetch<{ expirationDate?: string }>(workspaceId, "/rest/api/3/webhook/refresh", {
+      method: "PUT",
+      body: JSON.stringify({ webhookIds }),
+    });
+    return resp.expirationDate ?? null;
+  } catch (err) {
+    console.error("[jira] webhook refresh failed:", err);
+    return null;
+  }
+}
+
+/** Delete registered webhooks (on disconnect). */
+export async function deleteJiraWebhooks(workspaceId: string, webhookIds: number[]): Promise<void> {
+  if (webhookIds.length === 0) return;
+  try {
+    await jiraFetch(workspaceId, "/rest/api/3/webhook", {
+      method: "DELETE",
+      body: JSON.stringify({ webhookIds }),
+    });
+  } catch (err) {
+    console.error("[jira] webhook delete failed:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Issue search — the new token-paginated JQL endpoint
+// ---------------------------------------------------------------------------
+
+export interface JiraIssue {
+  key: string;
+  fields: {
+    summary?: string;
+    status?: { name?: string; statusCategory?: { key?: string; name?: string } };
+    project?: { key?: string; name?: string };
+    issuetype?: { name?: string };
+    updated?: string;
+  };
+}
+
+/** Map Jira's statusCategory to Khove's StatusCategory. */
+export function mapJiraStatusCategory(key: string | undefined): "NOT_STARTED" | "IN_PROGRESS" | "DONE" {
+  if (key === "done") return "DONE";
+  if (key === "indeterminate") return "IN_PROGRESS";
+  return "NOT_STARTED"; // "new" / unknown
+}
+
+/**
+ * Search issues by JQL (token-paginated). Fetches up to `maxPages` pages of 100.
+ * Only requests the minimal fields (no personal data).
+ */
+export async function searchIssues(
+  workspaceId: string,
+  jql: string,
+  maxPages = 3,
+): Promise<JiraIssue[]> {
+  const issues: JiraIssue[] = [];
+  let nextPageToken: string | undefined;
+
+  for (let page = 0; page < maxPages; page++) {
+    const resp = await jiraFetch<{ issues?: JiraIssue[]; nextPageToken?: string; isLast?: boolean }>(
+      workspaceId,
+      "/rest/api/3/search/jql",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          jql,
+          maxResults: 100,
+          fields: ["summary", "status", "project", "issuetype", "updated"],
+          ...(nextPageToken ? { nextPageToken } : {}),
+        }),
+      },
+    );
+    if (resp.issues?.length) issues.push(...resp.issues);
+    if (resp.isLast || !resp.nextPageToken) break;
+    nextPageToken = resp.nextPageToken;
+  }
+
+  return issues;
+}
