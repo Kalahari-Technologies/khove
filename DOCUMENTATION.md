@@ -39,27 +39,34 @@ Note V4 for detail.
 - **Google Cloud** project (Calendar OAuth)
 - **Inngest** account (background jobs — optional for local dev)
 
-### Setup
+### Setup (monorepo — two services)
+
+The repo is an npm-workspaces monorepo: **`khove_frontend`** (Next.js :3000), **`khove_backend`**
+(Express :4000), and **`packages/shared`**. Each service has its own `.env.local`.
 
 ```bash
-# Clone
+# Clone + install all workspaces (single root lockfile)
 git clone https://github.com/Kalahari-Technologies/khove.git
 cd khove
-
-# Install
 npm install
 
-# Environment
-cp .env.example .env.local
-# Fill in all values (see Section 4 for details)
+# Environment — TWO files:
+cp khove_backend/.env.example  khove_backend/.env.local    # all secrets (DB, Redis, AI, Clerk, OAuth…)
+cp khove_frontend/.env.example khove_frontend/.env.local   # public keys + Clerk secret + backend URLs
 
-# Database
-npx prisma db push
+# Prisma (backend owns the schema; reads khove_backend/.env.local via dotenv-cli)
+npm run db:generate
+npm run db:push
 
-# Run (two terminals)
-npm run dev          # Next.js on port 3000
-npx inngest-cli dev  # Inngest dev server on port 8288
+# Run
+npm run dev            # backend (:4000) + frontend (:3000) concurrently
+# or separately:  npm run dev:backend   /   npm run dev:frontend
+npm run inngest        # (optional) Inngest CLI dev, pointed at :4000/api/inngest
 ```
+
+OAuth in dev: register the `:4000` callback URIs (`/api/integrations/{github,google}/callback`)
+in the GitHub App / Google Cloud consoles, and add `http://localhost:3000` to Clerk's allowed
+origins. Inngest local dev uses `INNGEST_DEV=1` (signing keys stay unset).
 
 ### First Login
 

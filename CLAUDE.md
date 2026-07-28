@@ -47,16 +47,35 @@ platform**. The shipped code today is still the conversational layer; the pivot 
 
 ---
 
-## Repo Layout Gotcha
+## Repo Layout — Monorepo (two services + shared)
 
-The git repository root is **`khove/`**, nested inside the `Khove/` product folder:
+As of the V4 split, the repo is an **npm-workspaces monorepo** with two deployables:
 
 ```
-Khove/                      ← product folder (NOT a git repo) — docs/, logos/
-└── khove/                  ← git repo root — github.com/Kalahari-Technologies/khove
+khove/                       ← git repo root (npm workspaces manager)
+├── khove_frontend/          ← Next.js 15 app (UI only — ZERO database access)
+├── khove_backend/           ← Express server: tRPC + Inngest + socket.io + all secrets
+├── packages/shared/         ← @khove/shared: RealtimeEvent, PLANS (Prisma-free), tokens, cn
+├── product_docs/  CLAUDE.md  DOCUMENTATION.md      ← stay at root
+└── package.json (workspaces) · tsconfig.base.json
 ```
 
-Always run `git`, `npm`, and `prisma` from `khove/`.
+**Two-service boundary (non-negotiable):**
+- The **frontend has no DB and no secrets.** Every read/write goes to the backend: RSC pages via
+  a server-side tRPC client (`lib/trpc/server.ts` → `serverTRPC`), client components via
+  `useBackendFetch` / the typed tRPC provider — all forwarding the **Clerk session token** as a
+  Bearer header (+ `x-workspace-id`). Backend is `@clerk/express`; frontend keeps `@clerk/nextjs`
+  (middleware + RSC `getToken()`).
+- **All domain logic lives in `khove_backend/src`** (`lib/`, `server/` tRPC routers, `routes/`
+  Express handlers, `realtime/` socket.io, `prisma/`, `mail_templates/`). Backend alias is
+  **`@backend/*`** (not `@/*`, which the frontend still uses for `khove_frontend`).
+- **Realtime is socket.io** (backend gateway with Clerk-handshake auth + membership-gated
+  workspace rooms). `publishEvent`/`publishWorkspaceEvent` keep their signatures → room emits.
+- OAuth callbacks are hosted on the **backend** origin and redirect the browser back to the
+  frontend; the `connect` routes return `{ url }` JSON that the authenticated client redirects to.
+
+Run `git` from the repo root; run app commands per workspace (see Commands). Stack is **Next 15.5 /
+React 19** (async `params`/`headers`).
 
 ### Branching & Release Policy
 
@@ -77,16 +96,26 @@ Long-lived remote branches (the environments): `development` (default, active) �
 
 ## Commands
 
+Run from the repo root (npm workspaces). Each service has its own `.env.local`.
+
 ```bash
-npm run dev          # Next.js on :3000
-npm run inngest      # Inngest dev server on :8288 (auto-discovers /api/inngest)
-npm run build        # prisma generate && next build
-npx tsc --noEmit     # typecheck — the fastest correctness gate, use it
-npm run db:push      # push schema to Supabase
-npm run db:studio    # Prisma Studio
+npm install                         # installs all workspaces (single root lockfile)
+npm run dev:backend                 # Express on :4000 (tsx watch)  — khove_backend/.env.local
+npm run dev:frontend                # Next.js on :3000              — khove_frontend/.env.local
+npm run dev                         # both concurrently
+npm run inngest                     # Inngest CLI dev, pointed at :4000/api/inngest
+npm run build                       # backend (prisma generate) then frontend (next build)
+npm run typecheck                   # tsc --noEmit across shared → backend → frontend
+npm run db:push                     # backend Prisma (via dotenv-cli → khove_backend/.env.local)
+npm run db:studio                   # Prisma Studio
+
+# per-workspace typecheck (fastest correctness gate):
+npx tsc -p khove_backend/tsconfig.json
+npx tsc -p khove_frontend/tsconfig.json
 ```
 
-For local dev, comment out `INNGEST_SIGNING_KEY` and `INNGEST_EVENT_KEY` in `.env.local`.
+Local dev: Inngest uses the CLI (`INNGEST_DEV=1`); leave the signing/event keys unset.
+OAuth in dev needs the `:4000` callback URIs registered in the GitHub App / Google consoles.
 
 ---
 
@@ -208,11 +237,19 @@ Welcome-back is rate-limited by a 24h Redis key; new-device fires on unseen `cli
 
 ---
 
-## Real-Time
+## Real-Time — socket.io (V4)
 
-SSE endpoint `app/api/events/stream/` polls Redis every 3s. `publishEvent()` is user-scoped;
-`publishWorkspaceEvent()` fans out to every member's queue. The `useRealtime()` hook calls
-`router.refresh()` on any event.
+Backend socket.io gateway (`khove_backend/src/realtime/io.ts`): Clerk-token handshake auth,
+`user:{id}` rooms + membership-gated `workspace:{id}` rooms. `publishEvent(userId, e)` /
+`publishWorkspaceEvent(workspaceId, e)` (`khove_backend/src/lib/realtime.ts`) emit to those rooms —
+same signatures as before, so all 15 call sites (task routes, OAuth callbacks, `workspace.create`,
+Inngest functions) are unchanged. The frontend `useRealtime()` (`khove_frontend/lib/hooks`) opens a
+socket.io connection with a fresh Clerk token, joins the workspace room, and calls `router.refresh()`
+on any `realtime` event. (The old SSE/Redis-poll endpoint is deleted.)
+
+> **Path note:** references below written as `lib/...`, `server/...`, or `app/api/...` now live under
+> **`khove_backend/src/`** (domain logic, tRPC routers, migrated routes) or **`khove_frontend/`**
+> (UI, `lib/trpc` client, `lib/hooks`). The backend uses the `@backend/*` import alias.
 
 ---
 
@@ -233,7 +270,7 @@ SSE endpoint `app/api/events/stream/` polls Redis every 3s. `publishEvent()` is 
 - ALWAYS call `publishEvent()` / `publishWorkspaceEvent()` after a user-visible mutation.
 - ALWAYS pass `workspaceId` first to integration helpers.
 
-**Read-only file:** `lib/ai/router.ts` — complexity scoring and model selection. Do not change.
+**Read-only file:** `khove_backend/src/lib/ai/router.ts` — complexity scoring and model selection. Do not change.
 
 ---
 
