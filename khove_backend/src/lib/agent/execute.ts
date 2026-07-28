@@ -5,6 +5,7 @@ import {
   pushTaskToGoogleCalendar,
 } from "@backend/lib/integrations/google-calendar";
 import { createThread, autoLinkMeeting, linkToThread, linkPRToThreads } from "@backend/lib/threads";
+import { commentOnPR, requestReviewers } from "@backend/lib/integrations/github";
 
 /**
  * Apply an approved agent action's payload via existing write paths. Throws on
@@ -96,6 +97,52 @@ export async function executeAgentAction(action: AgentAction): Promise<{ summary
         },
       });
       return { summary: "Follow-up task created." };
+    }
+
+    case "NUDGE_REVIEWER": {
+      await commentOnPR(
+        action.workspaceId,
+        p.owner as string,
+        p.repo as string,
+        p.prNumber as number,
+        p.body as string,
+      );
+      return { summary: "Reviewer nudge posted on the pull request." };
+    }
+
+    case "REQUEST_REVIEW": {
+      const reviewer = p.reviewer as string | undefined;
+      if (reviewer) {
+        await requestReviewers(
+          action.workspaceId,
+          p.owner as string,
+          p.repo as string,
+          p.prNumber as number,
+          [reviewer],
+        );
+        return { summary: `Requested review from @${reviewer}.` };
+      }
+      // No specific reviewer to assign — post a governed comment asking for one.
+      await commentOnPR(
+        action.workspaceId,
+        p.owner as string,
+        p.repo as string,
+        p.prNumber as number,
+        "This PR has no reviewer assigned — consider requesting one so it can move forward. (Sent by Khove)",
+      );
+      return { summary: "Posted a request-a-reviewer comment." };
+    }
+
+    case "FLAG_PR": {
+      const reason = (p.reason as string) ?? "needs attention";
+      await commentOnPR(
+        action.workspaceId,
+        p.owner as string,
+        p.repo as string,
+        p.prNumber as number,
+        `⚠️ Khove flagged this PR: ${reason}. (Sent by Khove)`,
+      );
+      return { summary: "Flag comment posted on the pull request." };
     }
 
     default:

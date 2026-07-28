@@ -114,6 +114,10 @@ enum AgentActionType {
   RSVP_NUDGE
   CREATE_EVENT
   SUGGEST_THREAD
+  // GitHub PR Shepherd
+  NUDGE_REVIEWER
+  REQUEST_REVIEW
+  FLAG_PR
 }
 
 enum AgentActionStatus {

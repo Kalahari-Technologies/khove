@@ -9,6 +9,7 @@ import {
 } from "@backend/lib/integrations/github";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 import { linkPRToThreads } from "@backend/lib/threads";
+import { shepherdScanPR } from "@backend/lib/agent/shepherd";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -350,6 +351,8 @@ export const handleGitHubWebhook = inngest.createFunction(
             }
             // Enrich any Thread that already references this PR (never auto-creates).
             await linkPRToThreads(wsId, task.id).catch(() => {});
+            // Draft approval-gated Shepherd actions (state-based signals).
+            await shepherdScanPR(task.id).catch(() => {});
             await publishWorkspaceEvent(wsId, { type: "task.updated", taskId: task.id });
           }
           break;
@@ -376,6 +379,7 @@ export const handleGitHubWebhook = inngest.createFunction(
             });
             if (task) {
               await patchGithubMeta(task, { reviewDecision });
+              await shepherdScanPR(task.id).catch(() => {});
               await publishWorkspaceEvent(integration.workspaceId, { type: "task.updated", taskId: task.id });
             }
           }
@@ -437,6 +441,7 @@ export const handleGitHubWebhook = inngest.createFunction(
 
             for (const t of matched.values()) {
               await patchGithubMeta(t, { ciStatus });
+              await shepherdScanPR(t.id).catch(() => {});
               await publishWorkspaceEvent(wsId, { type: "task.updated", taskId: t.id });
             }
           }

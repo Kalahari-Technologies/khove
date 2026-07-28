@@ -22,6 +22,7 @@ import {
   handleGitHubWebhook,
 } from "@backend/lib/inngest/functions/github-sync";
 import { calendarIntelligenceScan } from "@backend/lib/inngest/functions/agent-actions";
+import { shepherdScan } from "@backend/lib/inngest/functions/shepherd";
 import {
   sendWelcomeSignupEmail,
   sendWelcomeBackEmail,
@@ -78,6 +79,7 @@ export function createApp() {
         initialGitHubSync,
         handleGitHubWebhook,
         calendarIntelligenceScan,
+        shepherdScan,
         sendWelcomeSignupEmail,
         sendWelcomeBackEmail,
         sendOtpEmail,

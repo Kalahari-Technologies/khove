@@ -12,7 +12,7 @@ import { notifyNewActions } from "@backend/lib/agent/notify";
 const WINDOW_DAYS = 14;
 const RSVP_HORIZON_MS = 48 * 60 * 60 * 1000;
 
-interface DraftAction {
+export interface DraftAction {
   type: AgentActionType;
   dedupeKey: string;
   title: string;
@@ -155,21 +155,15 @@ async function draftRsvpNudges(workspaceId: string, from: Date): Promise<DraftAc
 const TERMINAL = new Set(["EXECUTED", "APPROVED", "REJECTED", "DISMISSED"]);
 
 /**
- * Scan one workspace, draft proactive AgentActions, and upsert them as PENDING
- * (deduped by dedupeKey). Never resurrects an action the user already resolved.
- * Returns the count of newly-created actions and notifies channels.
+ * Upsert a batch of drafts as PENDING AgentActions (deduped by dedupeKey), never
+ * resurrecting one the user already resolved, and notify channels about the new
+ * ones. Shared by the calendar engine and the PR Shepherd.
  */
-export async function scanWorkspace(workspaceId: string): Promise<{ created: number; total: number }> {
-  const from = new Date();
-  const to = new Date(Date.now() + WINDOW_DAYS * 24 * 60 * 60 * 1000);
-
-  const events = await loadWorkspaceEvents(workspaceId, from, to);
-  const drafts = [
-    ...draftsFromInsights(events),
-    ...(await draftThreadSuggestions(workspaceId, from, to)),
-    ...(await draftRsvpNudges(workspaceId, from)),
-  ];
-
+export async function persistDrafts(
+  workspaceId: string,
+  drafts: DraftAction[],
+  proposedBy: string,
+): Promise<{ created: number; total: number }> {
   let created = 0;
   const newItems: Array<{ title: string; detail: string }> = [];
 
@@ -206,7 +200,7 @@ export async function scanWorkspace(workspaceId: string): Promise<{ created: num
           sources: d.sources,
           payload: d.payload,
           dedupeKey: d.dedupeKey,
-          proposedBy: "agent:calendar-intelligence",
+          proposedBy,
         },
       });
       created++;
@@ -219,4 +213,23 @@ export async function scanWorkspace(workspaceId: string): Promise<{ created: num
   }
 
   return { created, total: drafts.length };
+}
+
+/**
+ * Scan one workspace, draft proactive AgentActions, and upsert them as PENDING
+ * (deduped by dedupeKey). Never resurrects an action the user already resolved.
+ * Returns the count of newly-created actions and notifies channels.
+ */
+export async function scanWorkspace(workspaceId: string): Promise<{ created: number; total: number }> {
+  const from = new Date();
+  const to = new Date(Date.now() + WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+  const events = await loadWorkspaceEvents(workspaceId, from, to);
+  const drafts = [
+    ...draftsFromInsights(events),
+    ...(await draftThreadSuggestions(workspaceId, from, to)),
+    ...(await draftRsvpNudges(workspaceId, from)),
+  ];
+
+  return persistDrafts(workspaceId, drafts, "agent:calendar-intelligence");
 }

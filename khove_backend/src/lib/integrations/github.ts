@@ -371,6 +371,50 @@ export async function createIssue(
 }
 
 // ---------------------------------------------------------------------------
+// Shepherd writes — act as the App installation (governed: approval-gated)
+// ---------------------------------------------------------------------------
+
+/**
+ * Post a comment on a pull request (a PR is an issue for the comments API).
+ * Uses the Shepherd client so it posts as the Khove app.
+ */
+export async function commentOnPR(
+  workspaceId: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  body: string,
+): Promise<{ url: string }> {
+  const octokit = await getShepherdClient(workspaceId);
+  const { data } = await octokit.issues.createComment({
+    owner,
+    repo,
+    issue_number: prNumber,
+    body,
+  });
+  return { url: data.html_url };
+}
+
+/**
+ * Request reviewers on a pull request. Uses the Shepherd client.
+ */
+export async function requestReviewers(
+  workspaceId: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reviewers: string[],
+): Promise<void> {
+  const octokit = await getShepherdClient(workspaceId);
+  await octokit.pulls.requestReviewers({
+    owner,
+    repo,
+    pull_number: prNumber,
+    reviewers,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Repository Activity
 // ---------------------------------------------------------------------------
 
