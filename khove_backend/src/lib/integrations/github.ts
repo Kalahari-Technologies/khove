@@ -11,6 +11,8 @@ const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID!;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET!;
 const GITHUB_APP_ID = process.env.GITHUB_APP_ID!;
 const GITHUB_APP_PRIVATE_KEY = (process.env.GITHUB_APP_PRIVATE_KEY ?? "").replace(/\\n/g, "\n");
+// The App's URL slug (github.com/apps/<slug>) — used to build the install URL.
+const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG ?? "";
 
 const GITHUB_OAUTH_SCOPES = ["read:user", "user:email", "repo"];
 // OAuth callback is hosted on the BACKEND origin (Express), not the frontend.
@@ -32,6 +34,18 @@ export function createGitHubOAuthUrl(state: string): string {
     state,
   });
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
+}
+
+/**
+ * Generate the GitHub App INSTALL URL (install + authorize in one step).
+ * With "Request user authorization (OAuth) during installation" enabled on the
+ * App, GitHub redirects back to the OAuth callback with BOTH `code` (user
+ * identity) and `installation_id` (the bot install) — so the Shepherd can act
+ * as the app on every installed repo, regardless of who triggers an event.
+ */
+export function createGitHubInstallUrl(state: string): string {
+  const params = new URLSearchParams({ state });
+  return `https://github.com/apps/${GITHUB_APP_SLUG}/installations/new?${params.toString()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +119,53 @@ export async function getInstallationClient(installationId: number) {
   });
 
   return app.getInstallationOctokit(installationId);
+}
+
+/**
+ * Get the client the PR Shepherd should act with for a workspace.
+ * Prefers the App **installation** token (acts as the Khove bot — can read/write
+ * on any installed repo regardless of who triggered the event); falls back to
+ * the connecting user's token when no installation is recorded.
+ */
+export async function getShepherdClient(workspaceId: string): Promise<Octokit> {
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GITHUB", isActive: true },
+  });
+  if (!integration) {
+    throw new Error("GitHub is not connected");
+  }
+
+  const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+  const installationId = typeof meta.installationId === "number" ? meta.installationId : undefined;
+
+  if (installationId) {
+    try {
+      return (await getInstallationClient(installationId)) as unknown as Octokit;
+    } catch (err) {
+      console.error("[getShepherdClient] installation client failed, falling back to user token:", err);
+    }
+  }
+
+  return new Octokit({ auth: decrypt(integration.accessTokenEnc) });
+}
+
+/**
+ * List repositories the App installation can access for a workspace.
+ * Requires an installation token — falls back to owned repos via the user token
+ * (see `listUserRepos`) is handled by the caller when no installation exists.
+ */
+export async function listInstallationRepos(workspaceId: string, perPage = 100) {
+  const octokit = await getShepherdClient(workspaceId);
+  const { data } = await octokit.apps.listReposAccessibleToInstallation({ per_page: perPage });
+  return data.repositories.map((repo) => ({
+    id: repo.id,
+    name: repo.name,
+    fullName: repo.full_name,
+    owner: repo.owner.login,
+    private: repo.private,
+    url: repo.html_url,
+    defaultBranch: repo.default_branch,
+  }));
 }
 
 // ---------------------------------------------------------------------------

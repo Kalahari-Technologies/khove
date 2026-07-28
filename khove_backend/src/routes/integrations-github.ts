@@ -3,7 +3,7 @@ import { getCurrentUser } from "@backend/lib/auth";
 import { db } from "@backend/lib/db";
 import { encrypt } from "@backend/lib/encryption";
 import { canAdminWorkspace } from "@backend/lib/workspace/authorization";
-import { createGitHubOAuthUrl, exchangeCodeForToken } from "@backend/lib/integrations/github";
+import { createGitHubInstallUrl, exchangeCodeForToken } from "@backend/lib/integrations/github";
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { publishEvent } from "@backend/lib/realtime";
 import { inngest } from "@backend/lib/inngest";
@@ -26,10 +26,12 @@ router.get("/connect", async (req, res) => {
     return res.status(403).json({ error: "Only workspace admins can connect integrations" });
   }
 
-  // Return the OAuth URL as JSON — the authenticated frontend redirects to it
-  // (a cross-origin browser navigation to this route wouldn't carry the session).
+  // Return the App INSTALL URL as JSON — the authenticated frontend redirects to
+  // it (a cross-origin browser navigation to this route wouldn't carry the
+  // session). Installing + authorizing in one step gives the callback both the
+  // OAuth `code` and the `installation_id` the Shepherd needs.
   const state = await createOAuthState("github", { userId: user.id, workspaceId });
-  return res.json({ url: createGitHubOAuthUrl(state) });
+  return res.json({ url: createGitHubInstallUrl(state) });
 });
 
 // GET /api/integrations/github/callback — redirects back to the FRONTEND origin.
@@ -56,6 +58,27 @@ router.get("/callback", async (req, res) => {
     const octokit = await import("@octokit/rest").then((m) => new m.Octokit({ auth: accessToken }));
     const { data: ghUser } = await octokit.users.getAuthenticated();
 
+    // The install+authorize flow carries `installation_id`. Preserve any
+    // existing one if a re-authorize (OAuth-only) callback lacks it.
+    const installationIdParam = req.query.installation_id as string | undefined;
+    const existing = await db.integration.findUnique({
+      where: { provider_workspaceId: { provider: "GITHUB", workspaceId } },
+      select: { metadata: true },
+    });
+    const existingMeta = (existing?.metadata ?? {}) as Record<string, unknown>;
+    const installationId =
+      installationIdParam && !Number.isNaN(Number(installationIdParam))
+        ? Number(installationIdParam)
+        : (typeof existingMeta.installationId === "number" ? existingMeta.installationId : null);
+
+    const metadata = {
+      login: ghUser.login,
+      githubId: ghUser.id,
+      avatarUrl: ghUser.avatar_url,
+      name: ghUser.name,
+      installationId,
+    };
+
     await db.integration.upsert({
       where: { provider_workspaceId: { provider: "GITHUB", workspaceId } },
       create: {
@@ -64,23 +87,13 @@ router.get("/callback", async (req, res) => {
         workspaceId,
         accessTokenEnc: encrypt(accessToken),
         isActive: true,
-        metadata: {
-          login: ghUser.login,
-          githubId: ghUser.id,
-          avatarUrl: ghUser.avatar_url,
-          name: ghUser.name,
-        },
+        metadata,
       },
       update: {
         userId,
         accessTokenEnc: encrypt(accessToken),
         isActive: true,
-        metadata: {
-          login: ghUser.login,
-          githubId: ghUser.id,
-          avatarUrl: ghUser.avatar_url,
-          name: ghUser.name,
-        },
+        metadata,
       },
     });
 

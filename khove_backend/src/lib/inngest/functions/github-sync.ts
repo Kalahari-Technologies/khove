@@ -1,7 +1,48 @@
 import { inngest } from "@backend/lib/inngest";
 import { db } from "@backend/lib/db";
-import { listPullRequests, listIssues, listUserRepos } from "@backend/lib/integrations/github";
-import { publishEvent, publishWorkspaceEvent } from "@backend/lib/realtime";
+import {
+  listPullRequests,
+  listIssues,
+  listUserRepos,
+  listInstallationRepos,
+} from "@backend/lib/integrations/github";
+import { publishWorkspaceEvent } from "@backend/lib/realtime";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type SyncRepo = { owner: string; name: string; fullName: string };
+
+/**
+ * Repos to sync for a workspace: prefer the App installation's accessible repos
+ * (works on org/collaborator repos, not just owned ones); fall back to the
+ * connecting user's owned repos when no installation is recorded.
+ */
+async function resolveSyncableRepos(workspaceId: string): Promise<SyncRepo[]> {
+  try {
+    const repos = await listInstallationRepos(workspaceId);
+    if (repos.length > 0) {
+      return repos.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
+    }
+  } catch {
+    // No installation token / listing failed — fall back to owned repos below.
+  }
+  const owned = await listUserRepos(workspaceId, { per_page: 30 });
+  return owned.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
+}
+
+/** Find all active workspaces for a given App installation id. */
+async function findWorkspacesByInstallation(installationId: number | undefined) {
+  if (!installationId) return [];
+  return db.integration.findMany({
+    where: {
+      provider: "GITHUB",
+      isActive: true,
+      metadata: { path: ["installationId"], equals: installationId },
+    },
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Initial sync — dispatched after OAuth callback
@@ -25,14 +66,14 @@ export const initialGitHubSync = inngest.createFunction(
           where: { category: "NOT_STARTED", workspaceId: null, isDefault: true },
         });
 
-      // Fetch top repos (workspaceId-scoped client)
-      const repos = await listUserRepos(workspaceId, { per_page: 10 });
+      const repos = await resolveSyncableRepos(workspaceId);
       let issuesCreated = 0;
       let prsCreated = 0;
 
-      for (const repo of repos.slice(0, 5)) {
+      // Cap breadth to keep the initial sync within the step budget.
+      for (const repo of repos.slice(0, 15)) {
         try {
-          const prs = await listPullRequests(workspaceId, repo.owner, repo.name, "open", 10);
+          const prs = await listPullRequests(workspaceId, repo.owner, repo.name, "open", 20);
           for (const pr of prs) {
             const externalId = `github-pr-${repo.fullName}-${pr.number}`;
             const existing = await db.task.findFirst({
@@ -55,8 +96,13 @@ export const initialGitHubSync = inngest.createFunction(
                       repo: repo.fullName,
                       number: pr.number,
                       author: pr.author,
-                      draft: pr.draft,
+                      state: "open",
+                      isDraft: pr.draft,
+                      requestedReviewers: pr.reviewers,
+                      reviewDecision: "pending",
+                      ciStatus: "pending",
                       labels: pr.labels,
+                      updatedAt: pr.updatedAt,
                     },
                   },
                 },
@@ -65,7 +111,7 @@ export const initialGitHubSync = inngest.createFunction(
             }
           }
 
-          const issues = await listIssues(workspaceId, repo.owner, repo.name, "open", 10);
+          const issues = await listIssues(workspaceId, repo.owner, repo.name, "open", 20);
           for (const issue of issues) {
             const externalId = `github-issue-${repo.fullName}-${issue.number}`;
             const existing = await db.task.findFirst({
@@ -101,7 +147,7 @@ export const initialGitHubSync = inngest.createFunction(
         }
       }
 
-      return { prsCreated, issuesCreated, reposSynced: Math.min(repos.length, 5) };
+      return { prsCreated, issuesCreated, reposSynced: Math.min(repos.length, 15) };
     });
 
     await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "github-sync" });
@@ -111,7 +157,7 @@ export const initialGitHubSync = inngest.createFunction(
 );
 
 // ---------------------------------------------------------------------------
-// Webhook handler — incremental sync
+// Webhook handler — incremental sync, routed by App installation
 // ---------------------------------------------------------------------------
 
 export const handleGitHubWebhook = inngest.createFunction(
@@ -121,13 +167,62 @@ export const handleGitHubWebhook = inngest.createFunction(
     triggers: [{ event: "github/webhook.received" }],
   },
   async ({ event, step }) => {
-    const { eventType, payload } = event.data as {
+    const { eventType, payload, installationId } = event.data as {
       eventType: string;
       payload: Record<string, unknown>;
+      installationId?: number;
     };
 
     await step.run("process-webhook", async () => {
       switch (eventType) {
+        // ── App install lifecycle — keep installationId/repos in sync ──
+        case "installation": {
+          const p = payload as {
+            action: string; // created | deleted | suspend | unsuspend | new_permissions_accepted
+            installation: { id: number };
+            repositories?: { full_name: string }[];
+          };
+          const integrations = await findWorkspacesByInstallation(p.installation.id);
+          for (const integration of integrations) {
+            if (p.action === "deleted") {
+              await db.integration.update({ where: { id: integration.id }, data: { isActive: false } });
+            } else if (p.action === "suspend") {
+              await db.integration.update({ where: { id: integration.id }, data: { isActive: false } });
+            } else if (p.action === "unsuspend") {
+              await db.integration.update({ where: { id: integration.id }, data: { isActive: true } });
+            } else if (p.repositories) {
+              const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+              await db.integration.update({
+                where: { id: integration.id },
+                data: { metadata: { ...meta, repos: p.repositories.map((r) => r.full_name) } },
+              });
+            }
+            await publishWorkspaceEvent(integration.workspaceId, { type: "refresh" });
+          }
+          break;
+        }
+
+        case "installation_repositories": {
+          const p = payload as {
+            installation: { id: number };
+            repositories_added?: { full_name: string }[];
+            repositories_removed?: { full_name: string }[];
+          };
+          const integrations = await findWorkspacesByInstallation(p.installation.id);
+          for (const integration of integrations) {
+            const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+            const current = new Set<string>(Array.isArray(meta.repos) ? (meta.repos as string[]) : []);
+            for (const r of p.repositories_added ?? []) current.add(r.full_name);
+            for (const r of p.repositories_removed ?? []) current.delete(r.full_name);
+            await db.integration.update({
+              where: { id: integration.id },
+              data: { metadata: { ...meta, repos: [...current] } },
+            });
+            await publishWorkspaceEvent(integration.workspaceId, { type: "refresh" });
+          }
+          break;
+        }
+
         case "pull_request": {
           const pr = payload as {
             action: string;
@@ -139,20 +234,13 @@ export const handleGitHubWebhook = inngest.createFunction(
               draft: boolean;
               labels: { name: string }[];
               merged: boolean;
+              requested_reviewers?: { login: string }[];
+              updated_at?: string;
             };
             repository: { full_name: string };
-            sender: { login: string };
           };
 
-          // Find ALL workspaces with a GitHub integration matching this sender
-          const integrations = await db.integration.findMany({
-            where: {
-              provider: "GITHUB",
-              isActive: true,
-              metadata: { path: ["login"], equals: pr.sender.login },
-            },
-          });
-
+          const integrations = await findWorkspacesByInstallation(installationId);
           const repo = pr.repository.full_name;
 
           for (const integration of integrations) {
@@ -182,7 +270,13 @@ export const handleGitHubWebhook = inngest.createFunction(
                         repo,
                         number: pr.pull_request.number,
                         author: pr.pull_request.user.login,
-                        draft: pr.pull_request.draft,
+                        state: "open",
+                        isDraft: pr.pull_request.draft,
+                        requestedReviewers: (pr.pull_request.requested_reviewers ?? []).map((r) => r.login),
+                        reviewDecision: "pending",
+                        ciStatus: "pending",
+                        labels: pr.pull_request.labels.map((l) => l.name),
+                        updatedAt: pr.pull_request.updated_at,
                       },
                     },
                   },
@@ -218,17 +312,9 @@ export const handleGitHubWebhook = inngest.createFunction(
               labels: { name: string }[];
             };
             repository: { full_name: string };
-            sender: { login: string };
           };
 
-          const integrations = await db.integration.findMany({
-            where: {
-              provider: "GITHUB",
-              isActive: true,
-              metadata: { path: ["login"], equals: issue.sender.login },
-            },
-          });
-
+          const integrations = await findWorkspacesByInstallation(installationId);
           const repo = issue.repository.full_name;
 
           for (const integration of integrations) {
