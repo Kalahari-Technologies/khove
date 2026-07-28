@@ -1,8 +1,5 @@
-import { getCurrentUser } from "@/lib/auth";
-import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { getWorkspaceBySlug } from "@/lib/workspace/get-workspace";
-import { notFound } from "next/navigation";
+import { redirect, notFound } from "next/navigation";
+import { serverTRPC } from "@/lib/trpc/server";
 import { TaskDetailClient } from "./task-detail-client";
 
 export default async function TaskDetailPage({
@@ -10,25 +7,13 @@ export default async function TaskDetailPage({
 }: {
   params: Promise<{ workspace: string; id: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug, id } = await params;
-  const workspace = await getWorkspaceBySlug(slug);
-  if (!workspace) redirect("/login");
+  const base = await serverTRPC();
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) redirect("/login");
 
-  const task = await db.task.findFirst({
-    where: { id, workspaceId: workspace.id },
-    include: {
-      status: true,
-      assignees: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-        },
-      },
-    },
-  });
-
+  const trpc = await serverTRPC(ws.id);
+  const task = await trpc.task.get.query({ id }).catch(() => null);
   if (!task) notFound();
 
   return <TaskDetailClient task={task} />;

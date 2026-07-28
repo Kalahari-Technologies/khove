@@ -1,8 +1,5 @@
-import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { getWorkspaceBySlug } from "@/lib/workspace/get-workspace";
-import { canAdminWorkspace } from "@/lib/workspace/authorization";
+import { serverTRPC } from "@/lib/trpc/server";
 import { GitHubClient } from "./github-client";
 
 export default async function GitHubPage({
@@ -10,47 +7,27 @@ export default async function GitHubPage({
 }: {
   params: Promise<{ workspace: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug } = await params;
-  const workspace = await getWorkspaceBySlug(slug);
-  if (!workspace) redirect("/login");
+  const base = await serverTRPC();
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) redirect("/login");
 
-  // Get user's role
-  const membership = await db.workspaceMember.findUnique({
-    where: { workspaceId_userId: { workspaceId: workspace.id, userId: user.id } },
-    select: { role: true },
-  });
-  const canAdmin = membership ? canAdminWorkspace(membership.role) : false;
+  const canAdmin = ws.currentRole === "OWNER" || ws.currentRole === "ADMIN";
 
-  // Workspace-scoped integration check
-  const integration = await db.integration.findFirst({
-    where: { workspaceId: workspace.id, provider: "GITHUB", isActive: true },
-    select: { id: true, metadata: true },
-  });
-
+  const trpc = await serverTRPC(ws.id);
+  const integration = await trpc.integration.get.query({ provider: "GITHUB" });
   const isConnected = !!integration;
-  const metadata = integration?.metadata as Record<string, unknown> | null;
+  const metadata = (integration?.metadata ?? null) as Record<string, unknown> | null;
 
-  // Workspace-scoped GitHub tasks
   const tasks = isConnected
-    ? await db.task.findMany({
-        where: {
-          workspaceId: workspace.id,
-          source: { has: "GITHUB" },
-        },
-        include: { status: true },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      })
+    ? (await trpc.task.list.query({ source: "GITHUB", limit: 100 })).items
     : [];
 
   return (
     <GitHubClient
       isConnected={isConnected}
       canAdmin={canAdmin}
-      workspaceId={workspace.id}
+      workspaceId={ws.id}
       githubLogin={(metadata?.login as string) ?? null}
       githubAvatar={(metadata?.avatarUrl as string) ?? null}
       tasks={tasks.map((t) => ({

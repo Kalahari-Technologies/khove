@@ -1,10 +1,6 @@
-import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { getWorkspaceBySlug } from "@/lib/workspace/get-workspace";
-import { canAdminWorkspace } from "@/lib/workspace/authorization";
+import { serverTRPC } from "@/lib/trpc/server";
 import { PlannerClient } from "./calendar-client";
-import { Redis } from "@upstash/redis";
 
 export default async function PlannerPage({
   params,
@@ -13,63 +9,35 @@ export default async function PlannerPage({
   params: Promise<{ workspace: string }>;
   searchParams: Promise<{ view?: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug } = await params;
   const { view: rawView } = await searchParams;
-  const view = (rawView === "week" || rawView === "day") ? rawView : "month" as const;
-  const workspace = await getWorkspaceBySlug(slug);
-  if (!workspace) redirect("/login");
+  const view = rawView === "week" || rawView === "day" ? rawView : ("month" as const);
 
-  // Get user's role in this workspace
-  const membership = await db.workspaceMember.findUnique({
-    where: { workspaceId_userId: { workspaceId: workspace.id, userId: user.id } },
-    select: { role: true },
-  });
-  const canAdmin = membership ? canAdminWorkspace(membership.role) : false;
+  const base = await serverTRPC();
+  const me = await base.workspace.me.query().catch(() => null);
+  if (!me) redirect("/login");
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) redirect("/login");
+  const canAdmin = ws.currentRole === "OWNER" || ws.currentRole === "ADMIN";
 
-  // Workspace-scoped tasks with due dates
-  const tasks = await db.task.findMany({
-    where: { workspaceId: workspace.id, dueDate: { not: null } },
-    include: { status: true },
-    orderBy: { dueDate: "asc" },
-  });
-
-  // Workspace-scoped calendar entries
+  const trpc = await serverTRPC(ws.id);
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
-  const calendarEntries = await db.calendarEntry.findMany({
-    where: {
-      workspaceId: workspace.id,
-      startDate: { gte: monthStart, lte: monthEnd },
-    },
-    orderBy: { startDate: "asc" },
-  });
 
-  // Workspace-scoped integration check
-  const googleIntegration = await db.integration.findFirst({
-    where: { workspaceId: workspace.id, provider: "GOOGLE_CALENDAR", isActive: true },
-    select: { id: true },
-  });
+  const [tasksResult, calendarEntries, googleIntegration, sync] = await Promise.all([
+    trpc.task.list.query({ hasDueDate: true, limit: 200 }),
+    trpc.calendarEntry.list.query({ from: monthStart, to: monthEnd }),
+    trpc.integration.get.query({ provider: "GOOGLE_CALENDAR" }),
+    trpc.integration.syncStatus.query(),
+  ]);
+
+  const tasks = tasksResult.items;
   const isGoogleConnected = !!googleIntegration;
-
-  // Check if calendar is currently syncing (Redis key from Inngest job)
-  let isSyncing = false;
-  if (isGoogleConnected && tasks.filter((t) => t.source.includes("GOOGLE_CALENDAR")).length === 0) {
-    // Integration exists but no synced tasks yet — check if sync is actively running
-    try {
-      const redis = new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-      });
-      const syncStatus = await redis.get(`cal-sync:${workspace.id}`);
-      isSyncing = syncStatus === "syncing"; // only true if actively syncing — null means done or never set
-    } catch {
-      // Redis error — don't assume syncing, show empty state instead
-    }
-  }
+  const isSyncing =
+    (sync as { status?: string }).status === "syncing" &&
+    isGoogleConnected &&
+    tasks.filter((t) => t.source.includes("GOOGLE_CALENDAR")).length === 0;
 
   const isFirstTime = tasks.length === 0 && calendarEntries.length === 0 && !isSyncing;
 
@@ -79,15 +47,18 @@ export default async function PlannerPage({
       isGoogleConnected={isGoogleConnected}
       isSyncing={isSyncing}
       canAdmin={canAdmin}
-      workspaceId={workspace.id}
-      planTier={user.planTier}
+      workspaceId={ws.id}
+      planTier={me.user.planTier}
       tasks={tasks.map((t) => ({
         id: t.id,
         title: t.title,
         dueDate: t.dueDate!.toISOString(),
         source: t.source,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hasMeetLink: !!(t.metadata as Record<string, any> | null)?.googleCalendar?.meetLink,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         endDateTime: (t.metadata as Record<string, any> | null)?.googleCalendar?.endDateTime ?? undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         isAllDay: (t.metadata as Record<string, any> | null)?.googleCalendar?.isAllDay ?? false,
         status: t.status
           ? { name: t.status.name, color: t.status.color }

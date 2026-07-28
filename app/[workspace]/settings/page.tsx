@@ -1,28 +1,21 @@
-import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import {
-  getWorkspaceBySlug,
-  getWorkspaceMembership,
-} from "@/lib/workspace/get-workspace";
 import Link from "next/link";
+import { serverTRPC } from "@/lib/trpc/server";
 
 export default async function WorkspaceSettingsPage({
   params,
 }: {
   params: Promise<{ workspace: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug } = await params;
-  const workspace = await getWorkspaceBySlug(slug);
-  if (!workspace) redirect("/login");
+  const base = await serverTRPC();
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) redirect("/login");
 
-  const membership = await getWorkspaceMembership(workspace.id, user.id);
-  if (!membership) redirect("/login");
-
-  const isOwner = membership.role === "OWNER";
-  const isAdmin = membership.role === "OWNER" || membership.role === "ADMIN";
+  const workspace = ws;
+  const membership = { role: ws.currentRole };
+  const isOwner = ws.currentRole === "OWNER";
+  const isAdmin = ws.currentRole === "OWNER" || ws.currentRole === "ADMIN";
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">

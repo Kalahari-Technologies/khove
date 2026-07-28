@@ -1,7 +1,5 @@
-import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { getWorkspaceBySlug } from "@/lib/workspace/get-workspace";
+import { serverTRPC } from "@/lib/trpc/server";
 import { TasksClient } from "./tasks-client";
 
 export default async function TasksPage({
@@ -9,32 +7,22 @@ export default async function TasksPage({
 }: {
   params: Promise<{ workspace: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug } = await params;
-  const workspace = await getWorkspaceBySlug(slug);
-  if (!workspace) redirect("/login");
+  const base = await serverTRPC();
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) redirect("/login");
 
-  const [tasks, statuses] = await Promise.all([
-    db.task.findMany({
-      where: { workspaceId: workspace.id },
-      include: { status: true },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    }),
-    db.workflowStatus.findMany({
-      where: { workspaceId: workspace.id },
-      orderBy: { position: "asc" },
-    }).then(async (wsStatuses) => {
-      // If workspace has its own statuses, use those. Otherwise fall back to system defaults.
-      if (wsStatuses.length > 0) return wsStatuses;
-      return db.workflowStatus.findMany({
-        where: { workspaceId: null, isSystem: true },
-        orderBy: { position: "asc" },
-      });
-    }),
+  const trpc = await serverTRPC(ws.id);
+  const [tasksResult, statuses] = await Promise.all([
+    trpc.task.list.query({ limit: 200 }),
+    trpc.workflowStatus.list.query(),
   ]);
 
-  return <TasksClient tasks={tasks} statuses={statuses} isPersonalWorkspace={workspace.isPersonal} />;
+  return (
+    <TasksClient
+      tasks={tasksResult.items}
+      statuses={statuses}
+      isPersonalWorkspace={ws.isPersonal}
+    />
+  );
 }

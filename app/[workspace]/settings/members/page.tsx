@@ -1,10 +1,5 @@
-import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import {
-  getWorkspaceBySlug,
-  getWorkspaceMembership,
-} from "@/lib/workspace/get-workspace";
+import { serverTRPC } from "@/lib/trpc/server";
 import { MembersManager } from "@/components/members-manager";
 
 export default async function MembersPage({
@@ -12,26 +7,18 @@ export default async function MembersPage({
 }: {
   params: Promise<{ workspace: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug } = await params;
-  const workspace = await getWorkspaceBySlug(slug);
-  if (!workspace) redirect("/login");
+  const base = await serverTRPC();
+  const me = await base.workspace.me.query().catch(() => null);
+  if (!me) redirect("/login");
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) redirect("/login");
 
-  const membership = await getWorkspaceMembership(workspace.id, user.id);
-  if (!membership) redirect("/login");
-
-  const isAdmin = membership.role === "OWNER" || membership.role === "ADMIN";
+  const isAdmin = ws.currentRole === "OWNER" || ws.currentRole === "ADMIN";
   if (!isAdmin) redirect(`/${slug}/settings`);
 
-  const members = await db.workspaceMember.findMany({
-    where: { workspaceId: workspace.id },
-    include: {
-      user: { select: { id: true, name: true, email: true } },
-    },
-    orderBy: { joinedAt: "asc" },
-  });
+  const trpc = await serverTRPC(ws.id);
+  const members = await trpc.workspace.listMembers.query();
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
@@ -41,14 +28,15 @@ export default async function MembersPage({
             Members
           </h1>
           <p className="text-[13px] text-white/50 mt-1">
-            Manage who has access to {workspace.isPersonal ? "your personal workspace" : workspace.name}
+            Manage who has access to{" "}
+            {ws.isPersonal ? "your personal workspace" : ws.name}
           </p>
         </div>
 
         <MembersManager
-          workspaceId={workspace.id}
-          currentUserId={user.id}
-          currentUserRole={membership.role}
+          workspaceId={ws.id}
+          currentUserId={me.user.id}
+          currentUserRole={ws.currentRole}
           members={members.map((m) => ({
             userId: m.userId,
             name: m.user.name,

@@ -1,7 +1,5 @@
-import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { getWorkspaceBySlug } from "@/lib/workspace/get-workspace";
+import { serverTRPC } from "@/lib/trpc/server";
 import { ChatClient } from "./chat-client";
 import type { ChatMessage } from "@/lib/types";
 
@@ -12,12 +10,12 @@ export default async function ChatPage({
   params: Promise<{ workspace: string }>;
   searchParams: Promise<{ conversationId?: string }>;
 }) {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const { workspace: slug } = await params;
-  const workspace = await getWorkspaceBySlug(slug);
-  if (!workspace) redirect("/login");
+  const base = await serverTRPC();
+  const me = await base.workspace.me.query().catch(() => null);
+  if (!me) redirect("/login");
+  const ws = await base.workspace.getBySlug.query({ slug }).catch(() => null);
+  if (!ws) redirect("/login");
 
   const { conversationId } = await searchParams;
 
@@ -25,11 +23,10 @@ export default async function ChatPage({
   let loadedConversationId: string | undefined;
 
   if (conversationId) {
-    const conversation = await db.conversation.findFirst({
-      where: { id: conversationId, userId: user.id, workspaceId: workspace.id },
-      select: { id: true, messages: true },
-    });
-
+    const trpc = await serverTRPC(ws.id);
+    const conversation = await trpc.conversation.get
+      .query({ id: conversationId })
+      .catch(() => null);
     if (conversation) {
       loadedConversationId = conversation.id;
       const raw = conversation.messages as unknown as ChatMessage[];
@@ -42,8 +39,8 @@ export default async function ChatPage({
   return (
     <ChatClient
       key={loadedConversationId ?? "new"}
-      userName={user.name ?? user.email.split("@")[0]}
-      planTier={user.planTier}
+      userName={me.user.name ?? me.user.email.split("@")[0]}
+      planTier={me.user.planTier}
       conversationId={loadedConversationId}
       initialMessages={initialMessages}
     />

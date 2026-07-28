@@ -22,18 +22,20 @@ export const taskRouter = router({
       z.object({
         statusId: z.string().optional(),
         source: taskSourceEnum.optional(),
+        hasDueDate: z.boolean().optional(),
         cursor: z.string().optional(),
-        limit: z.number().min(1).max(100).default(50),
+        limit: z.number().min(1).max(200).default(50),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { statusId, source, cursor, limit } = input;
+      const { statusId, source, hasDueDate, cursor, limit } = input;
 
       const tasks = await db.task.findMany({
         where: {
           workspaceId: ctx.workspace.id,
           ...(statusId && { statusId }),
           ...(source && { source: { has: source as TaskSource } }),
+          ...(hasDueDate && { dueDate: { not: null } }),
         },
         include: {
           status: true,
