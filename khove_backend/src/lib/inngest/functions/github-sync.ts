@@ -11,6 +11,13 @@ import {
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 import { linkPRToThreads } from "@backend/lib/threads";
 import { shepherdScanPR } from "@backend/lib/agent/shepherd";
+import { recordSignals } from "@backend/lib/signals/record";
+import {
+  prWebhookSignals,
+  reviewSubmittedSignal,
+  ciCompletedSignal,
+  backfilledMergedPR,
+} from "@backend/lib/signals/github";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -124,6 +131,8 @@ export const initialGitHubSync = inngest.createFunction(
       const octokit = await getShepherdClient(workspaceId).catch(() => undefined);
       let issuesCreated = 0;
       let prsCreated = 0;
+      let backfillSignals = 0;
+      const backfillSince = Date.now() - 90 * 24 * 60 * 60 * 1000;
       const scanned = repos.slice(0, 15);
 
       // Cap breadth to keep the initial sync within the step budget.
@@ -201,6 +210,18 @@ export const initialGitHubSync = inngest.createFunction(
               issuesCreated++;
             }
           }
+
+          // Backfill flow history — merged PRs in the last 90 days become
+          // WORK_OPENED + WORK_MERGED Signals, so cycle-time / throughput / burn-up
+          // charts aren't empty on day one. Idempotent (recordSignals dedupes).
+          const closed = await listPullRequests(workspaceId, repo.owner, repo.name, "closed", 30, octokit);
+          const merged = closed.filter((p) => p.mergedAt && new Date(p.mergedAt).getTime() >= backfillSince);
+          for (const p of merged) {
+            backfillSignals += await recordSignals(
+              workspaceId,
+              backfilledMergedPR(repo.fullName, p.number, p.author, p.createdAt, p.mergedAt ?? undefined),
+            );
+          }
         } catch (err) {
           console.error(`[github-sync] ${repo.fullName} failed:`, err);
         }
@@ -227,7 +248,7 @@ export const initialGitHubSync = inngest.createFunction(
         });
       }
 
-      return { prsCreated, issuesCreated, reposSynced: scanned.length, reposAccessible: repos.length };
+      return { prsCreated, issuesCreated, backfillSignals, reposSynced: scanned.length, reposAccessible: repos.length };
     });
 
     await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "github-sync" });
@@ -319,7 +340,10 @@ export const handleGitHubWebhook = inngest.createFunction(
               merged: boolean;
               requested_reviewers?: { login: string }[];
               head?: { sha?: string };
+              created_at?: string;
               updated_at?: string;
+              merged_at?: string | null;
+              closed_at?: string | null;
             };
             repository: { full_name: string };
           };
@@ -329,6 +353,7 @@ export const handleGitHubWebhook = inngest.createFunction(
           const prNum = pr.pull_request.number;
           const externalId = `github-pr-${repo}-${prNum}`;
           const derived = derivePRState(pr.pull_request);
+          const prSignals = prWebhookSignals(pr.action, pr.pull_request, repo);
 
           for (const integration of integrations) {
             const wsId = integration.workspaceId;
@@ -375,6 +400,8 @@ export const handleGitHubWebhook = inngest.createFunction(
                 data: { statusId: doneStatus?.id ?? null },
               });
             }
+            // Record the flow Signals (open/merge/close) for delivery metrics.
+            if (prSignals.length) await recordSignals(wsId, prSignals).catch(() => {});
             // Enrich any Thread that already references this PR (never auto-creates).
             await linkPRToThreads(wsId, task.id).catch(() => {});
             // Draft approval-gated Shepherd actions (state-based signals).
@@ -388,18 +415,30 @@ export const handleGitHubWebhook = inngest.createFunction(
         case "pull_request_review": {
           const p = payload as {
             action: string;
-            review: { state?: string };
+            review: { state?: string; submitted_at?: string; user?: { login?: string } };
             pull_request: { number: number };
             repository: { full_name: string };
           };
           const st = p.review.state?.toLowerCase();
           const reviewDecision =
             st === "changes_requested" ? "changes_requested" : st === "approved" ? "approved" : undefined;
-          if (!reviewDecision) break; // commented / dismissed — no decision change
 
           const integrations = await findWorkspacesByInstallation(installationId);
-          const externalId = `github-pr-${p.repository.full_name}-${p.pull_request.number}`;
+          const repoFull = p.repository.full_name;
+          const externalId = `github-pr-${repoFull}-${p.pull_request.number}`;
+          // Record REVIEW_SUBMITTED for EVERY review (review-latency counts the first
+          // response of any kind), even a comment that doesn't change the decision.
+          const reviewSignal = reviewSubmittedSignal(
+            repoFull,
+            p.pull_request.number,
+            p.review.user?.login,
+            p.review.state,
+            p.review.submitted_at,
+          );
+
           for (const integration of integrations) {
+            await recordSignals(integration.workspaceId, [reviewSignal]).catch(() => {});
+            if (!reviewDecision) continue; // commented / dismissed — no state change
             const task = await db.task.findFirst({
               where: { externalId, workspaceId: integration.workspaceId },
             });
@@ -467,6 +506,9 @@ export const handleGitHubWebhook = inngest.createFunction(
 
             for (const t of matched.values()) {
               await patchGithubMeta(t, { ciStatus });
+              const ekey = ((t.metadata as Record<string, unknown>)?.github as Record<string, unknown> | undefined);
+              const entityKey = `github-pr-${repoFull}-${(ekey?.number as number) ?? ""}`;
+              if (repoFull) await recordSignals(wsId, [ciCompletedSignal(entityKey, repoFull, ciStatus)]).catch(() => {});
               await shepherdScanPR(t.id).catch(() => {});
               await publishWorkspaceEvent(wsId, { type: "task.updated", taskId: t.id });
             }

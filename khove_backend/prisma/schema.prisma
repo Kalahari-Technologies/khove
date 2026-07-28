@@ -182,6 +182,7 @@ model Workspace {
   threads           Thread[]
   agentActions      AgentAction[]
   auditLogs         AuditLog[]
+  signals           Signal[]
 }
 
 model WorkspaceMember {
@@ -483,4 +484,46 @@ model AuditLog {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// Connectivity Intelligence — the append-only, provider-agnostic event store.
+// `Task` is the current-state projection; `Signal` is the history that powers
+// flow metrics (cycle time, throughput, burn-up, DORA). See
+// product_docs/Connectivity Intelligence — Design.md.
+// ─────────────────────────────────────────────
+
+enum SignalKind {
+  WORK_OPENED
+  WORK_MERGED
+  WORK_CLOSED
+  WORK_REOPENED
+  REVIEW_REQUESTED
+  REVIEW_SUBMITTED
+  STATUS_CHANGED
+  CI_COMPLETED
+  DEPLOY
+  COMMENT
+  MEETING_HELD
+  DECISION
+}
+
+model Signal {
+  id          String              @id @default(cuid())
+  workspaceId String
+  provider    IntegrationProvider
+  kind        SignalKind
+  entityType  String // "pull_request" | "issue" | "jira_issue" | "work_item"
+  entityKey   String // stable id, e.g. "github-pr-org/web-123" | "jira-ENG-45"
+  source      String? // repo full_name / project key (the scope unit)
+  actorKey    String? // normalized person key (login / email / accountId)
+  occurredAt  DateTime // when it HAPPENED (payload timestamp, not ingest time)
+  metadata    Json                @default("{}")
+  createdAt   DateTime            @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider, kind, entityKey, occurredAt]) // idempotent ingest
+  @@index([workspaceId, provider, occurredAt])
+  @@index([workspaceId, entityKey])
 }
