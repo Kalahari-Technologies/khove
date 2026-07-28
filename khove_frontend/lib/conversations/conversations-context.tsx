@@ -205,11 +205,15 @@ export function ConversationsProvider({
             const { done, value } = await reader.read();
             if (done) break;
             buf += decoder.decode(value, { stream: true });
-            const lines = buf.split("\n");
-            buf = lines.pop() ?? "";
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              try { handle(JSON.parse(line)); } catch { /* skip partial */ }
+            // SSE frames are separated by a blank line; each carries one `data:` line.
+            const frames = buf.split("\n\n");
+            buf = frames.pop() ?? "";
+            for (const frame of frames) {
+              const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
+              if (!dataLine) continue; // skip comments (": ...")
+              const json = dataLine.replace(/^data:\s?/, "");
+              if (!json) continue;
+              try { handle(JSON.parse(json)); } catch { /* skip partial */ }
             }
           }
 

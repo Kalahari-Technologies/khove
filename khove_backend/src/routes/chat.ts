@@ -5,10 +5,11 @@ import { requireWorkspaceMembership } from "@backend/lib/workspace/resolve";
 
 const router = Router();
 
-// POST /api/chat — AI conversation, streamed as newline-delimited JSON (NDJSON).
-// Each line is a ChatStreamEvent: meta | step | text | reasoning | blocked |
-// error | done. Streamed via fetch reader on the client (EventSource can't send
-// the Clerk bearer header).
+// POST /api/chat — AI conversation, streamed as Server-Sent Events (SSE).
+// Each frame is `data: <ChatStreamEvent JSON>\n\n` (meta | step | text |
+// reasoning | blocked | error | done). SSE (text/event-stream) is passed through
+// unbuffered by Cloudflare/Render, giving progressive streaming. Read via a fetch
+// reader on the client (EventSource can't send the Clerk bearer header).
 router.post("/", async (req, res) => {
   try {
     const user = await requireUser(req);
@@ -31,15 +32,19 @@ router.post("/", async (req, res) => {
     await requireWorkspaceMembership(workspaceId, user.id);
 
     res.status(200);
-    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders?.();
+    // Opening comment (+2KB padding) forces any intermediary to flush early so the
+    // first real events stream progressively rather than being buffered.
+    res.write(`: ${" ".repeat(2048)}\n\n`);
 
-    // Fire-and-forget line writer — a client disconnect must not abort the
-    // finalize step (persistence still runs so the reply isn't lost).
+    // Fire-and-forget SSE writer — a client disconnect must not abort the finalize
+    // step (persistence still runs so the reply isn't lost).
     const write = (e: unknown) => {
-      try { res.write(JSON.stringify(e) + "\n"); } catch { /* client gone */ }
+      try { res.write(`data: ${JSON.stringify(e)}\n\n`); } catch { /* client gone */ }
     };
 
     await streamAIConversation(
@@ -64,7 +69,7 @@ router.post("/", async (req, res) => {
     }
     console.error("[/api/chat] Unhandled error:", error);
     if (!res.headersSent) return res.status(500).json({ error: "Internal server error" });
-    try { res.write(JSON.stringify({ t: "error", message: "Internal server error" }) + "\n"); } catch { /* noop */ }
+    try { res.write(`data: ${JSON.stringify({ t: "error", message: "Internal server error" })}\n\n`); } catch { /* noop */ }
     return res.end();
   }
 });
