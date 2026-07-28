@@ -1,4 +1,11 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+
+// Load `.env.local` first (development, gitignored) then `.env`, matching the
+// Next.js monolith's precedence. dotenv never overrides an already-set var, so
+// `.env.local` wins over `.env`, and real OS env vars (staging/prod) win over both.
+// Requires cwd = khove_backend (the npm workspace scripts run there).
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 /**
  * Backend environment. Loaded once at process start (dotenv). Secrets are read
