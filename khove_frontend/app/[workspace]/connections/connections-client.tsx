@@ -6,6 +6,7 @@ import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { trpc } from "@/lib/trpc/client";
 import { SectionCard, StatTile, Chip, ago } from "@/components/integrations/insight-ui";
 import { RichText } from "@/components/rich-text";
+import { ThreadsPanel } from "./thread-panel";
 import {
   Activity,
   GitMerge,
@@ -156,6 +157,7 @@ export function ConnectionsClient({
             <ActivityTimeline items={activity.data ?? []} loading={activity.isLoading} />
           </div>
           <div className="space-y-5">
+            <ThreadsPanel />
             <CrossToolGaps />
             <UnplannedWork />
           </div>
