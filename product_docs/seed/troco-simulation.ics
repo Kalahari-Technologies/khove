@@ -1,0 +1,261 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Khove//Troco Simulation//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Troco Simulation
+X-WR-TIMEZONE:Africa/Kigali
+BEGIN:VEVENT
+UID:troco-sim-standup@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260713T063000Z
+DTEND:20260713T064500Z
+RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20260814T235959Z
+SUMMARY:Troco Daily Standup
+LOCATION:https://meet.google.com/troco-standup
+DESCRIPTION:Async-friendly daily standup for the Troco squad. Yesterday / today / blockers across the active sprint (M8 Rider dispatch, M9 Theme + Escrow).
+ORGANIZER;CN=Teninlanimi Taiwo:mailto:tools@softcom.xyz
+ATTENDEE;CN=Teninlanimi Taiwo;ROLE=CHAIR;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:tools@softcom.xyz
+ATTENDEE;CN=Amara Okoye;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Kwame Mensah;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Zara Abebe;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:zara.abebe@troco.co
+ATTENDEE;CN=Diego Santos;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:diego.santos@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-weekly-sync@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260713T140000Z
+DTEND:20260713T143000Z
+RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20260817T235959Z
+SUMMARY:Troco Weekly Delivery Sync
+LOCATION:https://meet.google.com/troco-weekly
+DESCRIPTION:Cross-team delivery review — milestone health, scope changes, and risks across Marketplace, Escrow (M9), Rider (M8), Inspector KYC, and Platform.
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:tools@softcom.xyz
+ATTENDEE;CN=Amara Okoye;ROLE=CHAIR;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Kwame Mensah;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Lena Fischer;ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED;RSVP=FALSE:mailto:lena.fischer@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-01-sprint-m8@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260713T070000Z
+DTEND:20260713T080000Z
+SUMMARY:Sprint Planning — Milestone M8 (Rider dispatch)
+LOCATION:https://meet.google.com/troco-plan-m8
+DESCRIPTION:Plan the Rider (M8) dispatch + fare negotiation epic (TROCO-16): rider provider shell (TROCO-18), client booking flow (TROCO-19), trip lifecycle + OTPs (TROCO-20), rider application + vetting (TROCO-21).
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Diego Santos;PARTSTAT=ACCEPTED:mailto:diego.santos@troco.co
+ATTENDEE;CN=Kwame Mensah;PARTSTAT=ACCEPTED:mailto:kwame.mensah@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-02-escrow-design@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260714T090000Z
+DTEND:20260714T093000Z
+SUMMARY:Escrow charge tiers — design review
+LOCATION:https://meet.google.com/troco-escrow
+DESCRIPTION:Design review for Escrow charge tiers (M9) epic TROCO-1 — backend escrow work lands in Troco-Company PR #133 (TROCO-6). Confirm tier boundaries + admin Charge Tiers page (TROCO-7).
+ORGANIZER;CN=Kwame Mensah:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Kwame Mensah;PARTSTAT=ACCEPTED:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Amara Okoye;PARTSTAT=ACCEPTED:mailto:amara.okoye@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-03-inspector-kyc@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260716T113000Z
+DTEND:20260716T121500Z
+SUMMARY:Inspector vetting & KYC sync
+LOCATION:https://meet.google.com/troco-kyc
+DESCRIPTION:Inspector vetting and KYC epic (TROCO-22): vetting fields — home address, utility bill, guarantor (TROCO-24), public inspector profile (TROCO-26), admin re-review of inspector edits (TROCO-27).
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Zara Abebe;PARTSTAT=ACCEPTED:mailto:zara.abebe@troco.co
+ATTENDEE;CN=Noah Kim;PARTSTAT=TENTATIVE:mailto:noah.kim@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-04-sprint-m9@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260720T070000Z
+DTEND:20260720T080000Z
+SUMMARY:Sprint Planning — Milestone M9 (Theme + Escrow)
+LOCATION:https://meet.google.com/troco-plan-m9
+DESCRIPTION:Plan M9: Theme and design system (TROCO-28) — light/dark/system switcher (TROCO-29), dark-mode polish (TROCO-30); plus Escrow charge tiers (TROCO-1) hand-off to release.
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Lena Fischer;PARTSTAT=ACCEPTED:mailto:lena.fischer@troco.co
+ATTENDEE;CN=Zara Abebe;PARTSTAT=ACCEPTED:mailto:zara.abebe@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-05-pr133-review@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260721T123000Z
+DTEND:20260721T131500Z
+SUMMARY:PR review — backend escrow (PR #133)
+LOCATION:https://meet.google.com/troco-pr133
+DESCRIPTION:Walkthrough of Troco-Company PR #133 — backend escrow endpoints for TROCO-6 / TROCO-1. Verify tier math + admin review path before merge.
+ORGANIZER;CN=Kwame Mensah:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Kwame Mensah;PARTSTAT=ACCEPTED:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Noah Kim;PARTSTAT=ACCEPTED:mailto:noah.kim@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-06-marketplace-walkthrough@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260722T100000Z
+DTEND:20260722T104500Z
+SUMMARY:Marketplace revamp walkthrough
+LOCATION:https://meet.google.com/troco-marketplace
+DESCRIPTION:Marketplace epic (TROCO-8) — revamp screens home/detail/cart (TROCO-14). Shuffle + ranking changes ship in Troco-Company PR #140 (TROCO-12).
+ORGANIZER;CN=Zara Abebe:mailto:zara.abebe@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Zara Abebe;PARTSTAT=ACCEPTED:mailto:zara.abebe@troco.co
+ATTENDEE;CN=Lena Fischer;PARTSTAT=ACCEPTED:mailto:lena.fischer@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-07-theme-review@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260723T133000Z
+DTEND:20260723T141500Z
+SUMMARY:Design system — light/dark switcher review
+LOCATION:https://meet.google.com/troco-theme
+DESCRIPTION:Theme and design system (TROCO-28) — review light/dark/system switcher (TROCO-29) and remaining dark-mode polish (TROCO-30) across screens.
+ORGANIZER;CN=Lena Fischer:mailto:lena.fischer@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Zara Abebe;PARTSTAT=ACCEPTED:mailto:zara.abebe@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-08-review-retro-m8@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260724T130000Z
+DTEND:20260724T140000Z
+SUMMARY:Sprint Review + Retro — M8
+LOCATION:https://meet.google.com/troco-retro-m8
+DESCRIPTION:Demo the Rider (M8) dispatch work (TROCO-16/18/19/20) and run the retro. What shipped, what slipped, actions for M9.
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Kwame Mensah;PARTSTAT=ACCEPTED:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Diego Santos;PARTSTAT=ACCEPTED:mailto:diego.santos@troco.co
+ATTENDEE;CN=Zara Abebe;PARTSTAT=ACCEPTED:mailto:zara.abebe@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-09-darkmode-pairing@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260729T113000Z
+DTEND:20260729T123000Z
+SUMMARY:Dark-mode polish pairing
+LOCATION:https://meet.google.com/troco-darkmode
+DESCRIPTION:Pairing session on the dark-mode polish pass across screens (TROCO-30), under Theme and design system (TROCO-28).
+ORGANIZER;CN=Zara Abebe:mailto:zara.abebe@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Lena Fischer;PARTSTAT=ACCEPTED:mailto:lena.fischer@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-10-booking-demo@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260730T100000Z
+DTEND:20260730T104500Z
+SUMMARY:Rider booking flow — demo
+LOCATION:https://meet.google.com/troco-booking
+DESCRIPTION:Demo the client booking flow — ride/delivery/vehicle/fare/dispatch (TROCO-19) under Rider (M8) dispatch (TROCO-16).
+ORGANIZER;CN=Diego Santos:mailto:diego.santos@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Amara Okoye;PARTSTAT=ACCEPTED:mailto:amara.okoye@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-11-release-cutover-m9@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260731T120000Z
+DTEND:20260731T130000Z
+SUMMARY:Release cutover — M9 Escrow tiers
+LOCATION:https://meet.google.com/troco-release-m9
+DESCRIPTION:Cut the M9 release: escrow charge tiers (TROCO-1) via Troco-Company PR #133, marketplace shuffle via PR #140. Go/no-go, migration + rollback plan.
+ORGANIZER;CN=Noah Kim:mailto:noah.kim@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Kwame Mensah;PARTSTAT=ACCEPTED:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Amara Okoye;PARTSTAT=ACCEPTED:mailto:amara.okoye@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-12-sprint-m10@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260803T070000Z
+DTEND:20260803T080000Z
+SUMMARY:Sprint Planning — Milestone M10 (Landing + Admin)
+LOCATION:https://meet.google.com/troco-plan-m10
+DESCRIPTION:Plan M10: Landing page (TROCO-31) — hero + content (TROCO-32), waitlist/CTA (TROCO-33), SEO + analytics (TROCO-34); Admin web (TROCO-35) — inspector request review UI (TROCO-36), marketplace moderation (TROCO-37).
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Zara Abebe;PARTSTAT=ACCEPTED:mailto:zara.abebe@troco.co
+ATTENDEE;CN=Lena Fischer;PARTSTAT=ACCEPTED:mailto:lena.fischer@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-13-landing-review@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260804T100000Z
+DTEND:20260804T104500Z
+SUMMARY:Landing page — content review
+LOCATION:https://meet.google.com/troco-landing
+DESCRIPTION:Review landing page (TROCO-31): hero + content refresh (TROCO-32) and SEO + analytics wiring (TROCO-34).
+ORGANIZER;CN=Lena Fischer:mailto:lena.fischer@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Zara Abebe;PARTSTAT=TENTATIVE:mailto:zara.abebe@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-14-admin-moderation@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260805T113000Z
+DTEND:20260805T121500Z
+SUMMARY:Admin — moderation UI review
+LOCATION:https://meet.google.com/troco-admin
+DESCRIPTION:Admin web (TROCO-35): inspector request review UI (TROCO-36) and marketplace moderation (TROCO-37).
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Noah Kim;PARTSTAT=ACCEPTED:mailto:noah.kim@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-15-platform-devops@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260806T133000Z
+DTEND:20260806T141500Z
+SUMMARY:Platform & DevOps — CI + deploy
+LOCATION:https://meet.google.com/troco-platform
+DESCRIPTION:Platform and DevOps (TROCO-38): Render build runs tsc on deploy (TROCO-39), CI analyze/test on PRs across Troco-Company repos (TROCO-40).
+ORGANIZER;CN=Noah Kim:mailto:noah.kim@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Kwame Mensah;PARTSTAT=ACCEPTED:mailto:kwame.mensah@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:troco-sim-16-review-retro-m9@khove.xyz
+DTSTAMP:20260729T000000Z
+DTSTART:20260807T130000Z
+DTEND:20260807T140000Z
+SUMMARY:Sprint Review + Retro — M9
+LOCATION:https://meet.google.com/troco-retro-m9
+DESCRIPTION:Demo M9 (Theme TROCO-28 + Escrow TROCO-1) and run the retro. Confirm release health for PR #133 / PR #140 and set M10 focus.
+ORGANIZER;CN=Amara Okoye:mailto:amara.okoye@troco.co
+ATTENDEE;CN=Teninlanimi Taiwo;PARTSTAT=ACCEPTED:mailto:tools@softcom.xyz
+ATTENDEE;CN=Kwame Mensah;PARTSTAT=ACCEPTED:mailto:kwame.mensah@troco.co
+ATTENDEE;CN=Zara Abebe;PARTSTAT=ACCEPTED:mailto:zara.abebe@troco.co
+ATTENDEE;CN=Lena Fischer;PARTSTAT=ACCEPTED:mailto:lena.fischer@troco.co
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR

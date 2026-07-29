@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
+import { usePagedList, SearchBar, Pager } from "@/components/integrations/list-controls";
 
 const STATES = [
   { k: "open", l: "Open" },
@@ -20,39 +21,46 @@ export function GithubItemsView({ kind }: { kind: "pr" | "issue" }) {
   const q = trpc.metrics.githubItems.useQuery({ kind, state });
   const rows = q.data ?? [];
   const title = kind === "pr" ? "Pull requests" : "Issues";
+  const { term, setTerm, page, setPage, pageCount, total, paged } = usePagedList(
+    rows,
+    (r) => `${r.title} ${r.repo} ${r.author ?? ""} #${r.number}`,
+  );
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="w-full px-6 py-6 xl:px-10">
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <h1 className="text-[16px] font-semibold text-white">{title}</h1>
-            <span className="text-[12px] text-white/35">{q.isLoading ? "…" : rows.length}</span>
+            <span className="text-[12px] text-white/35">{q.isLoading ? "…" : total}</span>
           </div>
-          <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.08] p-0.5">
-            {STATES.map((s) => (
-              <button
-                key={s.k}
-                onClick={() => setState(s.k)}
-                className={`rounded-md px-2.5 py-1 text-[12px] transition-colors ${
-                  state === s.k ? "bg-white/[0.08] text-white" : "text-white/45 hover:text-white/75"
-                }`}
-              >
-                {s.l}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <SearchBar value={term} onChange={setTerm} placeholder={`Search ${kind === "pr" ? "PRs" : "issues"}…`} />
+            <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.08] p-0.5">
+              {STATES.map((s) => (
+                <button
+                  key={s.k}
+                  onClick={() => setState(s.k)}
+                  className={`rounded-md px-2.5 py-1 text-[12px] transition-colors ${
+                    state === s.k ? "bg-white/[0.08] text-white" : "text-white/45 hover:text-white/75"
+                  }`}
+                >
+                  {s.l}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         {q.isLoading ? (
           <div className="rounded-xl border border-white/[0.07] py-12 text-center text-[13px] text-white/30">Loading from GitHub…</div>
-        ) : rows.length === 0 ? (
+        ) : total === 0 ? (
           <div className="rounded-xl border border-white/[0.07] py-12 text-center text-[13px] text-white/30">
-            No {state === "all" ? "" : state} {kind === "pr" ? "pull requests" : "issues"}.
+            {term ? "No matches." : `No ${state === "all" ? "" : state} ${kind === "pr" ? "pull requests" : "issues"}.`}
           </div>
         ) : (
           <div className="space-y-1.5">
-            {rows.map((r) => {
+            {paged.map((r) => {
               const chip = STATE_CHIP[r.state] ?? STATE_CHIP.open;
               const inner = (
                 <div className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5 transition-colors hover:bg-white/[0.04]">
@@ -85,6 +93,7 @@ export function GithubItemsView({ kind }: { kind: "pr" | "issue" }) {
             })}
           </div>
         )}
+        <Pager page={page} pageCount={pageCount} onPage={setPage} />
       </div>
     </div>
   );
