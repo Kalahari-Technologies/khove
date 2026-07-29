@@ -122,6 +122,28 @@ export async function getInstallationClient(installationId: number) {
 }
 
 /**
+ * The account (org or user) an installation is installed ON — this is the identity
+ * to display (when you install Khove on an org, we show the org, not the connecting
+ * user). Uses the App JWT, so it also confirms the private key + installation work.
+ */
+export async function getInstallationAccount(
+  installationId: number,
+): Promise<{ login: string; type: string; avatarUrl: string } | null> {
+  try {
+    const app = new App({ appId: GITHUB_APP_ID, privateKey: GITHUB_APP_PRIVATE_KEY });
+    const { data } = await app.octokit.request("GET /app/installations/{installation_id}", {
+      installation_id: installationId,
+    });
+    const acc = data.account as { login?: string; type?: string; avatar_url?: string } | null;
+    if (!acc?.login) return null;
+    return { login: acc.login, type: acc.type ?? "Organization", avatarUrl: acc.avatar_url ?? "" };
+  } catch (err) {
+    console.error("[getInstallationAccount] failed:", err);
+    return null;
+  }
+}
+
+/**
  * Get the client the PR Shepherd should act with for a workspace.
  * Prefers the App **installation** token (acts as the Khove bot — can read/write
  * on any installed repo regardless of who triggered the event); falls back to
@@ -150,14 +172,35 @@ export async function getShepherdClient(workspaceId: string): Promise<Octokit> {
 }
 
 /**
- * List repositories the App installation can access for a workspace.
- * Requires an installation token — falls back to owned repos via the user token
- * (see `listUserRepos`) is handled by the caller when no installation exists.
+ * List ALL repositories the App installation can access (public AND private,
+ * across the org it's installed on) — paginated via the installation token.
+ * Throws when no installation is recorded so the caller can fall back to owned
+ * repos only in that genuine case (never masking org/private repos otherwise).
  */
-export async function listInstallationRepos(workspaceId: string, perPage = 100) {
-  const octokit = await getShepherdClient(workspaceId);
-  const { data } = await octokit.apps.listReposAccessibleToInstallation({ per_page: perPage });
-  return data.repositories.map((repo) => ({
+export async function listInstallationRepos(workspaceId: string) {
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GITHUB", isActive: true },
+    select: { metadata: true },
+  });
+  const installationId = ((integration?.metadata ?? {}) as Record<string, unknown>).installationId;
+  if (typeof installationId !== "number") {
+    throw new Error("No GitHub App installation recorded for this workspace");
+  }
+
+  const octokit = (await getInstallationClient(installationId)) as unknown as {
+    paginate: (route: string, opts: Record<string, unknown>) => Promise<unknown[]>;
+  };
+  const repos = (await octokit.paginate("GET /installation/repositories", { per_page: 100 })) as Array<{
+    id: number;
+    name: string;
+    full_name: string;
+    owner: { login: string };
+    private: boolean;
+    html_url: string;
+    default_branch: string;
+  }>;
+
+  return repos.map((repo) => ({
     id: repo.id,
     name: repo.name,
     fullName: repo.full_name,

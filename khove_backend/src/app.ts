@@ -20,6 +20,7 @@ import {
 import {
   initialGitHubSync,
   handleGitHubWebhook,
+  githubDisconnectCleanup,
 } from "@backend/lib/inngest/functions/github-sync";
 import { calendarIntelligenceScan } from "@backend/lib/inngest/functions/agent-actions";
 import { shepherdScan } from "@backend/lib/inngest/functions/shepherd";
@@ -88,6 +89,7 @@ export function createApp() {
         handleCalendarTokenRevoked,
         initialGitHubSync,
         handleGitHubWebhook,
+        githubDisconnectCleanup,
         calendarIntelligenceScan,
         shepherdScan,
         deliveryRiskScan,

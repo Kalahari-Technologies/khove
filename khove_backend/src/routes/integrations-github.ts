@@ -8,10 +8,12 @@ import {
   exchangeCodeForToken,
   listInstallationRepos,
   listUserRepos,
+  getInstallationAccount,
 } from "@backend/lib/integrations/github";
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { publishEvent } from "@backend/lib/realtime";
 import { inngest } from "@backend/lib/inngest";
+import { redis } from "@backend/lib/redis";
 import { env } from "@backend/env";
 
 const router = Router();
@@ -76,12 +78,18 @@ router.get("/callback", async (req, res) => {
         ? Number(installationIdParam)
         : (typeof existingMeta.installationId === "number" ? existingMeta.installationId : null);
 
+    // The account the app was INSTALLED on (org or user) — this is the identity
+    // we display, not the connecting user. Falls back to the OAuth user if the
+    // installation account can't be resolved.
+    const account = installationId ? await getInstallationAccount(installationId) : null;
+
     const metadata = {
       login: ghUser.login,
       githubId: ghUser.id,
       avatarUrl: ghUser.avatar_url,
       name: ghUser.name,
       installationId,
+      account, // { login, type, avatarUrl } | null
     };
 
     await db.integration.upsert({
@@ -136,6 +144,8 @@ router.post("/disconnect", async (req, res) => {
   if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
 
   await db.integration.update({ where: { id: integration.id }, data: { isActive: false } });
+  // Purge synced GitHub data (Tasks + Signals) so nothing goes stale.
+  await inngest.send({ name: "github/disconnected", data: { workspaceId } });
   await publishEvent(user.id, { type: "refresh" }).catch(() => {});
 
   return res.json({ success: true });
@@ -163,6 +173,24 @@ router.post("/resync", async (req, res) => {
 
   await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } });
   return res.json({ success: true });
+});
+
+// GET /api/integrations/github/sync-status?workspaceId=xxx — persistent sync state.
+router.get("/sync-status", async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const workspaceId = req.query.workspaceId as string | undefined;
+  if (!workspaceId) return res.status(400).json({ error: "workspaceId required" });
+
+  const raw = await redis.get<string>(`gh-sync:${workspaceId}`);
+  if (!raw) return res.json({ status: "idle" });
+  if (raw === "syncing") return res.json({ status: "syncing" });
+  try {
+    return res.json(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } catch {
+    return res.json({ status: raw });
+  }
 });
 
 // GET /api/integrations/github/repos?workspaceId=xxx — candidate repos (from the

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
@@ -26,7 +26,6 @@ import {
   BreakdownList,
   Chip,
   SyncBanner,
-  useInitialSync,
   ago,
   daysSince,
   type Tone,
@@ -58,6 +57,7 @@ interface GitHubClientProps {
   workspaceId: string;
   githubLogin: string | null;
   githubAvatar: string | null;
+  account: { login: string; type: string; avatarUrl: string } | null;
   repoCount: number | null;
   tasks: GitHubTask[];
   threadByTaskId: Record<string, { id: string; title: string }>;
@@ -127,6 +127,7 @@ export function GitHubClient({
   workspaceId,
   githubLogin,
   githubAvatar,
+  account,
   repoCount,
   tasks,
   threadByTaskId,
@@ -141,7 +142,46 @@ export function GitHubClient({
   const [resyncing, setResyncing] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Bucket | null>(null);
-  const syncing = useInitialSync(tasks.length > 0);
+
+  // Persistent sync status (server truth via Redis) — the banner survives reloads
+  // and shows until the sync actually finishes, so nothing is acted on mid-sync.
+  const [syncing, setSyncing] = useState(false);
+  const wasSyncing = useRef(false);
+  useEffect(() => {
+    if (!isConnected) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const res = await backendFetch(`/api/integrations/github/sync-status?workspaceId=${workspaceId}`, {}, workspaceId);
+        const data = (await res.json()) as { status?: string };
+        if (!active) return;
+        if (data.status === "syncing") {
+          setSyncing(true);
+          wasSyncing.current = true;
+          timer = setTimeout(poll, 3000);
+        } else {
+          setSyncing(false);
+          if (wasSyncing.current) {
+            wasSyncing.current = false;
+            router.refresh(); // sync just finished — pull the new data in
+          }
+        }
+      } catch {
+        if (active) timer = setTimeout(poll, 6000);
+      }
+    };
+    poll();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, workspaceId]);
+
+  const displayLogin = account?.login ?? githubLogin;
+  const displayAvatar = account?.avatarUrl || githubAvatar;
+  const isOrg = account?.type === "Organization";
 
   const { openPrs, issues, insights } = useMemo(() => {
     const prTasks = tasks.filter((t) => (t.metadata?.github as Record<string, unknown>)?.type === "pull_request");
@@ -261,12 +301,17 @@ export function GitHubClient({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {githubAvatar && <img src={githubAvatar} width={36} height={36} alt="" className="rounded-full" />}
+            {displayAvatar && (
+              <img src={displayAvatar} width={36} height={36} alt="" className={isOrg ? "rounded-lg" : "rounded-full"} />
+            )}
             <div>
-              <h1 className="text-[19px] font-semibold text-white leading-tight">GitHub</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-[19px] font-semibold text-white leading-tight">{displayLogin ?? "GitHub"}</h1>
+                {isOrg && <Chip tone="neutral">Org</Chip>}
+              </div>
               <p className="text-[12px] text-white/40">
-                <span className="text-white/60">@{githubLogin}</span> · {displayRepoCount} repo{displayRepoCount === 1 ? "" : "s"} ·{" "}
-                {openPrs.length} open PR{openPrs.length === 1 ? "" : "s"}
+                {displayRepoCount} repo{displayRepoCount === 1 ? "" : "s"} · {openPrs.length} open PR
+                {openPrs.length === 1 ? "" : "s"}
               </p>
             </div>
           </div>

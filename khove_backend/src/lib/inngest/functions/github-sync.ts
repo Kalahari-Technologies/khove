@@ -9,6 +9,7 @@ import {
   getShepherdClient,
 } from "@backend/lib/integrations/github";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
+import { redis } from "@backend/lib/redis";
 import { linkPRToThreads } from "@backend/lib/threads";
 import { shepherdScanPR } from "@backend/lib/agent/shepherd";
 import { recordSignals } from "@backend/lib/signals/record";
@@ -130,6 +131,12 @@ export const initialGitHubSync = inngest.createFunction(
   },
   async ({ event, step }) => {
     const { userId, workspaceId } = event.data as { userId: string; workspaceId: string };
+
+    // Persistent sync status (survives reloads) — the dashboard shows a banner
+    // until this clears, so nothing is acted on mid-sync. Mirrors calendar.
+    await step.run("mark-syncing", async () => {
+      await redis.set(`gh-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
+    });
 
     const result = await step.run("sync-github-data", async () => {
       const defaultStatus =
@@ -266,8 +273,39 @@ export const initialGitHubSync = inngest.createFunction(
       return { prsCreated, issuesCreated, backfillSignals, reposSynced: scanned.length, reposAccessible: repos.length };
     });
 
+    await step.run("mark-done", async () => {
+      await redis
+        .set(
+          `gh-sync:${workspaceId}`,
+          JSON.stringify({ status: "done", at: new Date().toISOString(), ...result }),
+          { ex: 300 },
+        )
+        .catch(() => {});
+    });
+
     await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "github-sync" });
 
+    return result;
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Disconnect cleanup — purge synced GitHub data so nothing goes stale
+// ---------------------------------------------------------------------------
+
+export const githubDisconnectCleanup = inngest.createFunction(
+  { id: "github-disconnect-cleanup", triggers: [{ event: "github/disconnected" }] },
+  async ({ event, step }) => {
+    const { workspaceId } = event.data as { workspaceId: string };
+
+    const result = await step.run("purge", async () => {
+      const tasks = await db.task.deleteMany({ where: { workspaceId, source: { has: "GITHUB" } } });
+      const signals = await db.signal.deleteMany({ where: { workspaceId, provider: "GITHUB" } });
+      await redis.del(`gh-sync:${workspaceId}`).catch(() => {});
+      return { tasksDeleted: tasks.count, signalsDeleted: signals.count };
+    });
+
+    await publishWorkspaceEvent(workspaceId, { type: "task.updated", taskId: "github-sync" });
     return result;
   },
 );
