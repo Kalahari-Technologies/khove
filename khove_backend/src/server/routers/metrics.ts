@@ -6,6 +6,12 @@ import { computeScopeIntegrity } from "@backend/lib/intelligence/correlate";
 import { generateStatusReport } from "@backend/lib/intelligence/status-report";
 import { computeSprints, computeSprintBurndown } from "@backend/lib/intelligence/jira-sprints";
 import { computeEpics, computeReleases, entityIssues } from "@backend/lib/intelligence/jira-entities";
+import {
+  computeRepos,
+  computeMilestones,
+  computeGithubReleases,
+  githubEntityIssues,
+} from "@backend/lib/intelligence/github-entities";
 
 export const metricsRouter = router({
   /** Flow metrics (cycle time, throughput, DORA-lite) folded from the Signal store. */
@@ -71,6 +77,28 @@ export const metricsRouter = router({
     .input(z.object({ kind: z.enum(["SPRINT", "EPIC", "RELEASE"]), key: z.string() }))
     .query(async ({ ctx, input }) => {
       return entityIssues(ctx.workspace.id, input.kind, input.key);
+    }),
+
+  /** GitHub repositories (the product map) with open PR/issue counts. */
+  githubRepos: workspaceProcedure.query(async ({ ctx }) => {
+    return computeRepos(ctx.workspace.id);
+  }),
+
+  /** GitHub milestones — readiness (open vs closed issues + due date). */
+  githubMilestones: workspaceProcedure.query(async ({ ctx }) => {
+    return computeMilestones(ctx.workspace.id);
+  }),
+
+  /** GitHub recent releases. */
+  githubReleases: workspaceProcedure.query(async ({ ctx }) => {
+    return computeGithubReleases(ctx.workspace.id);
+  }),
+
+  /** Drill-down — the PRs/issues in a GitHub repository or milestone. */
+  githubEntityIssues: workspaceProcedure
+    .input(z.object({ kind: z.enum(["REPOSITORY", "MILESTONE"]), key: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return githubEntityIssues(ctx.workspace.id, input.kind, input.key);
     }),
 
   /** Generate a weekly status report (AI, cheapest model). Mutation — user-triggered. */

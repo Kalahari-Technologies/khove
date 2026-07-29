@@ -6,8 +6,12 @@ import {
   listIssues,
   listUserRepos,
   listInstallationRepos,
+  listReleases,
+  listMilestones,
   getShepherdClient,
 } from "@backend/lib/integrations/github";
+import { recordEntities, type EntityInput } from "@backend/lib/entities/record";
+import { githubRepoEntity, githubReleaseEntity, githubMilestoneEntity } from "@backend/lib/entities/github";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 import { redis } from "@backend/lib/redis";
 import { linkPRToThreads } from "@backend/lib/threads";
@@ -166,9 +170,27 @@ export const initialGitHubSync = inngest.createFunction(
       const backfillSince = Date.now() - 90 * 24 * 60 * 60 * 1000;
       const scanned = repos.slice(0, 15);
 
+      // Rich repo data (language/description/etc.) for the REPOSITORY entities.
+      const richRepos = await listInstallationRepos(workspaceId).catch(() => []);
+      const richByName = new Map(richRepos.map((r) => [r.fullName, r]));
+      const entities = new Map<string, EntityInput>();
+      const addEntity = (e: EntityInput) => {
+        if (!entities.has(e.externalId)) entities.set(e.externalId, e);
+      };
+
       // Cap breadth to keep the initial sync within the step budget.
       for (const repo of scanned) {
         try {
+          // Repository entity + its releases + milestones (the context graph).
+          const rich = richByName.get(repo.fullName);
+          if (rich) addEntity(githubRepoEntity(rich));
+          const [releases, milestones] = await Promise.all([
+            listReleases(workspaceId, repo.owner, repo.name, octokit, 10).catch(() => []),
+            listMilestones(workspaceId, repo.owner, repo.name, "all", octokit).catch(() => []),
+          ]);
+          for (const r of releases) addEntity(githubReleaseEntity(repo.fullName, r));
+          for (const m of milestones) addEntity(githubMilestoneEntity(repo.fullName, m));
+
           const prs = await listPullRequests(workspaceId, repo.owner, repo.name, "open", 20, octokit);
           for (const pr of prs) {
             const externalId = `github-pr-${repo.fullName}-${pr.number}`;
@@ -198,6 +220,7 @@ export const initialGitHubSync = inngest.createFunction(
                       reviewDecision: "pending",
                       ciStatus: "pending",
                       headSha: pr.headSha,
+                      milestone: pr.milestone,
                       labels: pr.labels,
                       updatedAt: pr.updatedAt,
                     },
@@ -233,6 +256,7 @@ export const initialGitHubSync = inngest.createFunction(
                       repo: repo.fullName,
                       number: issue.number,
                       author: issue.author,
+                      milestone: issue.milestone,
                       labels: issue.labels,
                     },
                   },
@@ -282,6 +306,9 @@ export const initialGitHubSync = inngest.createFunction(
         }
         prunedTasks = stale.length;
       }
+
+      // Persist the context-graph entities (repos, releases, milestones).
+      if (entities.size) await recordEntities(workspaceId, [...entities.values()]).catch(() => {});
 
       // Persist the repos we actually scanned so the dashboard can show them even
       // when a repo has no open PRs/issues (the sync used to throw this away).
@@ -335,6 +362,7 @@ export const githubDisconnectCleanup = inngest.createFunction(
     const result = await step.run("purge", async () => {
       const tasks = await db.task.deleteMany({ where: { workspaceId, source: { has: "GITHUB" } } });
       const signals = await db.signal.deleteMany({ where: { workspaceId, provider: "GITHUB" } });
+      await db.entity.deleteMany({ where: { workspaceId, provider: "GITHUB" } });
       await redis.del(`gh-sync:${workspaceId}`).catch(() => {});
       return { tasksDeleted: tasks.count, signalsDeleted: signals.count };
     });

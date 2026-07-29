@@ -35,7 +35,7 @@ import { AgentActionCard, type AgentActionView } from "@/components/agent/agent-
 import { GitHubScopeDialog } from "@/components/integrations/github-scope-dialog";
 import { BarTrend, LineTrend, fmtHours } from "@/components/integrations/metric-charts";
 import { trpc } from "@/lib/trpc/client";
-import { SlidersHorizontal, Activity, Gauge } from "lucide-react";
+import { SlidersHorizontal, Activity, Gauge, X, ChevronRight, Rocket, Flag } from "lucide-react";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 const EMERALD = "rgba(16,185,129,0.55)";
@@ -144,6 +144,7 @@ export function GitHubClient({
   const [resyncing, setResyncing] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Bucket | null>(null);
+  const [drill, setDrill] = useState<GhDrillTarget | null>(null);
 
   // Persistent sync status (server truth via Redis) — the banner survives reloads
   // and shows until the sync actually finishes, so nothing is acted on mid-sync.
@@ -381,6 +382,15 @@ export function GitHubClient({
         {/* Flow & delivery metrics (DORA-lite, folded from the Signal store) */}
         <FlowSection />
 
+        {/* Milestones + releases (context graph, click to drill in) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <GhMilestonesSection onDrill={setDrill} />
+          <GhReleasesSection />
+        </div>
+
+        {/* Repositories — the product map */}
+        <GhReposSection onDrill={setDrill} />
+
         {/* Scope integrity — merged work not tied to a plan */}
         <ScopeIntegritySection />
 
@@ -453,7 +463,148 @@ export function GitHubClient({
       </div>
 
       {scopeOpen && <GitHubScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
+      {drill && <GhDrilldown workspaceSlug={workspace.slug} target={drill} onClose={() => setDrill(null)} />}
     </div>
+  );
+}
+
+interface GhDrillTarget {
+  kind: "REPOSITORY" | "MILESTONE";
+  key: string;
+  title: string;
+}
+
+function GhDrilldown({ workspaceSlug, target, onClose }: { workspaceSlug: string; target: GhDrillTarget; onClose: () => void }) {
+  const q = trpc.metrics.githubEntityIssues.useQuery({ kind: target.kind, key: target.key });
+  const items = q.data ?? [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl border border-white/[0.1] bg-[#0d0d0d] shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-5 pb-3">
+          <div>
+            <span className="text-[10px] font-semibold tracking-widest uppercase text-white/35">{target.kind === "REPOSITORY" ? "repository" : "milestone"}</span>
+            <h3 className="text-[15px] font-semibold text-white leading-tight">{target.title}</h3>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="max-h-[56vh] overflow-y-auto px-3 pb-3">
+          {q.isLoading ? (
+            <div className="flex items-center justify-center py-12 text-white/40"><Loader2 size={18} className="animate-spin" /></div>
+          ) : items.length === 0 ? (
+            <p className="text-[12px] text-white/35 px-2 py-6 text-center">No open PRs or issues.</p>
+          ) : (
+            items.map((i) => (
+              <a key={i.id} href={`/${workspaceSlug}/tasks/${i.id}`} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/[0.04] transition-colors">
+                {i.kind === "pull_request" ? <GitPullRequest size={13} className="text-white/40 flex-shrink-0" /> : <CircleDot size={13} className="text-white/40 flex-shrink-0" />}
+                <span className="flex-1 text-[13px] text-white/80 truncate">{i.title}</span>
+                {i.state && <span className="text-[10px] text-white/35 flex-shrink-0">{i.state}</span>}
+              </a>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GhReposSection({ onDrill }: { onDrill: (t: GhDrillTarget) => void }) {
+  const q = trpc.metrics.githubRepos.useQuery();
+  const repos = q.data ?? [];
+  if (repos.length === 0) return null;
+  return (
+    <SectionCard title="Repositories" icon={<FolderGit2 size={13} className="text-white/40" />} count={repos.length}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+        {repos.slice(0, 12).map((r) => (
+          <button
+            key={r.fullName}
+            onClick={() => onDrill({ kind: "REPOSITORY", key: r.fullName, title: r.fullName })}
+            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left group"
+          >
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center gap-1.5">
+                <span className="text-[13px] text-white/80 truncate group-hover:text-white">{r.fullName}</span>
+                {r.private && <span className="text-[9px] text-white/30 border border-white/[0.1] rounded px-1 py-px flex-shrink-0">private</span>}
+              </span>
+              {r.language && <span className="text-[10.5px] text-white/35">{r.language}</span>}
+            </span>
+            <span className="text-[10.5px] text-white/40 tabular-nums flex-shrink-0">
+              {r.openPrs > 0 && <span className="text-emerald-300/70">{r.openPrs} PR</span>}
+              {r.openPrs > 0 && r.openIssues > 0 && " · "}
+              {r.openIssues > 0 && <span>{r.openIssues} iss</span>}
+            </span>
+            <ChevronRight size={12} className="text-white/20 group-hover:text-white/50 flex-shrink-0" />
+          </button>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function GhMilestonesSection({ onDrill }: { onDrill: (t: GhDrillTarget) => void }) {
+  const q = trpc.metrics.githubMilestones.useQuery();
+  const milestones = q.data ?? [];
+  if (milestones.length === 0) return null;
+  return (
+    <SectionCard title="Milestones" icon={<Flag size={13} className="text-white/40" />} count={milestones.length}>
+      <div className="space-y-2.5">
+        {milestones.slice(0, 8).map((m) => {
+          const pct = m.total ? Math.round((m.closed / m.total) * 100) : 0;
+          const due = m.dueOn ? new Date(m.dueOn) : null;
+          const overdue = due && m.state === "open" && due.getTime() < Date.now();
+          return (
+            <button key={`${m.repo}#${m.name}`} onClick={() => onDrill({ kind: "MILESTONE", key: m.key, title: m.name })} className="w-full text-left group">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[12.5px] text-white/80 truncate group-hover:text-white flex items-center gap-1.5">
+                  {m.name}
+                  {m.state === "closed" && <Chip tone="good">closed</Chip>}
+                  <ChevronRight size={12} className="text-white/20 group-hover:text-white/50" />
+                </span>
+                <span className="text-[11px] text-white/40 tabular-nums flex-shrink-0">
+                  {m.closed}/{m.total} ({pct}%)
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                <div className={`h-full rounded-full ${overdue ? "bg-red-400/80" : "bg-emerald-400/80"}`} style={{ width: `${pct}%` }} />
+              </div>
+              <div className="flex items-center gap-2 mt-1 text-[10px] text-white/30">
+                <span>{m.repo}</span>
+                {due && <span className={overdue ? "text-red-400/70" : ""}>· due {due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
+function GhReleasesSection() {
+  const q = trpc.metrics.githubReleases.useQuery();
+  const releases = q.data ?? [];
+  if (releases.length === 0) return null;
+  return (
+    <SectionCard title="Releases" icon={<Rocket size={13} className="text-white/40" />} count={releases.length}>
+      <div className="space-y-0.5">
+        {releases.slice(0, 10).map((r, i) => (
+          <a
+            key={`${r.repo}-${r.name}-${i}`}
+            href={r.url ?? "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors"
+          >
+            <Rocket size={12} className="text-white/30 flex-shrink-0" />
+            <span className="flex-1 text-[13px] text-white/80 truncate">{r.name}</span>
+            {r.status !== "released" && <Chip tone="warn">{r.status}</Chip>}
+            <span className="text-[10px] text-white/30 flex-shrink-0">
+              {r.publishedAt ? ago(r.publishedAt) : ""}
+            </span>
+          </a>
+        ))}
+      </div>
+    </SectionCard>
   );
 }
 

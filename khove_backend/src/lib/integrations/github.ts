@@ -205,6 +205,10 @@ export async function listInstallationRepos(workspaceId: string) {
     private: boolean;
     html_url: string;
     default_branch: string;
+    language?: string | null;
+    description?: string | null;
+    pushed_at?: string | null;
+    open_issues_count?: number;
   }>;
 
   return repos.map((repo) => ({
@@ -215,6 +219,50 @@ export async function listInstallationRepos(workspaceId: string) {
     private: repo.private,
     url: repo.html_url,
     defaultBranch: repo.default_branch,
+    language: repo.language ?? null,
+    description: repo.description ?? null,
+    pushedAt: repo.pushed_at ?? null,
+    openIssuesCount: repo.open_issues_count ?? 0,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Releases + milestones (context entities)
+// ---------------------------------------------------------------------------
+
+/** Recent releases for a repo (name, tag, published, prerelease/draft). */
+export async function listReleases(workspaceId: string, owner: string, repo: string, client?: Octokit, perPage = 20) {
+  const octokit = client ?? (await getGitHubClient(workspaceId));
+  const { data } = await octokit.repos.listReleases({ owner, repo, per_page: perPage });
+  return data.map((r) => ({
+    id: r.id,
+    tag: r.tag_name,
+    name: r.name || r.tag_name,
+    url: r.html_url,
+    publishedAt: r.published_at,
+    draft: r.draft,
+    prerelease: r.prerelease,
+  }));
+}
+
+/** Milestones for a repo (title, state, due date, open/closed issue counts). */
+export async function listMilestones(
+  workspaceId: string,
+  owner: string,
+  repo: string,
+  state: "open" | "closed" | "all" = "all",
+  client?: Octokit,
+) {
+  const octokit = client ?? (await getGitHubClient(workspaceId));
+  const { data } = await octokit.issues.listMilestones({ owner, repo, state, per_page: 50 });
+  return data.map((m) => ({
+    number: m.number,
+    title: m.title,
+    url: m.html_url,
+    state: m.state,
+    dueOn: m.due_on,
+    openIssues: m.open_issues,
+    closedIssues: m.closed_issues,
   }));
 }
 
@@ -307,6 +355,7 @@ export async function listPullRequests(
     createdAt: pr.created_at,
     updatedAt: pr.updated_at,
     mergedAt: pr.merged_at,
+    milestone: pr.milestone?.title ?? null,
     labels: pr.labels.map((l) => (typeof l === "object" && l !== null ? (l as { name?: string }).name ?? "" : "")),
     reviewers: pr.requested_reviewers?.map((r) => ("login" in r ? (r as { login: string }).login : "")) ?? [],
   }));
@@ -390,6 +439,7 @@ export async function listIssues(
       author: issue.user?.login,
       createdAt: issue.created_at,
       updatedAt: issue.updated_at,
+      milestone: issue.milestone?.title ?? null,
       labels: issue.labels.map((l) => (typeof l === "string" ? l : l.name ?? "")),
       assignees: issue.assignees?.map((a) => a.login) ?? [],
     }));
