@@ -7,6 +7,7 @@ import { UserButton } from "@clerk/nextjs";
 import { useConversations } from "@/lib/conversations/conversations-context";
 import {
   Bot,
+  Target,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -84,6 +85,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "tasks",    path: "/tasks",    assets: ["/assets/tasks.svg", "/assets/tasks-outlined.svg"],       label: "Tasks",    locked: false, glowColor: "#0EA5E9" },       // ocean blue
   { id: "planner",  path: "/planner",  assets: ["/assets/planner.svg", "/assets/planner-outlined.svg"],   label: "Planner",  locked: false, glowColor: "#F43F5E" },       // rose
   { id: "github",   path: "/github",   assets: ["/assets/github.svg", "/assets/github.svg"],             label: "GitHub",   locked: false, glowColor: "#10B981" },       // emerald
+  { id: "initiatives", path: "/initiatives", icon: Target, label: "Delivery", locked: false, glowColor: "#22D3EE" }, // cyan
   { id: "agent",    path: "/agent",    icon: Bot,      label: "Agent",    locked: false, glowColor: "#14B8A6" },       // teal
   { id: "jira",     path: "/jira",     assets: ["/assets/jira.svg", "/assets/jira.svg"], label: "Jira", locked: false, glowColor: "#6366F1" }, // indigo
 ];
@@ -199,6 +201,20 @@ function getSections(section: string, slug: string): { title: string; sections: 
           items: [
             { label: "Pull Requests", href: wsHref(slug, "/github"), icon: List },
             { label: "Issues", href: wsHref(slug, "/github"), icon: Clock },
+          ],
+        },
+      ],
+    },
+    initiatives: {
+      title: "Delivery",
+      sections: [
+        {
+          title: "About",
+          items: [
+            {
+              label: "Initiatives are Connectivity Threads with a target date. Khove folds GitHub merges into a burn-up and forecasts whether you'll hit it.",
+              sub: "placeholder",
+            },
           ],
         },
       ],
