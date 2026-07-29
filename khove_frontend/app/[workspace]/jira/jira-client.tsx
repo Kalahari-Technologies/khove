@@ -16,7 +16,11 @@ import {
   FolderKanban,
   Shapes,
   Plus,
+  Activity,
+  Gauge,
 } from "lucide-react";
+import { trpc } from "@/lib/trpc/client";
+import { BarTrend, LineTrend, fmtHours } from "@/components/integrations/metric-charts";
 import {
   StatTile,
   SectionCard,
@@ -278,6 +282,9 @@ export function JiraClient({
           </SectionCard>
         </div>
 
+        {/* Flow & delivery (same Signal-store metrics as GitHub — cross-platform) */}
+        <JiraFlowSection />
+
         {/* Issue list */}
         <SectionCard
           title="Issues"
@@ -318,6 +325,48 @@ export function JiraClient({
         </SectionCard>
       </div>
     </div>
+  );
+}
+
+function JiraFlowSection() {
+  const q = trpc.metrics.flow.useQuery({ provider: "JIRA" });
+  const m = q.data;
+  const weeks = m ? Math.round(m.windowDays / 7) : 12;
+
+  return (
+    <SectionCard
+      title="Flow & delivery"
+      icon={<Activity size={13} className="text-white/40" />}
+      action={<span className="text-[11px] text-white/30">last {weeks} weeks</span>}
+    >
+      {q.isLoading ? (
+        <div className="py-8 flex justify-center">
+          <Loader2 size={16} className="animate-spin text-white/40" />
+        </div>
+      ) : !m || m.merged === 0 ? (
+        <p className="text-[12px] text-white/30 py-3">
+          No completed issues in the last {weeks} weeks yet — throughput and cycle time fill in as issues move to Done.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
+            <StatTile label="Throughput" value={`${m.throughputPerWeek}/wk`} icon={<Gauge size={12} />} hint={`${m.merged} done`} />
+            <StatTile label="Cycle time p50" value={fmtHours(m.cycleTimeP50Hours)} hint={`p90 ${fmtHours(m.cycleTimeP90Hours)}`} tone="accent" />
+            <StatTile label="Opened" value={m.opened} icon={<CircleDot size={12} />} />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <div className="text-[11px] text-white/45 mb-1.5">Throughput — done per week</div>
+              <BarTrend points={m.throughputSeries} color="rgb(99,102,241)" />
+            </div>
+            <div>
+              <div className="text-[11px] text-white/45 mb-1.5">Cycle time p50 — weekly</div>
+              <LineTrend points={m.cycleTimeSeries} color="rgb(99,102,241)" format={fmtHours} />
+            </div>
+          </div>
+        </>
+      )}
+    </SectionCard>
   );
 }
 

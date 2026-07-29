@@ -310,6 +310,7 @@ export interface JiraIssue {
     status?: { name?: string; statusCategory?: { key?: string; name?: string } };
     project?: { key?: string; name?: string };
     issuetype?: { name?: string };
+    created?: string;
     updated?: string;
   };
 }
@@ -342,7 +343,7 @@ export async function searchIssues(
         body: JSON.stringify({
           jql,
           maxResults: 100,
-          fields: ["summary", "status", "project", "issuetype", "updated"],
+          fields: ["summary", "status", "project", "issuetype", "created", "updated"],
           ...(nextPageToken ? { nextPageToken } : {}),
         }),
       },
