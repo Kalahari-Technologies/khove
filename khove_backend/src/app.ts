@@ -23,6 +23,7 @@ import {
 } from "@backend/lib/inngest/functions/github-sync";
 import { calendarIntelligenceScan } from "@backend/lib/inngest/functions/agent-actions";
 import { shepherdScan } from "@backend/lib/inngest/functions/shepherd";
+import { deliveryRiskScan } from "@backend/lib/inngest/functions/delivery";
 import {
   jiraInitialSync,
   jiraPollSync,
@@ -89,6 +90,7 @@ export function createApp() {
         handleGitHubWebhook,
         calendarIntelligenceScan,
         shepherdScan,
+        deliveryRiskScan,
         jiraInitialSync,
         jiraPollSync,
         handleJiraWebhook,

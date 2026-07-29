@@ -118,6 +118,8 @@ enum AgentActionType {
   NUDGE_REVIEWER
   REQUEST_REVIEW
   FLAG_PR
+  // Delivery intelligence
+  FLAG_RISK
 }
 
 enum AgentActionStatus {

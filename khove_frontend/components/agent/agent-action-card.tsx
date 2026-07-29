@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Clock, Link2, Users, Check, X, Ban, Sparkles, UserPlus, AlertTriangle } from "lucide-react";
+import { CalendarClock, Clock, Link2, Users, Check, X, Ban, Sparkles, UserPlus, AlertTriangle, TrendingDown } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 
 export interface AgentActionView {
@@ -25,6 +25,8 @@ const TYPE_ICON: Record<string, typeof Clock> = {
   NUDGE_REVIEWER: Users,
   REQUEST_REVIEW: UserPlus,
   FLAG_PR: AlertTriangle,
+  // Delivery intelligence
+  FLAG_RISK: TrendingDown,
 };
 
 /** True for the GitHub PR Shepherd action types (emerald accent instead of teal). */

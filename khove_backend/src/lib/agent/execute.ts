@@ -145,6 +145,31 @@ export async function executeAgentAction(action: AgentAction): Promise<{ summary
       return { summary: "Flag comment posted on the pull request." };
     }
 
+    case "FLAG_RISK": {
+      // Safe internal write: log the delivery risk as a high-priority follow-up task
+      // for the workspace owner (no external side effects).
+      const workspace = await db.workspace.findUnique({
+        where: { id: action.workspaceId },
+        select: { ownerId: true },
+      });
+      const blockers = (p.blockers as { title: string; reason: string }[]) ?? [];
+      const blockerText = blockers.length
+        ? `Blockers:\n${blockers.map((b) => `- ${b.title} — ${b.reason}`).join("\n")}`
+        : "The merge rate is too low to hit the target.";
+      await db.task.create({
+        data: {
+          title: `Delivery risk: ${p.title as string}`,
+          description:
+            (p.daysLate != null ? `Projected ${p.daysLate} day(s) late.\n` : "") + blockerText,
+          source: ["KHOVE"],
+          priority: "HIGH",
+          workspaceId: action.workspaceId,
+          userId: workspace?.ownerId ?? action.approvedBy ?? "",
+        },
+      });
+      return { summary: "Delivery risk logged as a follow-up task." };
+    }
+
     default:
       throw new Error(`Unsupported action type: ${action.type}`);
   }
