@@ -315,6 +315,15 @@ export interface JiraIssue {
   };
 }
 
+/** List the projects on the connected Jira site (for the scope picker). */
+export async function listProjects(workspaceId: string): Promise<{ key: string; name: string }[]> {
+  const data = await jiraFetch<{ values?: { key: string; name: string }[] }>(
+    workspaceId,
+    "/rest/api/3/project/search?maxResults=100",
+  );
+  return (data.values ?? []).map((p) => ({ key: p.key, name: p.name }));
+}
+
 /** Map Jira's statusCategory to Khove's StatusCategory. */
 export function mapJiraStatusCategory(key: string | undefined): "NOT_STARTED" | "IN_PROGRESS" | "DONE" {
   if (key === "done") return "DONE";

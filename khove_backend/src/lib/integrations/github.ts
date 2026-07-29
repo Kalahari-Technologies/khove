@@ -319,9 +319,10 @@ export async function getPullRequest(
   workspaceId: string,
   owner: string,
   repo: string,
-  pullNumber: number
+  pullNumber: number,
+  client?: Octokit,
 ) {
-  const octokit = await getGitHubClient(workspaceId);
+  const octokit = client ?? (await getGitHubClient(workspaceId));
   const [{ data: pr }, { data: reviews }] = await Promise.all([
     octokit.pulls.get({ owner, repo, pull_number: pullNumber }),
     octokit.pulls.listReviews({ owner, repo, pull_number: pullNumber }),
@@ -403,9 +404,10 @@ export async function createIssue(
   repo: string,
   title: string,
   body?: string,
-  labels?: string[]
+  labels?: string[],
+  client?: Octokit,
 ) {
-  const octokit = await getGitHubClient(workspaceId);
+  const octokit = client ?? (await getGitHubClient(workspaceId));
   const { data } = await octokit.issues.create({
     owner,
     repo,
@@ -477,9 +479,10 @@ export async function getRepoActivity(
   workspaceId: string,
   owner: string,
   repo: string,
-  perPage = 10
+  perPage = 10,
+  client?: Octokit,
 ) {
-  const octokit = await getGitHubClient(workspaceId);
+  const octokit = client ?? (await getGitHubClient(workspaceId));
   const { data } = await octokit.repos.listCommits({
     owner,
     repo,

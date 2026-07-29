@@ -18,9 +18,11 @@ import {
   Plus,
   Activity,
   Gauge,
+  SlidersHorizontal,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { BarTrend, LineTrend, fmtHours } from "@/components/integrations/metric-charts";
+import { JiraScopeDialog } from "@/components/integrations/jira-scope-dialog";
 import {
   StatTile,
   SectionCard,
@@ -109,6 +111,7 @@ export function JiraClient({
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [resyncing, setResyncing] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>(null);
   const syncing = useInitialSync(tasks.length > 0);
 
@@ -253,6 +256,13 @@ export function JiraClient({
               </a>
             )}
             <button
+              onClick={() => setScopeOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/60 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white/90 transition-colors"
+              style={{ transitionTimingFunction: ease }}
+            >
+              <SlidersHorizontal size={12} /> Scope
+            </button>
+            <button
               onClick={handleResync}
               disabled={resyncing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/60 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white/90 transition-colors disabled:opacity-50"
@@ -351,6 +361,8 @@ export function JiraClient({
           )}
         </SectionCard>
       </div>
+
+      {scopeOpen && <JiraScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
     </div>
   );
 }

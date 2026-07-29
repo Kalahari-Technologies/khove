@@ -8,6 +8,7 @@ import {
   exchangeCodeForTokens,
   getAccessibleResources,
   deleteJiraWebhooks,
+  listProjects,
 } from "@backend/lib/integrations/jira";
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { publishEvent } from "@backend/lib/realtime";
@@ -153,6 +154,68 @@ router.post("/resync", async (req, res) => {
     where: { workspaceId, provider: "JIRA", isActive: true },
   });
   if (!integration) return res.status(404).json({ error: "Jira is not connected" });
+
+  await inngest.send({ name: "jira/initial-sync", data: { userId: integration.userId, workspaceId } });
+  return res.json({ success: true });
+});
+
+// GET /api/integrations/jira/projects?workspaceId=xxx — projects + current selection.
+router.get("/projects", async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const workspaceId = req.query.workspaceId as string | undefined;
+  if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
+
+  const membership = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId: user.id } },
+  });
+  if (!membership || !canAdminWorkspace(membership.role)) {
+    return res.status(403).json({ error: "Only workspace admins can manage scope" });
+  }
+
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "JIRA", isActive: true },
+    select: { metadata: true },
+  });
+  if (!integration) return res.status(404).json({ error: "Jira is not connected" });
+
+  try {
+    const projects = await listProjects(workspaceId);
+    const scope = ((integration.metadata ?? {}) as Record<string, unknown>).scope as { projects?: string[] } | undefined;
+    return res.json({ projects, selected: scope?.projects ?? [] });
+  } catch (err) {
+    console.error("[jira/projects] listing failed:", err);
+    return res.status(502).json({ error: "Couldn't list Jira projects", projects: [], selected: [] });
+  }
+});
+
+// POST /api/integrations/jira/scope { workspaceId, projects: string[] } — save + re-sync.
+router.post("/scope", async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const { workspaceId, projects } = req.body ?? {};
+  if (!workspaceId) return res.status(400).json({ error: "workspaceId is required" });
+  if (!Array.isArray(projects)) return res.status(400).json({ error: "projects must be an array" });
+
+  const membership = await db.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId: user.id } },
+  });
+  if (!membership || !canAdminWorkspace(membership.role)) {
+    return res.status(403).json({ error: "Only workspace admins can manage scope" });
+  }
+
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "JIRA", isActive: true },
+  });
+  if (!integration) return res.status(404).json({ error: "Jira is not connected" });
+
+  const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+  await db.integration.update({
+    where: { id: integration.id },
+    data: { metadata: { ...meta, scope: { projects: (projects as string[]).filter(Boolean) } } },
+  });
 
   await inngest.send({ name: "jira/initial-sync", data: { userId: integration.userId, workspaceId } });
   return res.json({ success: true });

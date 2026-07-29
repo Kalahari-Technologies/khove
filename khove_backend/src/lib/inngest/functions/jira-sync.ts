@@ -75,6 +75,19 @@ async function upsertIssueTask(
   return "created";
 }
 
+/** Prepend the workspace's project scope (the product boundary) to a JQL time clause. */
+async function scopedJql(workspaceId: string, timeClause: string): Promise<string> {
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "JIRA", isActive: true },
+    select: { metadata: true },
+  });
+  const scope = ((integration?.metadata ?? {}) as Record<string, unknown>).scope as { projects?: string[] } | undefined;
+  if (scope?.projects?.length) {
+    return `project in (${scope.projects.join(",")}) AND ${timeClause} ORDER BY updated DESC`;
+  }
+  return `${timeClause} ORDER BY updated DESC`;
+}
+
 /** Sync issues matching a JQL into Tasks. Returns counts + distinct project keys. */
 async function syncJiraIssues(
   workspaceId: string,
@@ -124,7 +137,7 @@ export const jiraInitialSync = inngest.createFunction(
     const { userId, workspaceId } = event.data as { userId: string; workspaceId: string };
 
     const result = await step.run("sync-issues", async () =>
-      syncJiraIssues(workspaceId, userId, "updated >= -30d ORDER BY updated DESC"),
+      syncJiraIssues(workspaceId, userId, await scopedJql(workspaceId, "updated >= -30d")),
     );
 
     // Best-effort: register a project-scoped dynamic webhook for live updates.
@@ -153,6 +166,34 @@ export const jiraInitialSync = inngest.createFunction(
       return { registered: !!res };
     });
 
+    // Prune JIRA tasks/signals for projects no longer in scope (self-healing when
+    // the selection narrows).
+    await step.run("prune-out-of-scope", async () => {
+      const integration = await db.integration.findFirst({
+        where: { workspaceId, provider: "JIRA", isActive: true },
+        select: { metadata: true },
+      });
+      const scope = ((integration?.metadata ?? {}) as Record<string, unknown>).scope as { projects?: string[] } | undefined;
+      if (!scope?.projects?.length) return { pruned: 0 };
+      const allowed = new Set(scope.projects);
+      const jiraTasks = await db.task.findMany({
+        where: { workspaceId, source: { has: "JIRA" } },
+        select: { id: true, externalId: true, metadata: true },
+      });
+      const stale = jiraTasks.filter((t) => {
+        const pk = ((t.metadata as Record<string, unknown>)?.jira as Record<string, unknown> | undefined)?.projectKey as
+          | string
+          | undefined;
+        return pk ? !allowed.has(pk) : false;
+      });
+      if (stale.length) {
+        await db.task.deleteMany({ where: { id: { in: stale.map((t) => t.id) } } });
+        const keys = stale.map((t) => t.externalId).filter((k): k is string => !!k);
+        if (keys.length) await db.signal.deleteMany({ where: { workspaceId, provider: "JIRA", entityKey: { in: keys } } });
+      }
+      return { pruned: stale.length };
+    });
+
     await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "jira-sync" });
     return result;
   },
@@ -177,7 +218,7 @@ export const jiraPollSync = inngest.createFunction(
     for (const { workspaceId, userId } of integrations) {
       const res = await step.run(`poll-${workspaceId}`, async () => {
         try {
-          return await syncJiraIssues(workspaceId, userId, "updated >= -2d ORDER BY updated DESC");
+          return await syncJiraIssues(workspaceId, userId, await scopedJql(workspaceId, "updated >= -2d"));
         } catch (err) {
           console.error(`[jira-poll] ${workspaceId} failed`, err);
           return { created: 0, updated: 0, projectKeys: [] };
