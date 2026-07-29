@@ -23,6 +23,9 @@ import {
   ChevronRight,
   Layers,
   Rocket,
+  GitMerge,
+  GitPullRequest,
+  Link2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { BarTrend, LineTrend, Burndown, fmtHours } from "@/components/integrations/metric-charts";
@@ -371,6 +374,9 @@ export function JiraClient({
           <JiraReleasesSection onDrill={setDrill} />
         </div>
 
+        {/* Cross-tool delivery gaps (Jira status vs merged code) */}
+        <JiraCrossToolSection />
+
         {/* Status distribution + breakdowns */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <SectionCard title="Status" icon={<CircleDot size={13} className="text-white/40" />}>
@@ -434,8 +440,113 @@ export function JiraClient({
       </div>
 
       {scopeOpen && <JiraScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
-      {drill && <EntityDrilldown workspaceSlug={workspace.slug} target={drill} onClose={() => setDrill(null)} />}
+      {drill &&
+        (drill.kind === "EPIC" ? (
+          <EpicChainModal workspaceSlug={workspace.slug} epicKey={drill.key} title={drill.title} onClose={() => setDrill(null)} />
+        ) : (
+          <EntityDrilldown workspaceSlug={workspace.slug} target={drill} onClose={() => setDrill(null)} />
+        ))}
     </div>
+  );
+}
+
+function PrChips({ prs, slug }: { prs: { taskId: string; url: string | null; number?: number; merged: boolean }[]; slug: string }) {
+  if (prs.length === 0) return <span className="text-[10px] text-white/25">no code</span>;
+  return (
+    <span className="flex items-center gap-1 flex-wrap justify-end">
+      {prs.map((p) => (
+        <a
+          key={p.taskId}
+          href={`/${slug}/tasks/${p.taskId}`}
+          onClick={(e) => e.stopPropagation()}
+          className={`inline-flex items-center gap-0.5 text-[10px] rounded px-1 py-0.5 border ${
+            p.merged ? "border-emerald-400/25 text-emerald-300" : "border-amber-400/25 text-amber-300"
+          }`}
+          title={p.merged ? "Merged" : "Open"}
+        >
+          {p.merged ? <GitMerge size={9} /> : <GitPullRequest size={9} />}
+          {p.number ? `#${p.number}` : "PR"}
+        </a>
+      ))}
+    </span>
+  );
+}
+
+function EpicChainModal({ workspaceSlug, epicKey, title, onClose }: { workspaceSlug: string; epicKey: string; title: string; onClose: () => void }) {
+  const q = trpc.metrics.epicChain.useQuery({ epicKey });
+  const d = q.data;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={onClose}>
+      <div className="w-full max-w-xl rounded-2xl border border-white/[0.1] bg-[#0d0d0d] shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-5 pb-3">
+          <div className="min-w-0">
+            <span className="text-[10px] font-semibold tracking-widest uppercase text-white/35">epic · {epicKey}</span>
+            <h3 className="text-[15px] font-semibold text-white leading-tight truncate">{title}</h3>
+            {d && (
+              <p className="text-[11px] text-white/40 mt-1">
+                {d.done}/{d.total} stories done · {d.storiesWithCode} with code · {d.prsMerged} PRs merged
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors flex-shrink-0">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="max-h-[56vh] overflow-y-auto px-3 pb-3">
+          {q.isLoading ? (
+            <div className="flex items-center justify-center py-12 text-white/40"><Loader2 size={18} className="animate-spin" /></div>
+          ) : !d || d.stories.length === 0 ? (
+            <p className="text-[12px] text-white/35 px-2 py-6 text-center">No stories under this epic.</p>
+          ) : (
+            d.stories.map((s) => (
+              <div key={s.id} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/[0.03] transition-colors">
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: CAT[s.category === "DONE" ? "done" : s.category === "IN_PROGRESS" ? "in_progress" : "todo"].color }} />
+                {s.issueKey && <span className="text-[10.5px] font-mono text-white/35 flex-shrink-0 w-[68px] truncate">{s.issueKey}</span>}
+                <a href={`/${workspaceSlug}/tasks/${s.id}`} className="flex-1 min-w-0 text-[13px] text-white/80 truncate hover:text-white">{s.title}</a>
+                <PrChips prs={s.prs} slug={workspaceSlug} />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JiraCrossToolSection() {
+  const q = trpc.metrics.crossToolIntegrity.useQuery();
+  const d = q.data;
+  const { slug } = useWorkspace();
+  if (!d || (d.codeAheadOfTicket.length === 0 && d.doneWithOpenPr.length === 0)) return null;
+
+  const Row = ({ g }: { g: (typeof d.codeAheadOfTicket)[number] }) => (
+    <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+      <span className="text-[10.5px] font-mono text-white/35 flex-shrink-0 w-[68px] truncate">{g.issueKey}</span>
+      <a href={`/${slug}/tasks/${g.taskId}`} className="flex-1 min-w-0 text-[13px] text-white/80 truncate hover:text-white">{g.title}</a>
+      {g.status && <span className="hidden sm:inline text-[10px] text-white/35 flex-shrink-0">{g.status}</span>}
+      <PrChips prs={g.prs} slug={slug} />
+    </div>
+  );
+
+  return (
+    <SectionCard title="Cross-tool delivery gaps" icon={<Link2 size={13} className="text-white/40" />} action={<span className="text-[11px] text-white/30">Jira ↔ GitHub</span>}>
+      {d.codeAheadOfTicket.length > 0 && (
+        <div className="mb-3">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-300/80 mb-1.5">
+            <GitMerge size={11} /> Code merged, ticket not closed ({d.codeAheadOfTicket.length})
+          </div>
+          <div className="space-y-0.5">{d.codeAheadOfTicket.slice(0, 8).map((g) => <Row key={g.taskId} g={g} />)}</div>
+        </div>
+      )}
+      {d.doneWithOpenPr.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-red-300/80 mb-1.5">
+            <GitPullRequest size={11} /> Marked done, code still open ({d.doneWithOpenPr.length})
+          </div>
+          <div className="space-y-0.5">{d.doneWithOpenPr.slice(0, 8).map((g) => <Row key={g.taskId} g={g} />)}</div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 

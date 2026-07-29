@@ -12,6 +12,7 @@ import {
   computeGithubReleases,
   githubEntityIssues,
 } from "@backend/lib/intelligence/github-entities";
+import { computeEpicChain, computeCrossToolIntegrity } from "@backend/lib/intelligence/cross-links";
 
 export const metricsRouter = router({
   /** Flow metrics (cycle time, throughput, DORA-lite) folded from the Signal store. */
@@ -100,6 +101,18 @@ export const metricsRouter = router({
     .query(async ({ ctx, input }) => {
       return githubEntityIssues(ctx.workspace.id, input.kind, input.key);
     }),
+
+  /** Cross-tool: an epic's stories, each with the GitHub PRs implementing it. */
+  epicChain: workspaceProcedure
+    .input(z.object({ epicKey: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return computeEpicChain(ctx.workspace.id, input.epicKey);
+    }),
+
+  /** Cross-tool delivery gaps — where Jira status and merged code disagree. */
+  crossToolIntegrity: workspaceProcedure.query(async ({ ctx }) => {
+    return computeCrossToolIntegrity(ctx.workspace.id);
+  }),
 
   /** Generate a weekly status report (AI, cheapest model). Mutation — user-triggered. */
   statusReport: workspaceProcedure.mutation(async ({ ctx }) => {
