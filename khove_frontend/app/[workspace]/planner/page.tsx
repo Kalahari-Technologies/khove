@@ -83,6 +83,7 @@ export default async function PlannerPage({
           title: t.title,
           dueDate: t.dueDate!.toISOString(),
           source: t.source,
+          priority: t.priority,
           hasMeetLink: !!gcal?.meetLink,
           meetLink: gcal?.meetLink ?? null,
           location: gcal?.location ?? null,

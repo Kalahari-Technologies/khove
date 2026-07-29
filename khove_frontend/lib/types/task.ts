@@ -30,6 +30,7 @@ export interface PlannerTask {
   /** ISO string — serialized from `task.dueDate` for client component. */
   dueDate: string;
   source: string[];
+  priority?: string;
   hasMeetLink?: boolean;
   /** Full Google Meet / conference URL (from metadata.googleCalendar.meetLink). */
   meetLink?: string | null;

@@ -14,10 +14,13 @@ export function TimeEventBlock({ item }: { item: TimeSlotItem }) {
   const top = timeToPixelOffset(item.start);
   const height = durationToPixelHeight(item.start, item.end);
   const column = item.column ?? 0;
-  const totalColumns = item.totalColumns ?? 1;
 
-  const widthPercent = 100 / totalColumns;
-  const leftPercent = column * widthPercent;
+  // ClickUp-style cascade: overlapping events are offset to the right and layered
+  // (later on top), each extending to the right edge so titles stay readable —
+  // instead of squishing everything into equal skinny columns. The translucent
+  // fills let the ones behind still show through.
+  const OFFSET = 13; // px per overlap depth
+  const leftPx = column * OFFSET;
 
   const isTask = item.type === "task";
   const timeLabel = formatTimeRange(item.start, item.end);
@@ -47,10 +50,12 @@ export function TimeEventBlock({ item }: { item: TimeSlotItem }) {
       style={{
         top,
         height: Math.max(height, 20),
-        left: `calc(${leftPercent}% + 1px)`,
-        width: `calc(${widthPercent}% - 2px)`,
-        backgroundColor: isTask ? `${item.color}22` : "rgba(255,255,255,0.03)",
-        borderLeft: `2px solid ${isTask ? item.color : "rgba(255,255,255,0.15)"}`,
+        left: `calc(${leftPx}px + 1px)`,
+        width: `calc(100% - ${leftPx}px - 2px)`,
+        zIndex: column + 1,
+        backgroundColor: isTask ? `${item.color}2e` : "rgba(255,255,255,0.05)",
+        borderLeft: `2px solid ${isTask ? item.color : "rgba(255,255,255,0.2)"}`,
+        boxShadow: column > 0 ? "-2px 0 4px -2px rgba(0,0,0,0.5)" : undefined,
         padding: isCompact ? "1px 4px" : "2px 6px",
       }}
     >

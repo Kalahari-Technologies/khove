@@ -18,11 +18,13 @@ import {
   layoutOverlappingEvents,
   type TimeSlotItem,
 } from "../lib/time-utils";
+import type { ColorBy } from "../lib/calendar-colors";
 import { TimeEventBlock } from "./time-event-block";
 
 interface WeekViewProps {
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
+  colorBy?: ColorBy;
 }
 
 const WEEKS_BUFFER = 8;
@@ -36,7 +38,7 @@ function getWeeksAround(anchor: Date): Date[][] {
   return weeks;
 }
 
-export function WeekView({ tasks, calendarEntries }: WeekViewProps) {
+export function WeekView({ tasks, calendarEntries, colorBy = "source" }: WeekViewProps) {
   const today = new Date();
   const gridRef = useRef<HTMLDivElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
@@ -51,7 +53,7 @@ export function WeekView({ tasks, calendarEntries }: WeekViewProps) {
 
   // Convert all items
   const allItems: TimeSlotItem[] = [
-    ...tasks.map(taskToTimeSlot),
+    ...tasks.map((t) => taskToTimeSlot(t, colorBy)),
     ...calendarEntries.map(entryToTimeSlot),
   ];
 

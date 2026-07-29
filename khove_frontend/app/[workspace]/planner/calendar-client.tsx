@@ -8,7 +8,8 @@ import {
   Home,
 } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
-import { sourceKindOf, type SourceKind } from "./lib/time-utils";
+import { sourceKindOf } from "./lib/time-utils";
+import { COLOR_BY_OPTIONS, type ColorBy } from "./lib/calendar-colors";
 import { useConnectIntegration } from "@/lib/trpc/api";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
@@ -270,12 +271,25 @@ function PlannerEmptyState({ planTier, canAdmin, workspaceId }: { planTier: stri
 // Planner Calendar (normal state) — delegates to Month/Week/Day views
 // ---------------------------------------------------------------------------
 
-const SOURCE_LAYERS: { kind: SourceKind; label: string; color: string }[] = [
-  { kind: "google", label: "Meetings", color: "#F43F5E" },
+type Layer = "meetings" | "events" | "jira" | "github";
+const LAYERS: { kind: Layer; label: string; color: string }[] = [
+  { kind: "meetings", label: "Meetings", color: "#F43F5E" },
+  { kind: "events", label: "Events", color: "#8B5CF6" },
   { kind: "jira", label: "Jira", color: "#6366F1" },
   { kind: "github", label: "GitHub", color: "#10B981" },
 ];
 const VIEW_LABEL: Record<"month" | "week" | "day", string> = { month: "Month", week: "Week", day: "Day" };
+
+// Which layer a task belongs to — Google meetings, Jira, or GitHub. Calendar
+// entries (holidays/all-day) are always the "events" layer, so toggling
+// "Meetings" no longer hides them. Local Khove/AI tasks stay always-visible.
+function taskLayer(sources: string[]): Layer | null {
+  const k = sourceKindOf(sources);
+  if (k === "google") return "meetings";
+  if (k === "jira") return "jira";
+  if (k === "github") return "github";
+  return null;
+}
 
 function PlannerCalendar({
   tasks,
@@ -301,15 +315,19 @@ function PlannerCalendar({
   // localStorage, so switching views keeps your layers — and the view switcher is
   // a top-right dropdown rather than a full navigation.
   const [view, setView] = useState<"month" | "week" | "day">("month");
-  const [hiddenSources, setHiddenSources] = useState<Set<SourceKind>>(new Set());
+  const [hidden, setHidden] = useState<Set<Layer>>(new Set());
+  const [colorBy, setColorBy] = useState<ColorBy>("source");
   const [viewOpen, setViewOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {
     try {
       const v = localStorage.getItem(`planner:view:${workspaceId}`);
       if (v === "week" || v === "day" || v === "month") setView(v);
       const h = localStorage.getItem(`planner:layers:${workspaceId}`);
-      if (h) setHiddenSources(new Set(JSON.parse(h) as SourceKind[]));
+      if (h) setHidden(new Set(JSON.parse(h) as Layer[]));
+      const c = localStorage.getItem(`planner:colorby:${workspaceId}`);
+      if (c === "source" || c === "status" || c === "priority") setColorBy(c);
     } catch {
       /* ignore */
     }
@@ -324,8 +342,17 @@ function PlannerCalendar({
       /* ignore */
     }
   };
-  const toggleLayer = (k: SourceKind) =>
-    setHiddenSources((prev) => {
+  const chooseColor = (c: ColorBy) => {
+    setColorBy(c);
+    setColorOpen(false);
+    try {
+      localStorage.setItem(`planner:colorby:${workspaceId}`, c);
+    } catch {
+      /* ignore */
+    }
+  };
+  const toggleLayer = (k: Layer) =>
+    setHidden((prev) => {
       const n = new Set(prev);
       if (n.has(k)) n.delete(k);
       else n.add(k);
@@ -338,17 +365,24 @@ function PlannerCalendar({
     });
 
   const present = useMemo(() => {
-    const s = new Set<SourceKind>();
-    for (const t of tasks) s.add(sourceKindOf(t.source));
-    if (calendarEntries.length) s.add("google");
+    const s = new Set<Layer>();
+    for (const t of tasks) {
+      const l = taskLayer(t.source);
+      if (l) s.add(l);
+    }
+    if (calendarEntries.length) s.add("events");
     return s;
   }, [tasks, calendarEntries]);
 
   const visibleTasks = useMemo(
-    () => tasks.filter((t) => !hiddenSources.has(sourceKindOf(t.source))),
-    [tasks, hiddenSources],
+    () =>
+      tasks.filter((t) => {
+        const l = taskLayer(t.source);
+        return !l || !hidden.has(l);
+      }),
+    [tasks, hidden],
   );
-  const visibleEntries = hiddenSources.has("google") ? [] : calendarEntries;
+  const visibleEntries = hidden.has("events") ? [] : calendarEntries;
 
   return (
     <PlannerInteractionsProvider
@@ -361,11 +395,11 @@ function PlannerCalendar({
         {insights.length > 0 && <InsightBanner insights={insights} />}
         {agentActions.length > 0 && <PlannerAgentPanel actions={agentActions} slug={workspace.slug} />}
 
-        {/* Toolbar — layer toggles (left), view dropdown (right) */}
+        {/* Toolbar — layer toggles (left); color-by + view dropdowns (right) */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-2">
           <div className="flex flex-wrap items-center gap-1.5">
-            {SOURCE_LAYERS.filter((l) => present.has(l.kind)).map((l) => {
-              const on = !hiddenSources.has(l.kind);
+            {LAYERS.filter((l) => present.has(l.kind)).map((l) => {
+              const on = !hidden.has(l.kind);
               return (
                 <button
                   key={l.kind}
@@ -380,31 +414,61 @@ function PlannerCalendar({
               );
             })}
           </div>
-          <div className="relative flex-shrink-0">
-            <button
-              onClick={() => setViewOpen((o) => !o)}
-              className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 py-1.5 text-[12.5px] text-white/80 hover:bg-white/[0.07]"
-            >
-              {VIEW_LABEL[view]} <ChevronDown size={13} className="text-white/45" />
-            </button>
-            {viewOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setViewOpen(false)} />
-                <div className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded-lg border border-white/[0.10] bg-[#0d0d0f] py-1 shadow-xl">
-                  {(["month", "week", "day"] as const).map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => chooseView(v)}
-                      className={`block w-full px-3 py-1.5 text-left text-[12.5px] ${
-                        v === view ? "bg-white/[0.06] text-white" : "text-white/65 hover:bg-white/[0.04] hover:text-white"
-                      }`}
-                    >
-                      {VIEW_LABEL[v]}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {/* Color-by */}
+            <div className="relative">
+              <button
+                onClick={() => setColorOpen((o) => !o)}
+                className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 py-1.5 text-[12.5px] text-white/70 hover:bg-white/[0.07]"
+              >
+                Color: {COLOR_BY_OPTIONS.find((o) => o.key === colorBy)?.label} <ChevronDown size={13} className="text-white/45" />
+              </button>
+              {colorOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setColorOpen(false)} />
+                  <div className="absolute right-0 z-20 mt-1 w-36 overflow-hidden rounded-lg border border-white/[0.10] bg-[#0d0d0f] py-1 shadow-xl">
+                    {COLOR_BY_OPTIONS.map((o) => (
+                      <button
+                        key={o.key}
+                        onClick={() => chooseColor(o.key)}
+                        className={`block w-full px-3 py-1.5 text-left text-[12.5px] ${
+                          o.key === colorBy ? "bg-white/[0.06] text-white" : "text-white/65 hover:bg-white/[0.04] hover:text-white"
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            {/* View */}
+            <div className="relative">
+              <button
+                onClick={() => setViewOpen((o) => !o)}
+                className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 py-1.5 text-[12.5px] text-white/80 hover:bg-white/[0.07]"
+              >
+                {VIEW_LABEL[view]} <ChevronDown size={13} className="text-white/45" />
+              </button>
+              {viewOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setViewOpen(false)} />
+                  <div className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded-lg border border-white/[0.10] bg-[#0d0d0f] py-1 shadow-xl">
+                    {(["month", "week", "day"] as const).map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => chooseView(v)}
+                        className={`block w-full px-3 py-1.5 text-left text-[12.5px] ${
+                          v === view ? "bg-white/[0.06] text-white" : "text-white/65 hover:bg-white/[0.04] hover:text-white"
+                        }`}
+                      >
+                        {VIEW_LABEL[v]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -416,10 +480,11 @@ function PlannerCalendar({
             canAdmin={canAdmin}
             workspaceId={workspaceId}
             planTier={planTier}
+            colorBy={colorBy}
           />
         )}
-        {view === "week" && <WeekView tasks={visibleTasks} calendarEntries={visibleEntries} />}
-        {view === "day" && <DayView tasks={visibleTasks} calendarEntries={visibleEntries} />}
+        {view === "week" && <WeekView tasks={visibleTasks} calendarEntries={visibleEntries} colorBy={colorBy} />}
+        {view === "day" && <DayView tasks={visibleTasks} calendarEntries={visibleEntries} colorBy={colorBy} />}
       </div>
     </PlannerInteractionsProvider>
   );

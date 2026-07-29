@@ -1,4 +1,5 @@
 import type { PlannerTask, CalendarDisplayEntry, PlannerAttendee } from "@/lib/types";
+import { colorForTask, ENTRY_COLOR, type ColorBy } from "./calendar-colors";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -53,7 +54,7 @@ export function isMidnight(date: Date): boolean {
   return date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
 }
 
-export function taskToTimeSlot(task: PlannerTask): TimeSlotItem {
+export function taskToTimeSlot(task: PlannerTask, colorBy: ColorBy = "source"): TimeSlotItem {
   const start = new Date(task.dueDate);
   let end: Date;
   let isAllDay = task.isAllDay ?? false;
@@ -76,7 +77,7 @@ export function taskToTimeSlot(task: PlannerTask): TimeSlotItem {
     end,
     isAllDay,
     type: "task",
-    color: task.status.color,
+    color: colorForTask(task, colorBy),
     isGoogleCalendar: task.source.includes("GOOGLE_CALENDAR"),
     hasMeetLink: task.hasMeetLink,
     meetLink: task.meetLink ?? null,
@@ -98,7 +99,7 @@ export function entryToTimeSlot(entry: CalendarDisplayEntry): TimeSlotItem {
     end,
     isAllDay: entry.isAllDay,
     type: "entry",
-    color: "#71717A", // zinc-500
+    color: ENTRY_COLOR,
   };
 }
 

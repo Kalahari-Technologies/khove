@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Plus, Unplug } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
 import { usePlannerInteractions, type PlannerEventDetail } from "./planner-interactions";
 import { sourceKindOf, type SourceKind } from "../lib/time-utils";
+import { colorForTask, ENTRY_COLOR, type ColorBy } from "../lib/calendar-colors";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 function taskToDetail(t: PlannerTask): PlannerEventDetail {
@@ -63,8 +64,21 @@ interface CellItem {
   type: "task" | "entry";
   color: string;
   sourceKind: SourceKind;
+  time?: string;
   isGoogleCalendar?: boolean;
   hasMeetLink?: boolean;
+}
+
+/** Compact start-time label, e.g. "5pm" / "9:30am". */
+function shortTime(d: Date): string {
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const period = h >= 12 ? "pm" : "am";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return m === 0 ? `${h12}${period}` : `${h12}:${String(m).padStart(2, "0")}${period}`;
+}
+function isMidnightLocal(d: Date): boolean {
+  return d.getHours() === 0 && d.getMinutes() === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,9 +106,10 @@ interface MonthViewProps {
   canAdmin: boolean;
   workspaceId: string;
   planTier: string;
+  colorBy?: ColorBy;
 }
 
-export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin, workspaceId, planTier }: MonthViewProps) {
+export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin, workspaceId, planTier, colorBy = "source" }: MonthViewProps) {
   const router = useRouter();
   const workspace = useWorkspace();
   const backendFetch = useBackendFetch();
@@ -131,8 +146,9 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
       id: task.id,
       title: task.title,
       type: "task",
-      color: task.status.color,
+      color: colorForTask(task, colorBy),
       sourceKind: kind,
+      time: task.isAllDay || isMidnightLocal(d) ? undefined : shortTime(d),
       isGoogleCalendar: kind === "google",
       hasMeetLink: task.hasMeetLink,
     });
@@ -147,8 +163,9 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
       id: entry.id,
       title: entry.title,
       type: "entry",
-      color: "#71717A",
+      color: ENTRY_COLOR,
       sourceKind: "google",
+      time: entry.isAllDay || isMidnightLocal(d) ? undefined : shortTime(d),
     });
   }
 
@@ -307,16 +324,16 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
                     onClick={() => {
                       if (task) openItem(taskToDetail(task));
                     }}
-                    className={`flex items-center gap-1 w-full text-left rounded-md px-1.5 py-0.5 transition-colors group ${
-                      item.type === "entry" ? "bg-white/[0.03] cursor-default" : "hover:bg-white/[0.09] cursor-grab active:cursor-grabbing"
+                    className={`flex items-center gap-1 w-full text-left rounded-md pl-1 pr-1.5 py-[3px] transition-colors group ${
+                      item.type === "entry" ? "cursor-default hover:bg-white/[0.04]" : "hover:bg-white/[0.06] cursor-grab active:cursor-grabbing"
                     }`}
-                    style={item.type === "task" ? { backgroundColor: item.color } : undefined}
                   >
-                    {item.isGoogleCalendar && !item.hasMeetLink && <GoogleCalendarIcon size={9} />}
+                    <span className="h-3 w-[3px] flex-shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
                     {item.hasMeetLink && <img src="/assets/google-meet.svg" alt="" width={9} height={9} className="flex-shrink-0" />}
                     <SourceBadge kind={item.sourceKind} size={9} />
-                    <span className={`text-[10px] font-medium truncate transition-colors ${
-                      item.type === "entry" ? "text-white/30 italic" : "text-white group-hover:text-white/85"
+                    {item.time && <span className="flex-shrink-0 text-[10px] tabular-nums text-white/40">{item.time}</span>}
+                    <span className={`truncate text-[10.5px] ${
+                      item.type === "entry" ? "text-white/45" : "text-white/85 group-hover:text-white"
                     }`}>
                       {item.title}
                     </span>

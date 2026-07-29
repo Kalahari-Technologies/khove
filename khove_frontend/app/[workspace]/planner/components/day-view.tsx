@@ -16,11 +16,13 @@ import {
   layoutOverlappingEvents,
   type TimeSlotItem,
 } from "../lib/time-utils";
+import type { ColorBy } from "../lib/calendar-colors";
 import { TimeEventBlock } from "./time-event-block";
 
 interface DayViewProps {
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
+  colorBy?: ColorBy;
 }
 
 function getDaysRange(anchor: Date): Date[] {
@@ -33,7 +35,7 @@ function getDaysRange(anchor: Date): Date[] {
   return days;
 }
 
-export function DayView({ tasks, calendarEntries }: DayViewProps) {
+export function DayView({ tasks, calendarEntries, colorBy = "source" }: DayViewProps) {
   const today = new Date();
   const allDays = getDaysRange(today);
   const todayIndex = allDays.findIndex((d) => isToday(d));
@@ -47,7 +49,7 @@ export function DayView({ tasks, calendarEntries }: DayViewProps) {
 
   // Convert all items
   const allItems: TimeSlotItem[] = [
-    ...tasks.map(taskToTimeSlot),
+    ...tasks.map((t) => taskToTimeSlot(t, colorBy)),
     ...calendarEntries.map(entryToTimeSlot),
   ];
 
