@@ -136,6 +136,7 @@ export function JiraClient({
   // reloads until the sync finishes.
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncDiag, setSyncDiag] = useState<{ found: number; jql: string; site: string; at?: string } | null>(null);
   const wasSyncing = useRef(false);
   useEffect(() => {
     if (!isConnected) return;
@@ -144,11 +145,19 @@ export function JiraClient({
     const poll = async () => {
       try {
         const res = await backendFetch(`/api/integrations/jira/sync-status?workspaceId=${workspaceId}`, {}, workspaceId);
-        const data = (await res.json()) as { status?: string; message?: string };
+        const data = (await res.json()) as {
+          status?: string;
+          message?: string;
+          found?: number;
+          jql?: string;
+          site?: string;
+          at?: string;
+        };
         if (!active) return;
         if (data.status === "syncing") {
           setSyncing(true);
           setSyncError(null);
+          setSyncDiag(null);
           setResyncing(false);
           wasSyncing.current = true;
           timer = setTimeout(poll, 3000);
@@ -156,6 +165,13 @@ export function JiraClient({
           setSyncing(false);
           if (data.status === "error") setSyncError(data.message ?? "The last Jira sync failed.");
           else setSyncError(null);
+          // A completed sync that found nothing — the exact site + query it ran,
+          // so a wrong site / empty scope is diagnosable from the UI.
+          if (data.status === "done" && (data.found ?? 0) === 0) {
+            setSyncDiag({ found: data.found ?? 0, jql: data.jql ?? "", site: data.site ?? "", at: data.at });
+          } else {
+            setSyncDiag(null);
+          }
           if (wasSyncing.current) {
             wasSyncing.current = false;
             router.refresh();
@@ -361,6 +377,22 @@ export function JiraClient({
             <span className="text-red-300/70 break-words">{syncError}</span>{" "}
             <button onClick={handleResync} className="underline underline-offset-2 hover:text-red-200">
               Try again
+            </button>
+          </div>
+        )}
+
+        {/* Sync ran but found nothing — surfaces the site + query so a wrong
+            site / empty scope is diagnosable without server logs. */}
+        {syncDiag && !syncError && (
+          <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3 text-[13px] text-amber-200/90">
+            <span className="font-medium text-amber-200">Last sync completed, but found 0 issues.</span>{" "}
+            <span className="text-amber-200/70">
+              Queried site <span className="font-mono text-amber-100">{syncDiag.site || "unknown"}</span> with{" "}
+              <span className="font-mono text-amber-100 break-all">{syncDiag.jql || "(no query)"}</span>. If your issues
+              live on a different Jira site, or the project scope excludes them, that&apos;s why.
+            </span>{" "}
+            <button onClick={handleResync} className="underline underline-offset-2 hover:text-amber-100">
+              Re-sync
             </button>
           </div>
         )}

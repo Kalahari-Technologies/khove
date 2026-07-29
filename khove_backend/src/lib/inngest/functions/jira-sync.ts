@@ -164,16 +164,21 @@ async function syncJiraIssues(
   userId: string,
   jql: string,
   maxPages = 3,
-): Promise<{ created: number; updated: number; projectKeys: string[] }> {
+): Promise<{ created: number; updated: number; projectKeys: string[]; found: number; jql: string; site: string }> {
   const integration = await db.integration.findFirst({
     where: { workspaceId, provider: "JIRA", isActive: true },
     select: { metadata: true },
   });
-  const siteUrl = ((integration?.metadata ?? {}) as Record<string, unknown>).siteUrl as string ?? "";
+  const meta = (integration?.metadata ?? {}) as Record<string, unknown>;
+  const siteUrl = (meta.siteUrl as string) ?? "";
+  const site = (meta.siteName as string) || siteUrl || (meta.cloudId as string) || "unknown site";
 
   const fieldMap = await getJiraFieldMap(workspaceId);
   const extraFields = [fieldMap.sprint, fieldMap.storyPoints, fieldMap.epicLink].filter((x): x is string => !!x);
   const issues = await searchIssues(workspaceId, jql, maxPages, extraFields);
+  // Unconditional breadcrumb — shows the exact query + site + count even on a
+  // 200-but-empty result (the case that produces no error and no other signal).
+  console.log(`[jira-sync] ${workspaceId} site="${site}" jql="${jql}" → ${issues.length} issues`);
   let created = 0;
   let updated = 0;
   const projectKeys = new Set<string>();
@@ -200,7 +205,7 @@ async function syncJiraIssues(
 
   if (entities.size) await recordEntities(workspaceId, [...entities.values()]).catch(() => {});
 
-  return { created, updated, projectKeys: [...projectKeys] };
+  return { created, updated, projectKeys: [...projectKeys], found: issues.length, jql, site };
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +334,7 @@ export const jiraPollSync = inngest.createFunction(
           return await syncJiraIssues(workspaceId, userId, await scopedJql(workspaceId, "updated >= -2d"));
         } catch (err) {
           console.error(`[jira-poll] ${workspaceId} failed`, err);
-          return { created: 0, updated: 0, projectKeys: [] };
+          return { created: 0, updated: 0, projectKeys: [], found: 0, jql: "", site: "" };
         }
       });
       created += res.created;
