@@ -191,17 +191,35 @@ export function JiraClient({
 
   async function handleResync() {
     setResyncing(true);
+    setSyncError(null);
+    setSyncDiag(null);
     setPollNonce((n) => n + 1);
     try {
-      await backendFetch("/api/integrations/jira/resync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId }),
-      });
+      // The endpoint now syncs inline and returns the real outcome, so the result
+      // is authoritative — reflect it immediately instead of only polling.
+      const res = await backendFetch(
+        "/api/integrations/jira/resync",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId }) },
+        workspaceId,
+      );
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        found?: number;
+        jql?: string;
+        site?: string;
+      };
+      if (!res.ok || data.success === false) {
+        setSyncError(data.error ?? "The Jira sync failed.");
+      } else if ((data.found ?? 0) === 0) {
+        setSyncDiag({ found: 0, jql: data.jql ?? "", site: data.site ?? "" });
+      }
+      router.refresh();
     } catch {
+      setSyncError("Could not reach the sync service.");
+    } finally {
       setResyncing(false);
     }
-    setTimeout(() => setResyncing(false), 25000);
   }
 
   const { issues, insights } = useMemo(() => {

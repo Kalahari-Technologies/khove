@@ -208,6 +208,50 @@ async function syncJiraIssues(
   return { created, updated, projectKeys: [...projectKeys], found: issues.length, jql, site };
 }
 
+export interface JiraSyncOutcome {
+  created: number;
+  updated: number;
+  projectKeys: string[];
+  found: number;
+  jql: string;
+  site: string;
+}
+
+/**
+ * Run a full Jira sync INLINE (no Inngest) — writes Tasks + Signals + Entities
+ * and updates the persistent sync status. Used by the connect/resync HTTP routes
+ * so data lands (and the real outcome is returned) even when the Inngest runtime
+ * isn't processing background events. The Inngest job still runs in parallel for
+ * webhook registration + out-of-scope pruning when the runtime IS healthy.
+ */
+export async function performJiraSync(
+  workspaceId: string,
+  userId: string,
+  maxPages = 10,
+): Promise<JiraSyncOutcome> {
+  await redis.set(`jira-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
+  try {
+    const jql = await scopedJql(workspaceId);
+    const result = await syncJiraIssues(workspaceId, userId, jql, maxPages);
+    await redis
+      .set(`jira-sync:${workspaceId}`, JSON.stringify({ status: "done", at: new Date().toISOString(), ...result }), { ex: 300 })
+      .catch(() => {});
+    await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "jira-sync" }).catch(() => {});
+    return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Jira sync failed";
+    console.error(`[jira-sync] inline sync failed for ${workspaceId}:`, message);
+    await redis
+      .set(
+        `jira-sync:${workspaceId}`,
+        JSON.stringify({ status: "error", message: message.slice(0, 300), at: new Date().toISOString() }),
+        { ex: 600 },
+      )
+      .catch(() => {});
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Initial sync — last 30 days + register the dynamic webhook
 // ---------------------------------------------------------------------------
