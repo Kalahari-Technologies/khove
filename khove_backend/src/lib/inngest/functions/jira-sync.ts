@@ -112,17 +112,24 @@ async function upsertIssueTask(
   return "created";
 }
 
-/** Prepend the workspace's project scope (the product boundary) to a JQL time clause. */
-async function scopedJql(workspaceId: string, timeClause: string): Promise<string> {
+/**
+ * Build a JQL bounded by the workspace's project scope (the product boundary)
+ * and, optionally, a time clause. Pass no `timeClause` for a full backfill —
+ * the initial sync must not be date-boxed, or a project whose issues predate the
+ * window syncs nothing (and the whole dashboard, which derives epics/releases/
+ * projects/flow FROM the issues, shows empty). Volume is capped by pages instead.
+ */
+async function scopedJql(workspaceId: string, timeClause?: string | null): Promise<string> {
   const integration = await db.integration.findFirst({
     where: { workspaceId, provider: "JIRA", isActive: true },
     select: { metadata: true },
   });
   const scope = ((integration?.metadata ?? {}) as Record<string, unknown>).scope as { projects?: string[] } | undefined;
-  if (scope?.projects?.length) {
-    return `project in (${scope.projects.join(",")}) AND ${timeClause} ORDER BY updated DESC`;
-  }
-  return `${timeClause} ORDER BY updated DESC`;
+  const clauses: string[] = [];
+  if (scope?.projects?.length) clauses.push(`project in (${scope.projects.join(",")})`);
+  if (timeClause) clauses.push(timeClause);
+  const where = clauses.join(" AND ");
+  return where ? `${where} ORDER BY updated DESC` : `ORDER BY updated DESC`;
 }
 
 /** Get the site's custom-field ids, discovering + caching them in metadata once. */
@@ -136,7 +143,15 @@ async function getJiraFieldMap(workspaceId: string): Promise<JiraFieldMap> {
   const cached = meta.jiraFields as JiraFieldMap | undefined;
   if (cached && (cached.sprint || cached.storyPoints || cached.epicLink)) return cached;
 
-  const map = await discoverJiraFields(workspaceId);
+  // Custom-field discovery is OPTIONAL enrichment (sprint/story-points/epic-link).
+  // It must never block the core issue sync — if it fails, sync with base fields.
+  let map: JiraFieldMap = {};
+  try {
+    map = await discoverJiraFields(workspaceId);
+  } catch (err) {
+    console.error(`[jira-sync] field discovery failed for ${workspaceId}:`, err instanceof Error ? err.message : err);
+    return {};
+  }
   await db.integration
     .update({ where: { id: integration.id }, data: { metadata: { ...meta, jiraFields: map } as unknown as Prisma.InputJsonObject } })
     .catch(() => {});
@@ -148,6 +163,7 @@ async function syncJiraIssues(
   workspaceId: string,
   userId: string,
   jql: string,
+  maxPages = 3,
 ): Promise<{ created: number; updated: number; projectKeys: string[] }> {
   const integration = await db.integration.findFirst({
     where: { workspaceId, provider: "JIRA", isActive: true },
@@ -157,7 +173,7 @@ async function syncJiraIssues(
 
   const fieldMap = await getJiraFieldMap(workspaceId);
   const extraFields = [fieldMap.sprint, fieldMap.storyPoints, fieldMap.epicLink].filter((x): x is string => !!x);
-  const issues = await searchIssues(workspaceId, jql, 3, extraFields);
+  const issues = await searchIssues(workspaceId, jql, maxPages, extraFields);
   let created = 0;
   let updated = 0;
   const projectKeys = new Set<string>();
@@ -206,9 +222,25 @@ export const jiraInitialSync = inngest.createFunction(
       await redis.set(`jira-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
     });
 
-    const result = await step.run("sync-issues", async () =>
-      syncJiraIssues(workspaceId, userId, await scopedJql(workspaceId, "updated >= -30d")),
-    );
+    const result = await step.run("sync-issues", async () => {
+      try {
+        // Full backfill (no date bound) so a project's issues appear regardless
+        // of age; deeper page cap (1000 issues) for the one-time initial pull.
+        return await syncJiraIssues(workspaceId, userId, await scopedJql(workspaceId), 10);
+      } catch (err) {
+        // Surface the real reason instead of swallowing it into a blank dashboard.
+        const message = err instanceof Error ? err.message : "Jira sync failed";
+        console.error(`[jira-initial-sync] ${workspaceId} failed:`, message);
+        await redis
+          .set(
+            `jira-sync:${workspaceId}`,
+            JSON.stringify({ status: "error", message: message.slice(0, 300), at: new Date().toISOString() }),
+            { ex: 600 },
+          )
+          .catch(() => {});
+        throw err; // let Inngest record the failure + retry; the error status persists meanwhile
+      }
+    });
 
     // Best-effort: register a project-scoped dynamic webhook for live updates.
     await step.run("register-webhook", async () => {

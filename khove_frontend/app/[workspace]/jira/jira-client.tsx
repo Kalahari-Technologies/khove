@@ -135,6 +135,7 @@ export function JiraClient({
   // Persistent sync status (server truth via Redis) — full-screen loader survives
   // reloads until the sync finishes.
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const wasSyncing = useRef(false);
   useEffect(() => {
     if (!isConnected) return;
@@ -143,15 +144,18 @@ export function JiraClient({
     const poll = async () => {
       try {
         const res = await backendFetch(`/api/integrations/jira/sync-status?workspaceId=${workspaceId}`, {}, workspaceId);
-        const data = (await res.json()) as { status?: string };
+        const data = (await res.json()) as { status?: string; message?: string };
         if (!active) return;
         if (data.status === "syncing") {
           setSyncing(true);
+          setSyncError(null);
           setResyncing(false);
           wasSyncing.current = true;
           timer = setTimeout(poll, 3000);
         } else {
           setSyncing(false);
+          if (data.status === "error") setSyncError(data.message ?? "The last Jira sync failed.");
+          else setSyncError(null);
           if (wasSyncing.current) {
             wasSyncing.current = false;
             router.refresh();
@@ -349,6 +353,17 @@ export function JiraClient({
             </button>
           </div>
         </div>
+
+        {/* Sync error — surfaces the real reason a sync came back empty */}
+        {syncError && (
+          <div className="rounded-lg border border-red-500/25 bg-red-500/[0.06] px-4 py-3 text-[13px] text-red-300/90">
+            <span className="font-medium text-red-300">Last Jira sync failed.</span>{" "}
+            <span className="text-red-300/70 break-words">{syncError}</span>{" "}
+            <button onClick={handleResync} className="underline underline-offset-2 hover:text-red-200">
+              Try again
+            </button>
+          </div>
+        )}
 
         {/* Attention strip */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
