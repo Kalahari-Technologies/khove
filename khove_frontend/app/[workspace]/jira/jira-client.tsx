@@ -335,7 +335,7 @@ export function JiraClient({
 
   return (
     <div className="flex flex-col h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto w-full px-6 py-8 space-y-6">
+      <div className="w-full px-6 py-7 xl:px-10 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

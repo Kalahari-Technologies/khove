@@ -1,15 +1,33 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+
 interface Point {
   date: string;
   done: number;
   total: number;
 }
 
+/** Measure the container's rendered width so the SVG draws at true pixels
+ *  (no viewBox stretch → no distortion), re-measuring on resize. */
+function useWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setW(entries[0].contentRect.width));
+    ro.observe(el);
+    setW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
+
 /**
  * Burn-up: cumulative merged work (emerald) rising toward the total (faint line),
  * with the target date (rose marker) and the projected finish (amber dashed line
- * from today's progress to completion). Pure SVG, scales to its container.
+ * from today's progress to completion). Bespoke SVG rendered at measured width.
  */
 export function BurnupChart({
   burnup,
@@ -22,14 +40,36 @@ export function BurnupChart({
   projectedFinish: string | null;
   height?: number;
 }) {
-  if (burnup.length < 2) {
-    return (
-      <div className="flex items-center justify-center text-[12px] text-white/30" style={{ height }}>
-        Not enough history yet — merges will fill this in.
-      </div>
-    );
-  }
+  const [ref, W] = useWidth();
 
+  const enough = burnup.length >= 2;
+
+  return (
+    <div ref={ref} style={{ width: "100%", height }}>
+      {!enough ? (
+        <div className="flex items-center justify-center text-[12px] text-white/30" style={{ height }}>
+          Not enough history yet — merges will fill this in.
+        </div>
+      ) : W === 0 ? null : (
+        <BurnupSvg burnup={burnup} targetDate={targetDate} projectedFinish={projectedFinish} width={W} height={height} />
+      )}
+    </div>
+  );
+}
+
+function BurnupSvg({
+  burnup,
+  targetDate,
+  projectedFinish,
+  width: W,
+  height: H,
+}: {
+  burnup: Point[];
+  targetDate: string | null;
+  projectedFinish: string | null;
+  width: number;
+  height: number;
+}) {
   const total = Math.max(1, burnup[burnup.length - 1].total);
   const t0 = new Date(burnup[0].date).getTime();
   const tLast = new Date(burnup[burnup.length - 1].date).getTime();
@@ -37,8 +77,6 @@ export function BurnupChart({
   const tProj = projectedFinish ? new Date(projectedFinish).getTime() : tLast;
   const tMax = Math.max(tLast, tTarget, tProj);
 
-  const W = 640;
-  const H = height;
   const padL = 26;
   const padR = 14;
   const padT = 10;
@@ -50,22 +88,17 @@ export function BurnupChart({
   const donePts = burnup.map((p) => `${x(new Date(p.date).getTime())},${y(p.done)}`).join(" ");
   const lastDone = burnup[burnup.length - 1].done;
   const late = projectedFinish && targetDate ? new Date(projectedFinish).getTime() > new Date(targetDate).getTime() : false;
-
   const gridYs = [0, 0.5, 1];
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
-      {/* grid */}
+    <svg width={W} height={H} className="block">
       {gridYs.map((g) => (
         <line key={g} x1={padL} x2={W - padR} y1={y(g * total)} y2={y(g * total)} stroke="rgba(255,255,255,0.06)" strokeWidth={1} />
       ))}
-      {/* total line */}
       <line x1={padL} x2={W - padR} y1={y(total)} y2={y(total)} stroke="rgba(255,255,255,0.22)" strokeWidth={1} strokeDasharray="2 3" />
-      {/* target vertical marker */}
       {targetDate && (
         <line x1={x(tTarget)} x2={x(tTarget)} y1={padT} y2={H - padB} stroke="rgba(244,63,94,0.6)" strokeWidth={1} strokeDasharray="3 3" />
       )}
-      {/* projected finish (from last progress to total) */}
       {projectedFinish && lastDone < total && (
         <line
           x1={x(tLast)}
@@ -77,11 +110,8 @@ export function BurnupChart({
           strokeDasharray="4 3"
         />
       )}
-      {/* done line */}
       <polyline points={donePts} fill="none" stroke="rgb(16,185,129)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-      {/* last done dot */}
       <circle cx={x(tLast)} cy={y(lastDone)} r={2.5} fill="rgb(16,185,129)" />
-      {/* y labels */}
       <text x={4} y={y(total) + 3} fontSize={9} fill="rgba(255,255,255,0.35)">{total}</text>
       <text x={4} y={y(0) + 3} fontSize={9} fill="rgba(255,255,255,0.35)">0</text>
     </svg>
