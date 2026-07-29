@@ -20,6 +20,7 @@ import {
   List,
   Users,
   CalendarDays,
+  Pencil,
 } from "lucide-react";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
@@ -407,10 +408,16 @@ function DetailPanel({
   onCreateWorkspace: () => void;
 }) {
   const router = useRouter();
-  const { list: conversations, activeId } = useConversations();
+  const { list: conversations, activeId, rename } = useConversations();
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(["Quick Actions", "Views", "Suggested", "Recent"])
   );
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const commitRename = () => {
+    if (editingId && editValue.trim()) rename(editingId, editValue);
+    setEditingId(null);
+  };
   const { title, sections } = getSections(activeSection, slug);
 
   const toggleSection = (name: string) =>
@@ -502,27 +509,58 @@ function DetailPanel({
                       ) : (
                         conversations.map((conv) => {
                           const isActive = conv.id === activeId;
+                          if (editingId === conv.id) {
+                            return (
+                              <div key={conv.id} className="px-2 py-0.5">
+                                <input
+                                  autoFocus
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onBlur={commitRename}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") commitRename();
+                                    if (e.key === "Escape") setEditingId(null);
+                                  }}
+                                  className="w-full bg-white/[0.08] border border-white/[0.15] rounded-md px-2 py-[6px] text-[13px] text-white outline-none focus:border-white/30"
+                                />
+                              </div>
+                            );
+                          }
                           return (
-                            <Link key={conv.id} href={wsHref(slug, `/chat?conversationId=${conv.id}`)}>
-                              <span
-                                className={[
-                                  "flex items-center gap-2 w-full px-2 py-[7px] rounded-md text-[13px] font-sans cursor-pointer transition-all duration-[120ms]",
-                                  isActive ? "bg-white/[0.08] text-white" : "text-white/65 hover:text-white hover:bg-white/[0.06]",
-                                ].join(" ")}
-                                style={{ transitionTimingFunction: ease }}
-                              >
-                                {conv.generating ? (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse flex-shrink-0" title="Generating…" />
-                                ) : conv.unseen ? (
-                                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" title="New reply" />
-                                ) : (
-                                  <span className="w-1.5 h-1.5 flex-shrink-0" />
-                                )}
-                                <span className={`truncate flex-1 leading-snug ${conv.unseen && !isActive ? "font-medium text-white/90" : ""}`}>
-                                  {conv.title}
+                            <div key={conv.id} className="relative group/conv">
+                              <Link href={wsHref(slug, `/chat?conversationId=${conv.id}`)}>
+                                <span
+                                  className={[
+                                    "flex items-center gap-2 w-full px-2 py-[7px] pr-7 rounded-md text-[13px] font-sans cursor-pointer transition-all duration-[120ms]",
+                                    isActive ? "bg-white/[0.08] text-white" : "text-white/65 hover:text-white hover:bg-white/[0.06]",
+                                  ].join(" ")}
+                                  style={{ transitionTimingFunction: ease }}
+                                >
+                                  {conv.generating ? (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse flex-shrink-0" title="Generating…" />
+                                  ) : conv.unseen ? (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" title="New reply" />
+                                  ) : (
+                                    <span className="w-1.5 h-1.5 flex-shrink-0" />
+                                  )}
+                                  <span className={`truncate flex-1 leading-snug ${conv.unseen && !isActive ? "font-medium text-white/90" : ""}`}>
+                                    {conv.title}
+                                  </span>
                                 </span>
-                              </span>
-                            </Link>
+                              </Link>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setEditingId(conv.id);
+                                  setEditValue(conv.title);
+                                }}
+                                title="Rename"
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-white/40 opacity-0 group-hover/conv:opacity-100 hover:text-white/80 hover:bg-white/[0.08] transition-all"
+                              >
+                                <Pencil size={11} />
+                              </button>
+                            </div>
                           );
                         })
                       )

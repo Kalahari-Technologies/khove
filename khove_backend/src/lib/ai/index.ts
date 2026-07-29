@@ -7,6 +7,7 @@ import { assembleSystemPrompt, pruneConversationHistory } from "./context";
 import type { ChatMessage } from "./context";
 import { getUserMemory, updateUserMemory, shouldUpdateMemory } from "./memory";
 import { getToolsForContext } from "./tools";
+import { generateTitle } from "./title";
 import { hasFeature } from "@backend/lib/billing/plans";
 import { labelForTool } from "@backend/lib/ai/tool-labels";
 
@@ -32,6 +33,7 @@ export type ChatStreamEvent =
   | { t: "step"; tool: string; label: string; detail?: string; category: string; status: "running" | "done" }
   | { t: "thought"; text: string; strip?: boolean }
   | { t: "text"; delta: string }
+  | { t: "title"; title: string }
   | { t: "blocked"; response: string }
   | { t: "error"; message: string }
   | { t: "done"; model: string };
@@ -244,11 +246,23 @@ export async function streamAIConversation(
     { role: "user", content: newMessage, timestamp: now },
     { role: "assistant", content: finalText, timestamp: now, steps: process },
   ];
+  // On the first exchange, generate a proper AI title (cheapest model); otherwise
+  // keep the existing one. Runs after the answer has fully streamed.
+  const isFirstExchange = history.filter((m) => m.role !== "system").length === 0;
+  let title = conversation?.title ?? newMessage.slice(0, 60);
+  if (isFirstExchange && finalText) {
+    const aiTitle = await generateTitle(newMessage, finalText);
+    if (aiTitle) {
+      title = aiTitle;
+      write({ t: "title", title }); // update the sidebar item live
+    }
+  }
+
   await db.conversation.update({
     where: { id: convId },
     data: {
       messages: updatedMessages as unknown as Prisma.InputJsonValue,
-      title: conversation?.title ?? newMessage.slice(0, 60),
+      title,
       updatedAt: new Date(),
     },
   });

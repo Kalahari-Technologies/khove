@@ -45,6 +45,7 @@ interface ConversationsCtx {
   sending: boolean;
   send: (text: string) => void;
   markRead: (id: string) => void;
+  rename: (id: string, title: string) => void;
 }
 
 const Ctx = createContext<ConversationsCtx | null>(null);
@@ -58,6 +59,7 @@ export function useConversations(): ConversationsCtx {
       sending: false,
       send: () => {},
       markRead: () => {},
+      rename: () => {},
     }
   );
 }
@@ -76,6 +78,7 @@ export function ConversationsProvider({
   const searchParams = useSearchParams();
   const backendFetch = useBackendFetch();
   const markReadMut = trpc.conversation.markRead.useMutation();
+  const renameMut = trpc.conversation.rename.useMutation();
 
   const onChat = !!pathname && /\/chat\/?$/.test(pathname);
   const activeId = onChat ? searchParams.get("conversationId") : null;
@@ -125,6 +128,16 @@ export function ConversationsProvider({
       markReadMut.mutate({ id });
     },
     [markReadMut],
+  );
+
+  const rename = useCallback(
+    (id: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+      setList((l) => l.map((c) => (c.id === id ? { ...c, title: trimmed } : c)));
+      renameMut.mutate({ id, title: trimmed });
+    },
+    [renameMut],
   );
 
   useEffect(() => {
@@ -208,6 +221,11 @@ export function ConversationsProvider({
                 // A stripped thought was streamed into the answer first — remove it.
                 assistantText: e.strip ? s.assistantText.replace(text, "").replace(/^\s+/, "") : s.assistantText,
               }));
+            } else if (t === "title") {
+              const newTitle = e.title as string;
+              if (realId && newTitle) {
+                setList((prev) => prev.map((c) => (c.id === realId ? { ...c, title: newTitle } : c)));
+              }
             } else if (t === "text") {
               patchStream(key, (s) => ({ ...s, assistantText: s.assistantText + (e.delta as string) }));
             } else if (t === "blocked") {
@@ -270,8 +288,8 @@ export function ConversationsProvider({
   const sending = activeStream?.status === "streaming";
 
   const value = useMemo<ConversationsCtx>(
-    () => ({ list, activeId, activeStream, sending, send, markRead }),
-    [list, activeId, activeStream, sending, send, markRead],
+    () => ({ list, activeId, activeStream, sending, send, markRead, rename }),
+    [list, activeId, activeStream, sending, send, markRead, rename],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

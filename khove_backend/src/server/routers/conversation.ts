@@ -29,10 +29,29 @@ export const conversationRouter = router({
   markRead: workspaceWriteProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await db.conversation.updateMany({
-        where: { id: input.id, userId: ctx.user.id, workspaceId: ctx.workspace.id },
-        data: { lastReadAt: new Date() },
-      });
+      // Raw UPDATE so we DON'T trigger @updatedAt — a normal Prisma update would
+      // bump updatedAt to the write time, pushing it past lastReadAt and leaving
+      // the conversation permanently "unseen" (updatedAt > lastReadAt).
+      await db.$executeRaw`
+        UPDATE "Conversation"
+        SET "lastReadAt" = NOW()
+        WHERE "id" = ${input.id}
+          AND "userId" = ${ctx.user.id}
+          AND "workspaceId" = ${ctx.workspace.id}`;
       return { ok: true };
+    }),
+
+  /** Rename a conversation (user-set title). */
+  rename: workspaceWriteProcedure
+    .input(z.object({ id: z.string(), title: z.string().trim().min(1).max(120) }))
+    .mutation(async ({ ctx, input }) => {
+      // Raw UPDATE — renaming shouldn't mark the conversation unread either.
+      await db.$executeRaw`
+        UPDATE "Conversation"
+        SET "title" = ${input.title}
+        WHERE "id" = ${input.id}
+          AND "userId" = ${ctx.user.id}
+          AND "workspaceId" = ${ctx.workspace.id}`;
+      return { ok: true, title: input.title };
     }),
 });
