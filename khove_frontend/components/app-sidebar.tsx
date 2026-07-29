@@ -12,7 +12,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   Plus,
   Search,
   Filter,
@@ -20,6 +19,8 @@ import {
   LayoutGrid,
   List,
   SquareKanban,
+  GitPullRequest,
+  CircleDot,
   Users,
   CalendarDays,
   Pencil,
@@ -195,17 +196,11 @@ function getSections(section: string, slug: string): { title: string; sections: 
       title: "GitHub",
       sections: [
         {
-          title: "Quick Actions",
-          items: [
-            { label: "Connect GitHub", icon: Plus, action: true },
-          ],
-        },
-        {
           title: "Views",
           items: [
             { label: "Dashboard", href: wsHref(slug, "/github"), icon: LayoutGrid },
-            { label: "Pull requests", href: wsHref(slug, "/github/prs"), icon: List },
-            { label: "Issues", href: wsHref(slug, "/github/issues"), icon: Clock },
+            { label: "Pull requests", href: wsHref(slug, "/github/prs"), icon: GitPullRequest },
+            { label: "Issues", href: wsHref(slug, "/github/issues"), icon: CircleDot },
           ],
         },
       ],
@@ -250,12 +245,6 @@ function getSections(section: string, slug: string): { title: string; sections: 
             { label: "Dashboard", href: wsHref(slug, "/jira"), icon: LayoutGrid },
             { label: "Board", href: wsHref(slug, "/jira/board"), icon: SquareKanban },
             { label: "List", href: wsHref(slug, "/jira/list"), icon: List },
-          ],
-        },
-        {
-          title: "About",
-          items: [
-            { label: "Khove syncs your Jira issues and can create, comment, and transition them from chat.", sub: "placeholder" },
           ],
         },
       ],
@@ -412,10 +401,8 @@ function DetailPanel({
   onCreateWorkspace: () => void;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { list: conversations, activeId, rename } = useConversations();
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(["Quick Actions", "Views", "Suggested", "Recent"])
-  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const commitRename = () => {
@@ -424,17 +411,10 @@ function DetailPanel({
   };
   const { title, sections } = getSections(activeSection, slug);
 
-  const toggleSection = (name: string) =>
-    setExpandedSections((prev) => {
-      const next = new Set(prev);
-      next.has(name) ? next.delete(name) : next.add(name);
-      return next;
-    });
-
   return (
     <aside
       className="relative flex flex-col flex-shrink-0 bg-[#0a0a0a] border-r border-white/[0.07] overflow-hidden transition-all duration-[200ms]"
-      style={{ width: isCollapsed ? "0px" : "250px", transitionTimingFunction: ease }}
+      style={{ width: isCollapsed ? "0px" : "264px", transitionTimingFunction: ease }}
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.015] to-transparent" />
 
@@ -449,8 +429,8 @@ function DetailPanel({
         </div>
 
         {/* Section header */}
-        <div className="flex items-center justify-between px-4 h-10 flex-shrink-0">
-          <span className="font-display font-semibold text-white text-[14px] tracking-tight truncate">
+        <div className="flex items-center justify-between px-4 h-11 flex-shrink-0">
+          <span className="font-display font-semibold text-white text-[15px] tracking-tight truncate">
             {title}
           </span>
           <button
@@ -459,16 +439,16 @@ function DetailPanel({
             style={{ transitionTimingFunction: ease }}
             aria-label="Collapse panel"
           >
-            <ChevronLeft size={13} strokeWidth={2} />
+            <ChevronLeft size={14} strokeWidth={2} />
           </button>
         </div>
 
         {/* Search */}
         {(activeSection === "chat" || activeSection === "tasks") && (
-          <div className="px-3 mt-3 pb-3 flex-shrink-0">
-            <div className="flex items-center gap-2 px-3 h-8 rounded-lg bg-white/[0.05] border border-white/[0.09] hover:border-white/[0.15] transition-colors duration-[120ms]">
-              <Search size={12} strokeWidth={2} className="text-white/40 flex-shrink-0" />
-              <span className="text-[12px] text-white/35 font-sans select-none">
+          <div className="px-3 pb-2 flex-shrink-0">
+            <div className="flex items-center gap-2 px-3 h-9 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] transition-colors duration-[120ms]">
+              <Search size={13} strokeWidth={2} className="text-white/35 flex-shrink-0" />
+              <span className="text-[12.5px] text-white/30 font-sans select-none">
                 {activeSection === "chat" ? "Search conversations…" : "Filter tasks…"}
               </span>
             </div>
@@ -476,34 +456,17 @@ function DetailPanel({
         )}
 
         {/* Sections */}
-        <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-2.5 pb-4">
           {sections.map((section) => {
-            const hasTitle = !!section.title;
-            const isExpanded = !hasTitle || expandedSections.has(section.title!);
-
             return (
-              <div key={section.title ?? "default"}>
-                {hasTitle && (
-                  <button
-                    onClick={() => toggleSection(section.title!)}
-                    className="flex items-center justify-between w-full px-2 py-1 group"
-                  >
-                    <span className="text-[10px] font-semibold tracking-widest uppercase text-white/45 group-hover:text-white/70 transition-colors duration-[120ms]">
-                      {section.title}
-                    </span>
-                    <ChevronDown
-                      size={11}
-                      strokeWidth={2.5}
-                      className={[
-                        "text-white/30 group-hover:text-white/55 transition-all duration-[120ms]",
-                        isExpanded ? "rotate-0" : "-rotate-90",
-                      ].join(" ")}
-                      style={{ transitionTimingFunction: ease }}
-                    />
-                  </button>
+              <div key={section.title ?? "default"} className="mb-1">
+                {section.title && (
+                  <div className="px-2.5 pt-3 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-white/35">
+                    {section.title}
+                  </div>
                 )}
 
-                {isExpanded && (
+                {(
                   <div className="mt-0.5 space-y-0.5">
                     {section.title === "Recent" && activeSection === "chat" ? (
                       conversations.length === 0 ? (
@@ -535,10 +498,9 @@ function DetailPanel({
                               <Link href={wsHref(slug, `/chat?conversationId=${conv.id}`)}>
                                 <span
                                   className={[
-                                    "flex items-center gap-2 w-full px-2 py-[7px] pr-7 rounded-md text-[13px] font-sans cursor-pointer transition-all duration-[120ms]",
-                                    isActive ? "bg-white/[0.08] text-white" : "text-white/65 hover:text-white hover:bg-white/[0.06]",
+                                    "flex items-center gap-2 w-full px-2.5 py-2 pr-7 rounded-lg text-[13px] font-sans cursor-pointer transition-colors duration-[120ms]",
+                                    isActive ? "bg-white/[0.07] text-white" : "text-white/60 hover:text-white hover:bg-white/[0.045]",
                                   ].join(" ")}
-                                  style={{ transitionTimingFunction: ease }}
                                 >
                                   {conv.generating ? (
                                     <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse flex-shrink-0" title="Generating…" />
@@ -581,21 +543,29 @@ function DetailPanel({
                           );
                         }
 
+                        const active = !!item.href && pathname === item.href;
                         const inner = (
                           <span
                             className={[
-                              "flex items-center gap-2.5 w-full px-2 py-[7px] rounded-md text-[13px] font-sans transition-all duration-[120ms] group",
-                              item.action
-                                ? "text-white hover:bg-white/[0.08] cursor-pointer"
-                                : "text-white/75 hover:text-white hover:bg-white/[0.06] cursor-pointer",
+                              "flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-[13px] font-sans transition-colors duration-[120ms] group",
+                              active
+                                ? "bg-white/[0.07] text-white"
+                                : item.action
+                                  ? "text-white/85 hover:bg-white/[0.06] cursor-pointer"
+                                  : "text-white/65 hover:text-white hover:bg-white/[0.045] cursor-pointer",
                             ].join(" ")}
-                            style={{ transitionTimingFunction: ease }}
                           >
                             {Icon && (
                               <Icon
-                                size={13}
+                                size={15}
                                 strokeWidth={1.75}
-                                className={item.action ? "text-white/70 group-hover:text-white" : "text-white/45 group-hover:text-white/70"}
+                                className={
+                                  active
+                                    ? "text-white"
+                                    : item.action
+                                      ? "text-white/70 group-hover:text-white"
+                                      : "text-white/45 group-hover:text-white/70"
+                                }
                               />
                             )}
                             <span className="truncate flex-1 leading-snug">{item.label}</span>
