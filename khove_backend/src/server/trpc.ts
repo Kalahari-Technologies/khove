@@ -2,6 +2,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { getAuth } from "@clerk/express";
 import type { Request } from "express";
 import { db } from "@backend/lib/db";
+import { getCurrentUser } from "@backend/lib/auth";
 import { canWriteWorkspace, canAdminWorkspace } from "@backend/lib/workspace/authorization";
 import superjson from "superjson";
 import type { User, Workspace, WorkspaceRole } from "@prisma/client";
@@ -31,7 +32,16 @@ export async function createTRPCContext(opts: {
     return { user: null, clerkId: null, workspace: null, workspaceRole: null };
   }
 
-  const user = await db.user.findUnique({ where: { clerkId } });
+  // Provision on read: if the Clerk session exists but the DB row doesn't yet
+  // (the `user.created` webhook is async and can lose the race with the browser
+  // redirect — or be unconfigured), upsert the user + ensure the personal
+  // workspace here, exactly as the Express `getCurrentUser` path does. Without
+  // this, a fresh signup's first RSC/tRPC call (e.g. `/home` → workspace.me)
+  // throws UNAUTHORIZED, and `/home` bounces to `/login` → back to `/home` in a
+  // loop. This is especially load-bearing for GitHub/Atlassian social sign-ups,
+  // which arrive with a provider-supplied `username` and so skip the onboarding
+  // form — the only other place email signups get lazily provisioned.
+  const user = await getCurrentUser(opts.req);
   if (!user) {
     return { user: null, clerkId, workspace: null, workspaceRole: null };
   }
