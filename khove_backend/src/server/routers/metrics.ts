@@ -114,6 +114,45 @@ export const metricsRouter = router({
     return computeCrossToolIntegrity(ctx.workspace.id);
   }),
 
+  /**
+   * Cross-tool activity timeline — the Signal store folded into a chronological,
+   * provider-agnostic feed, joined to each work item's title/url. This is the
+   * cockpit centerpiece: one stream showing Jira + GitHub events in order.
+   */
+  activity: workspaceProcedure
+    .input(z.object({ limit: z.number().min(10).max(200).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit ?? 80;
+      const signals = await db.signal.findMany({
+        where: { workspaceId: ctx.workspace.id },
+        orderBy: { occurredAt: "desc" },
+        take: limit,
+      });
+      const keys = [...new Set(signals.map((s) => s.entityKey))];
+      const tasks = keys.length
+        ? await db.task.findMany({
+            where: { workspaceId: ctx.workspace.id, externalId: { in: keys } },
+            select: { externalId: true, title: true, externalUrl: true },
+          })
+        : [];
+      const byKey = new Map(tasks.map((t) => [t.externalId ?? "", t]));
+      return signals.map((s) => {
+        const t = byKey.get(s.entityKey);
+        return {
+          id: s.id,
+          provider: s.provider,
+          kind: s.kind,
+          entityType: s.entityType,
+          entityKey: s.entityKey,
+          title: t?.title ?? null,
+          url: t?.externalUrl ?? null,
+          source: s.source,
+          actor: s.actorKey,
+          occurredAt: s.occurredAt.toISOString(),
+        };
+      });
+    }),
+
   /** Generate a weekly status report (AI, cheapest model). Mutation — user-triggered. */
   statusReport: workspaceProcedure.mutation(async ({ ctx }) => {
     return generateStatusReport(ctx.workspace.id);

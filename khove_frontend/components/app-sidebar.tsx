@@ -8,6 +8,7 @@ import { useConversations } from "@/lib/conversations/conversations-context";
 import {
   Bot,
   Target,
+  Waypoints,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -83,6 +84,7 @@ interface DetailSection {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "chat",     path: "/chat",     assets: ["/assets/chat.svg", "/assets/chat-outlined.svg"],         label: "Chat",     locked: false, glowColor: "#8B5CF6" },       // violet
+  { id: "connections", path: "/connections", icon: Waypoints, label: "Connections", locked: false, glowColor: "#D946EF" }, // fuchsia
   { id: "tasks",    path: "/tasks",    assets: ["/assets/tasks.svg", "/assets/tasks-outlined.svg"],       label: "Tasks",    locked: false, glowColor: "#0EA5E9" },       // ocean blue
   { id: "planner",  path: "/planner",  assets: ["/assets/planner.svg", "/assets/planner-outlined.svg"],   label: "Planner",  locked: false, glowColor: "#F43F5E" },       // rose
   { id: "github",   path: "/github",   assets: ["/assets/github.svg", "/assets/github.svg"],             label: "GitHub",   locked: false, glowColor: "#10B981" },       // emerald

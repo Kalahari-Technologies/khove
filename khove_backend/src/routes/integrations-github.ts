@@ -12,6 +12,7 @@ import {
   getInstallationAccount,
 } from "@backend/lib/integrations/github";
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
+import { performGitHubSync } from "@backend/lib/inngest/functions/github-sync";
 import { publishEvent } from "@backend/lib/realtime";
 import { inngest } from "@backend/lib/inngest";
 import { redis } from "@backend/lib/redis";
@@ -143,7 +144,13 @@ router.get("/callback", async (req, res) => {
     await inngest.send({
       name: "github/initial-sync",
       data: { userId, workspaceId },
-    });
+    }).catch(() => {});
+    // Also sync inline so repos/PRs are present the moment the browser lands, even
+    // if the Inngest runtime isn't processing events. Best-effort (don't block the
+    // redirect on a failure — the sync-status banner will report it).
+    await performGitHubSync(workspaceId, userId).catch((e) =>
+      console.error("[GitHub connect] inline sync failed:", e instanceof Error ? e.message : e),
+    );
     await publishEvent(userId, { type: "refresh" }).catch(() => {});
 
     return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?connected=true`);
@@ -201,8 +208,15 @@ router.post("/resync", async (req, res) => {
   });
   if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
 
-  await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } });
-  return res.json({ success: true });
+  // Fire the background job AND run the sync inline so data lands + the real outcome
+  // is returned even if the Inngest runtime isn't processing events.
+  await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } }).catch(() => {});
+  try {
+    const result = await performGitHubSync(workspaceId, integration.userId);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(502).json({ success: false, error: err instanceof Error ? err.message : "GitHub sync failed" });
+  }
 });
 
 // GET /api/integrations/github/sync-status?workspaceId=xxx — persistent sync state.

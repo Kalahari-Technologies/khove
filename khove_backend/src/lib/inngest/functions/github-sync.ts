@@ -136,22 +136,17 @@ function mapCiStatus(raw: string | null | undefined): "success" | "failure" | "p
 // Initial sync — dispatched after OAuth callback
 // ---------------------------------------------------------------------------
 
-export const initialGitHubSync = inngest.createFunction(
-  {
-    id: "github-initial-sync",
-    concurrency: { limit: 1, key: "event.data.workspaceId" },
-    triggers: [{ event: "github/initial-sync" }],
-  },
-  async ({ event, step }) => {
-    const { userId, workspaceId } = event.data as { userId: string; workspaceId: string };
+export interface GitHubSyncOutcome {
+  prsCreated: number;
+  issuesCreated: number;
+  backfillSignals: number;
+  reposSynced: number;
+  reposAccessible: number;
+}
 
-    // Persistent sync status (survives reloads) — the dashboard shows a banner
-    // until this clears, so nothing is acted on mid-sync. Mirrors calendar.
-    await step.run("mark-syncing", async () => {
-      await redis.set(`gh-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
-    });
-
-    const result = await step.run("sync-github-data", async () => {
+// Core GitHub sync body — writes Tasks + Signals + Entities and prunes out-of-scope
+// repos. (Body kept verbatim from the former sync-github-data step; over-indented.)
+async function syncGithubData(workspaceId: string, userId: string): Promise<GitHubSyncOutcome> {
       const defaultStatus =
         await db.workflowStatus.findFirst({
           where: { category: "NOT_STARTED", workspaceId, isDefault: true },
@@ -332,21 +327,45 @@ export const initialGitHubSync = inngest.createFunction(
       }
 
       return { prsCreated, issuesCreated, backfillSignals, reposSynced: scanned.length, reposAccessible: repos.length };
-    });
+}
 
-    await step.run("mark-done", async () => {
-      await redis
-        .set(
-          `gh-sync:${workspaceId}`,
-          JSON.stringify({ status: "done", at: new Date().toISOString(), ...result }),
-          { ex: 300 },
-        )
-        .catch(() => {});
-    });
-
-    await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "github-sync" });
-
+/**
+ * Run a GitHub sync INLINE (no Inngest) — used by the connect/resync HTTP routes so
+ * data lands (and the real outcome is returned) even when the Inngest runtime isn't
+ * processing background events. Mirrors performJiraSync.
+ */
+export async function performGitHubSync(workspaceId: string, userId: string): Promise<GitHubSyncOutcome> {
+  await redis.set(`gh-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
+  try {
+    const result = await syncGithubData(workspaceId, userId);
+    await redis
+      .set(`gh-sync:${workspaceId}`, JSON.stringify({ status: "done", at: new Date().toISOString(), ...result }), { ex: 300 })
+      .catch(() => {});
+    await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "github-sync" }).catch(() => {});
     return result;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "GitHub sync failed";
+    console.error(`[github-sync] inline sync failed for ${workspaceId}:`, message);
+    await redis
+      .set(
+        `gh-sync:${workspaceId}`,
+        JSON.stringify({ status: "error", message: message.slice(0, 300), at: new Date().toISOString() }),
+        { ex: 600 },
+      )
+      .catch(() => {});
+    throw err;
+  }
+}
+
+export const initialGitHubSync = inngest.createFunction(
+  {
+    id: "github-initial-sync",
+    concurrency: { limit: 1, key: "event.data.workspaceId" },
+    triggers: [{ event: "github/initial-sync" }],
+  },
+  async ({ event, step }) => {
+    const { userId, workspaceId } = event.data as { userId: string; workspaceId: string };
+    return await step.run("perform-sync", () => performGitHubSync(workspaceId, userId));
   },
 );
 
