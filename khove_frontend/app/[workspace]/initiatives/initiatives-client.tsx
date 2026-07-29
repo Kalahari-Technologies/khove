@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { trpc } from "@/lib/trpc/client";
@@ -17,6 +17,9 @@ import {
   TrendingDown,
   CalendarClock,
   Gauge,
+  FileText,
+  Copy,
+  X,
 } from "lucide-react";
 import { SectionCard, StatTile, Chip, ago, type Tone } from "@/components/integrations/insight-ui";
 import { BurnupChart } from "@/components/integrations/burnup-chart";
@@ -66,6 +69,7 @@ export function InitiativesClient({ workspaceId, threads }: { workspaceId: strin
   }, [threads]);
 
   const [selectedId, setSelectedId] = useState<string | null>(initiatives[0]?.id ?? threads[0]?.id ?? null);
+  const [reportOpen, setReportOpen] = useState(false);
   const selected = threads.find((t) => t.id === selectedId) ?? null;
 
   return (
@@ -80,6 +84,12 @@ export function InitiativesClient({ workspaceId, threads }: { workspaceId: strin
           <p className="text-[11.5px] text-white/40 mt-1 leading-relaxed">
             Threads with a target date. Khove folds GitHub merges into a delivery forecast.
           </p>
+          <button
+            onClick={() => setReportOpen(true)}
+            className="mt-3 flex items-center gap-1.5 w-full justify-center px-3 py-1.5 rounded-lg text-[12px] text-white/70 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white transition-colors"
+          >
+            <FileText size={12} /> Weekly update
+          </button>
         </div>
 
         {threads.length === 0 ? (
@@ -108,6 +118,70 @@ export function InitiativesClient({ workspaceId, threads }: { workspaceId: strin
             Select a thread to see its delivery forecast.
           </div>
         )}
+      </div>
+
+      {reportOpen && <StatusReportDialog onClose={() => setReportOpen(false)} />}
+    </div>
+  );
+}
+
+function StatusReportDialog({ onClose }: { onClose: () => void }) {
+  const gen = trpc.metrics.statusReport.useMutation();
+  const [copied, setCopied] = useState(false);
+
+  // Generate once on open.
+  useEffect(() => {
+    gen.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const report = gen.data?.report;
+  const s = gen.data?.sources;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={onClose}>
+      <div className="w-full max-w-xl rounded-2xl border border-white/[0.1] bg-[#0d0d0d] shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-5 pb-3">
+          <div className="flex items-center gap-2">
+            <FileText size={15} className="text-cyan-300/80" />
+            <h3 className="text-[15px] font-semibold text-white">Weekly update</h3>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <p className="px-5 text-[11.5px] text-white/40 -mt-1 mb-2">
+          Auto-drafted from the last 7 days across GitHub, tickets, and calendar. Evidence-only.
+        </p>
+
+        <div className="px-5 pb-3 max-h-[52vh] overflow-y-auto">
+          {gen.isPending ? (
+            <div className="flex items-center justify-center py-12 text-white/40">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
+          ) : (
+            <div className="text-[13.5px] text-white/85 leading-relaxed whitespace-pre-wrap font-sans">{report}</div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-3.5 border-t border-white/[0.07]">
+          <span className="text-[11px] text-white/35">
+            {s ? `${s.merged} merged · ${s.completed} done · ${s.meetings} meetings` : ""}
+          </span>
+          <button
+            disabled={!report}
+            onClick={() => {
+              if (report) {
+                navigator.clipboard.writeText(report).catch(() => {});
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }
+            }}
+            className="flex items-center gap-1.5 text-[12px] px-3 py-1.5 rounded-lg bg-white text-black font-medium hover:bg-white/90 transition-colors disabled:opacity-50"
+          >
+            <Copy size={12} /> {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
       </div>
     </div>
   );

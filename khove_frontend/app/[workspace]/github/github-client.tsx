@@ -381,6 +381,9 @@ export function GitHubClient({
         {/* Flow & delivery metrics (DORA-lite, folded from the Signal store) */}
         <FlowSection />
 
+        {/* Scope integrity — merged work not tied to a plan */}
+        <ScopeIntegritySection />
+
         {/* PR pipeline */}
         <SectionCard
           title="Pull request pipeline"
@@ -567,6 +570,49 @@ function FlowSection() {
               <div className="text-[11px] text-white/45 mb-1.5">Cycle time p50 — weekly</div>
               <LineTrend points={m.cycleTimeSeries} format={fmtHours} />
             </div>
+          </div>
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
+function ScopeIntegritySection() {
+  const q = trpc.metrics.scopeIntegrity.useQuery();
+  const d = q.data;
+  if (!d || d.merged === 0) return null;
+
+  const tone: Tone = d.plannedPct == null ? "neutral" : d.plannedPct >= 80 ? "good" : d.plannedPct >= 50 ? "warn" : "danger";
+  return (
+    <SectionCard
+      title="Scope integrity"
+      icon={<Link2 size={13} className="text-white/40" />}
+      action={<span className="text-[11px] text-white/30">last {Math.round(d.windowDays / 7)} weeks</span>}
+    >
+      <div className="flex items-center gap-3 mb-3">
+        <Chip tone={tone}>{d.plannedPct ?? 0}% planned</Chip>
+        <span className="text-[12px] text-white/45">
+          {d.planned}/{d.merged} merged PRs are tied to a thread · {d.unplanned} unplanned
+        </span>
+      </div>
+      {d.unplanned === 0 ? (
+        <p className="text-[12px] text-white/30 py-1">Every merge maps to a plan. 🎯</p>
+      ) : (
+        <>
+          <div className="text-[11px] text-white/45 mb-1.5">Merged without a linked thread</div>
+          <div className="space-y-0.5">
+            {d.unplannedItems.map((it) => (
+              <div key={it.entityKey} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400/70 flex-shrink-0" />
+                <span className="flex-1 text-[13px] text-white/75 truncate">{it.title}</span>
+                <span className="text-[10px] text-white/30">{ago(it.mergedAt)}</span>
+                {it.url && (
+                  <a href={it.url} target="_blank" rel="noopener noreferrer" className="text-white/20 hover:text-white/60 transition-colors">
+                    <ExternalLink size={11} />
+                  </a>
+                )}
+              </div>
+            ))}
           </div>
         </>
       )}
