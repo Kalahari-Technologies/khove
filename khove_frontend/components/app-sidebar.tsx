@@ -19,6 +19,7 @@ import {
   Clock,
   LayoutGrid,
   List,
+  SquareKanban,
   Users,
   CalendarDays,
   Pencil,
@@ -202,8 +203,9 @@ function getSections(section: string, slug: string): { title: string; sections: 
         {
           title: "Views",
           items: [
-            { label: "Pull Requests", href: wsHref(slug, "/github"), icon: List },
-            { label: "Issues", href: wsHref(slug, "/github"), icon: Clock },
+            { label: "Dashboard", href: wsHref(slug, "/github"), icon: LayoutGrid },
+            { label: "Pull requests", href: wsHref(slug, "/github/prs"), icon: List },
+            { label: "Issues", href: wsHref(slug, "/github/issues"), icon: Clock },
           ],
         },
       ],
@@ -245,9 +247,9 @@ function getSections(section: string, slug: string): { title: string; sections: 
         {
           title: "Views",
           items: [
-            { label: "All issues", href: wsHref(slug, "/jira"), icon: List },
-            { label: "In progress", href: wsHref(slug, "/jira?filter=in_progress"), icon: Clock },
-            { label: "Open bugs", href: wsHref(slug, "/jira?filter=bugs"), icon: Filter },
+            { label: "Dashboard", href: wsHref(slug, "/jira"), icon: LayoutGrid },
+            { label: "Board", href: wsHref(slug, "/jira/board"), icon: SquareKanban },
+            { label: "List", href: wsHref(slug, "/jira/list"), icon: List },
           ],
         },
         {
