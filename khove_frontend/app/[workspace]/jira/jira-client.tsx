@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
@@ -33,8 +33,7 @@ import {
   DistributionBar,
   BreakdownList,
   Chip,
-  SyncBanner,
-  useInitialSync,
+  IntegrationSyncScreen,
   ago,
   daysSince,
   type Tone,
@@ -128,23 +127,58 @@ export function JiraClient({
   const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>(null);
   const [drill, setDrill] = useState<DrillTarget | null>(null);
-  const syncing = useInitialSync(tasks.length > 0);
+  const [pollNonce, setPollNonce] = useState(0);
+
+  // Persistent sync status (server truth via Redis) — full-screen loader survives
+  // reloads until the sync finishes.
+  const [syncing, setSyncing] = useState(false);
+  const wasSyncing = useRef(false);
+  useEffect(() => {
+    if (!isConnected) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const res = await backendFetch(`/api/integrations/jira/sync-status?workspaceId=${workspaceId}`, {}, workspaceId);
+        const data = (await res.json()) as { status?: string };
+        if (!active) return;
+        if (data.status === "syncing") {
+          setSyncing(true);
+          setResyncing(false);
+          wasSyncing.current = true;
+          timer = setTimeout(poll, 3000);
+        } else {
+          setSyncing(false);
+          if (wasSyncing.current) {
+            wasSyncing.current = false;
+            router.refresh();
+          }
+        }
+      } catch {
+        if (active) timer = setTimeout(poll, 6000);
+      }
+    };
+    poll();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, workspaceId, pollNonce]);
 
   async function handleResync() {
     setResyncing(true);
+    setPollNonce((n) => n + 1);
     try {
       await backendFetch("/api/integrations/jira/resync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
       });
-      setTimeout(() => {
-        router.refresh();
-        setResyncing(false);
-      }, 4000);
     } catch {
       setResyncing(false);
     }
+    setTimeout(() => setResyncing(false), 25000);
   }
 
   const { issues, insights } = useMemo(() => {
@@ -223,6 +257,21 @@ export function JiraClient({
     );
   }
 
+  // Full-sized loading state (mirrors the planner) — persists across reloads while a
+  // sync runs, and covers re-sync + disconnect.
+  if (syncing || resyncing || disconnecting) {
+    const label = disconnecting
+      ? "Disconnecting Jira…"
+      : resyncing
+        ? "Re-syncing your Jira…"
+        : "Syncing your Jira issues…";
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <IntegrationSyncScreen label={label} sub={disconnecting ? "Clearing synced data." : undefined} />
+      </div>
+    );
+  }
+
   const open = insights.todo.length + insights.inProgress.length;
 
   const tiles: { key: Filter; label: string; value: number; tone: Tone; icon: typeof Clock }[] = [
@@ -297,8 +346,6 @@ export function JiraClient({
             </button>
           </div>
         </div>
-
-        {syncing && <SyncBanner label="Syncing your Jira issues…" />}
 
         {/* Attention strip */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">

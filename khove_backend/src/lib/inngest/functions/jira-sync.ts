@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { inngest } from "@backend/lib/inngest";
 import { db } from "@backend/lib/db";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
+import { redis } from "@backend/lib/redis";
 import {
   searchIssues,
   mapJiraStatusCategory,
@@ -199,6 +200,12 @@ export const jiraInitialSync = inngest.createFunction(
   async ({ event, step }) => {
     const { userId, workspaceId } = event.data as { userId: string; workspaceId: string };
 
+    // Persistent sync status (survives reloads) — the dashboard shows a full-screen
+    // loader until this clears. Mirrors GitHub + calendar.
+    await step.run("mark-syncing", async () => {
+      await redis.set(`jira-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
+    });
+
     const result = await step.run("sync-issues", async () =>
       syncJiraIssues(workspaceId, userId, await scopedJql(workspaceId, "updated >= -30d")),
     );
@@ -255,6 +262,12 @@ export const jiraInitialSync = inngest.createFunction(
         if (keys.length) await db.signal.deleteMany({ where: { workspaceId, provider: "JIRA", entityKey: { in: keys } } });
       }
       return { pruned: stale.length };
+    });
+
+    await step.run("mark-done", async () => {
+      await redis
+        .set(`jira-sync:${workspaceId}`, JSON.stringify({ status: "done", at: new Date().toISOString(), ...result }), { ex: 300 })
+        .catch(() => {});
     });
 
     await publishWorkspaceEvent(workspaceId, { type: "task.created", taskId: "jira-sync" });
@@ -418,6 +431,7 @@ export const jiraDisconnectCleanup = inngest.createFunction(
       await db.task.deleteMany({ where: { workspaceId, source: { has: "JIRA" } } });
       await db.signal.deleteMany({ where: { workspaceId, provider: "JIRA" } });
       await db.entity.deleteMany({ where: { workspaceId, provider: "JIRA" } });
+      await redis.del(`jira-sync:${workspaceId}`).catch(() => {});
     });
 
     await publishWorkspaceEvent(workspaceId, { type: "task.updated", taskId: "jira-sync" });

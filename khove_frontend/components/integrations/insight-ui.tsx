@@ -241,6 +241,17 @@ export function useInitialSync(hasData: boolean): boolean {
   return syncing;
 }
 
+/** Full-sized loading screen (sync / re-sync / disconnect) — mirrors the planner. */
+export function IntegrationSyncScreen({ label, sub }: { label: string; sub?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 px-6 text-center">
+      <div className="w-9 h-9 border-2 border-white/15 border-t-white/70 rounded-full animate-spin" />
+      <p className="text-[14px] text-white/60">{label}</p>
+      <p className="text-[12px] text-white/25">{sub ?? "This may take a moment. The page will update automatically."}</p>
+    </div>
+  );
+}
+
 /** A thin "syncing your data" banner shown while the first sync runs. */
 export function SyncBanner({ label }: { label: string }) {
   return (

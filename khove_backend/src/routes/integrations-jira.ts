@@ -13,6 +13,7 @@ import {
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { publishEvent } from "@backend/lib/realtime";
 import { inngest } from "@backend/lib/inngest";
+import { redis } from "@backend/lib/redis";
 import { env } from "@backend/env";
 
 const router = Router();
@@ -157,6 +158,24 @@ router.post("/resync", async (req, res) => {
 
   await inngest.send({ name: "jira/initial-sync", data: { userId: integration.userId, workspaceId } });
   return res.json({ success: true });
+});
+
+// GET /api/integrations/jira/sync-status?workspaceId=xxx — persistent sync state.
+router.get("/sync-status", async (req, res) => {
+  const user = await getCurrentUser(req);
+  if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+  const workspaceId = req.query.workspaceId as string | undefined;
+  if (!workspaceId) return res.status(400).json({ error: "workspaceId required" });
+
+  const raw = await redis.get<string>(`jira-sync:${workspaceId}`);
+  if (!raw) return res.json({ status: "idle" });
+  if (raw === "syncing") return res.json({ status: "syncing" });
+  try {
+    return res.json(typeof raw === "string" ? JSON.parse(raw) : raw);
+  } catch {
+    return res.json({ status: raw });
+  }
 });
 
 // GET /api/integrations/jira/projects?workspaceId=xxx — projects + current selection.

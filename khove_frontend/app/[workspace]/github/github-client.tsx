@@ -25,7 +25,7 @@ import {
   SectionCard,
   BreakdownList,
   Chip,
-  SyncBanner,
+  IntegrationSyncScreen,
   ago,
   daysSince,
   type Tone,
@@ -145,9 +145,10 @@ export function GitHubClient({
   const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Bucket | null>(null);
   const [drill, setDrill] = useState<GhDrillTarget | null>(null);
+  const [pollNonce, setPollNonce] = useState(0);
 
-  // Persistent sync status (server truth via Redis) — the banner survives reloads
-  // and shows until the sync actually finishes, so nothing is acted on mid-sync.
+  // Persistent sync status (server truth via Redis) — the full-screen loader
+  // survives reloads and shows until the sync actually finishes.
   const [syncing, setSyncing] = useState(false);
   const wasSyncing = useRef(false);
   useEffect(() => {
@@ -161,6 +162,7 @@ export function GitHubClient({
         if (!active) return;
         if (data.status === "syncing") {
           setSyncing(true);
+          setResyncing(false); // the real sync has taken over the loader
           wasSyncing.current = true;
           timer = setTimeout(poll, 3000);
         } else {
@@ -180,7 +182,7 @@ export function GitHubClient({
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, workspaceId]);
+  }, [isConnected, workspaceId, pollNonce]);
 
   const displayLogin = account?.login ?? githubLogin;
   const displayAvatar = account?.avatarUrl || githubAvatar;
@@ -272,20 +274,33 @@ export function GitHubClient({
 
   async function handleResync() {
     setResyncing(true);
+    setPollNonce((n) => n + 1); // restart the status poll so it catches the new sync
     try {
       await backendFetch("/api/integrations/github/resync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workspaceId }),
       });
-      // The sync runs in the background; refresh shortly to pick up new data.
-      setTimeout(() => {
-        router.refresh();
-        setResyncing(false);
-      }, 4000);
     } catch {
       setResyncing(false);
     }
+    // Safety net if the sync-status never reports (poll normally clears this).
+    setTimeout(() => setResyncing(false), 25000);
+  }
+
+  // Full-sized loading state (mirrors the planner) — persists across reloads while a
+  // sync runs (Redis-backed), and covers re-sync + disconnect.
+  if (syncing || resyncing || disconnecting) {
+    const label = disconnecting
+      ? "Disconnecting GitHub…"
+      : resyncing
+        ? "Re-syncing your GitHub…"
+        : "Syncing your GitHub…";
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <IntegrationSyncScreen label={label} sub={disconnecting ? "Clearing synced data." : undefined} />
+      </div>
+    );
   }
 
   const tiles: { key: Bucket; label: string; value: number; tone: Tone; icon: typeof Clock }[] = [
@@ -346,8 +361,6 @@ export function GitHubClient({
             </button>
           </div>
         </div>
-
-        {syncing && <SyncBanner label="Syncing your pull requests and issues from GitHub…" />}
 
         {/* Attention strip */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
