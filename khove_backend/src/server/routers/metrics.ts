@@ -4,7 +4,8 @@ import { db } from "@backend/lib/db";
 import { computeFlowMetrics } from "@backend/lib/intelligence/flow";
 import { computeScopeIntegrity } from "@backend/lib/intelligence/correlate";
 import { generateStatusReport } from "@backend/lib/intelligence/status-report";
-import { computeSprints } from "@backend/lib/intelligence/jira-sprints";
+import { computeSprints, computeSprintBurndown } from "@backend/lib/intelligence/jira-sprints";
+import { computeEpics, computeReleases, entityIssues } from "@backend/lib/intelligence/jira-entities";
 
 export const metricsRouter = router({
   /** Flow metrics (cycle time, throughput, DORA-lite) folded from the Signal store. */
@@ -47,6 +48,30 @@ export const metricsRouter = router({
   sprints: workspaceProcedure.query(async ({ ctx }) => {
     return computeSprints(ctx.workspace.id);
   }),
+
+  /** Sprint burndown — remaining points per day vs. the ideal line. */
+  sprintBurndown: workspaceProcedure
+    .input(z.object({ sprintName: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return computeSprintBurndown(ctx.workspace.id, input.sprintName);
+    }),
+
+  /** Epic progress — % done + points, per epic. */
+  epics: workspaceProcedure.query(async ({ ctx }) => {
+    return computeEpics(ctx.workspace.id);
+  }),
+
+  /** Release readiness — issues done vs total, per fix version. */
+  releases: workspaceProcedure.query(async ({ ctx }) => {
+    return computeReleases(ctx.workspace.id);
+  }),
+
+  /** Drill-down — the Jira issues in a sprint / epic / release. */
+  entityIssues: workspaceProcedure
+    .input(z.object({ kind: z.enum(["SPRINT", "EPIC", "RELEASE"]), key: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return entityIssues(ctx.workspace.id, input.kind, input.key);
+    }),
 
   /** Generate a weekly status report (AI, cheapest model). Mutation — user-triggered. */
   statusReport: workspaceProcedure.mutation(async ({ ctx }) => {

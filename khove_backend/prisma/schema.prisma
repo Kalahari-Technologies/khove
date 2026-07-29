@@ -185,6 +185,7 @@ model Workspace {
   agentActions      AgentAction[]
   auditLogs         AuditLog[]
   signals           Signal[]
+  entities          Entity[]
 }
 
 model WorkspaceMember {
@@ -533,4 +534,45 @@ model Signal {
   @@unique([workspaceId, provider, kind, entityKey, occurredAt]) // idempotent ingest
   @@index([workspaceId, provider, occurredAt])
   @@index([workspaceId, entityKey])
+}
+
+// ─────────────────────────────────────────────
+// The context graph — first-class CONTAINERS (repos/projects/sprints/epics/
+// releases/components/people) that give work items meaning. Tasks reference these
+// so we can show epic progress, sprint burndown, release readiness. See design §10.
+// ─────────────────────────────────────────────
+
+enum EntityKind {
+  REPOSITORY
+  PROJECT
+  SPRINT
+  EPIC
+  RELEASE
+  MILESTONE
+  COMPONENT
+  BOARD
+  LABEL
+  PERSON
+  TEAM
+}
+
+model Entity {
+  id               String              @id @default(cuid())
+  workspaceId      String
+  provider         IntegrationProvider
+  kind             EntityKind
+  externalId       String // stable, e.g. "jira-sprint-42" | "jira-epic-ENG-1" | "jira-release-PROJ-1.2"
+  key              String? // human key (sprint name, epic key, project key, repo full name)
+  name             String
+  url              String?
+  status           String? // sprint: active/closed/future; release: released/unreleased
+  parentExternalId String? // hierarchy: sprint→board, epic→project, story→epic
+  metadata         Json                @default("{}")
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, provider, externalId])
+  @@index([workspaceId, kind])
 }

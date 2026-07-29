@@ -19,9 +19,13 @@ import {
   Activity,
   Gauge,
   SlidersHorizontal,
+  X,
+  ChevronRight,
+  Layers,
+  Rocket,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import { BarTrend, LineTrend, fmtHours } from "@/components/integrations/metric-charts";
+import { BarTrend, LineTrend, Burndown, fmtHours } from "@/components/integrations/metric-charts";
 import { JiraScopeDialog } from "@/components/integrations/jira-scope-dialog";
 import {
   StatTile,
@@ -123,6 +127,7 @@ export function JiraClient({
   const [resyncing, setResyncing] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>(null);
+  const [drill, setDrill] = useState<DrillTarget | null>(null);
   const syncing = useInitialSync(tasks.length > 0);
 
   async function handleResync() {
@@ -311,7 +316,13 @@ export function JiraClient({
         </div>
 
         {/* Sprint intelligence */}
-        <JiraSprintSection />
+        <JiraSprintSection onDrill={setDrill} />
+
+        {/* Epics + releases (click to drill in) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <JiraEpicsSection onDrill={setDrill} />
+          <JiraReleasesSection onDrill={setDrill} />
+        </div>
 
         {/* Status distribution + breakdowns */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -376,69 +387,211 @@ export function JiraClient({
       </div>
 
       {scopeOpen && <JiraScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
+      {drill && <EntityDrilldown workspaceSlug={workspace.slug} target={drill} onClose={() => setDrill(null)} />}
     </div>
   );
 }
 
-function JiraSprintSection() {
-  const q = trpc.metrics.sprints.useQuery();
-  const sprints = (q.data ?? []).filter((s) => s.state === "active" || s.state === "future").slice(0, 2);
-  if (sprints.length === 0) return null;
+interface DrillTarget {
+  kind: "SPRINT" | "EPIC" | "RELEASE";
+  key: string;
+  title: string;
+}
+
+const CAT_DOT: Record<string, string> = { todo: "#64748b", in_progress: "#3b82f6", done: "#10b981" };
+
+function EntityDrilldown({ workspaceSlug, target, onClose }: { workspaceSlug: string; target: DrillTarget; onClose: () => void }) {
+  const q = trpc.metrics.entityIssues.useQuery({ kind: target.kind, key: target.key });
+  const issues = q.data ?? [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl border border-white/[0.1] bg-[#0d0d0d] shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-5 pb-3">
+          <div>
+            <span className="text-[10px] font-semibold tracking-widest uppercase text-white/35">{target.kind.toLowerCase()}</span>
+            <h3 className="text-[15px] font-semibold text-white leading-tight">{target.title}</h3>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="max-h-[56vh] overflow-y-auto px-3 pb-3">
+          {q.isLoading ? (
+            <div className="flex items-center justify-center py-12 text-white/40">
+              <Loader2 size={18} className="animate-spin" />
+            </div>
+          ) : issues.length === 0 ? (
+            <p className="text-[12px] text-white/35 px-2 py-6 text-center">No issues.</p>
+          ) : (
+            issues.map((i) => (
+              <a
+                key={i.id}
+                href={`/${workspaceSlug}/tasks/${i.id}`}
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/[0.04] transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: CAT_DOT[(i.category ?? "").toLowerCase() === "done" ? "done" : (i.category ?? "").toLowerCase() === "in_progress" ? "in_progress" : "todo"] }} />
+                {i.issueKey && <span className="text-[10.5px] font-mono text-white/35 flex-shrink-0 w-[68px] truncate">{i.issueKey}</span>}
+                <span className="flex-1 text-[13px] text-white/80 truncate">{i.title.replace(/^\[[^\]]+\]\s*/, "")}</span>
+                {i.storyPoints != null && <span className="text-[10px] text-white/40 tabular-nums flex-shrink-0">{i.storyPoints}pt</span>}
+                {i.status && <span className="hidden sm:inline text-[10px] text-white/35 flex-shrink-0">{i.status}</span>}
+              </a>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ pct, color = "bg-indigo-400" }: { pct: number; color?: string }) {
+  return (
+    <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+      <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+    </div>
+  );
+}
+
+function SprintCard({ s, onDrill }: { s: { id?: number; name: string; state?: string; goal?: string; daysRemaining: number | null; totalIssues: number; doneIssues: number; committedPoints: number; donePoints: number; hasPoints: boolean }; onDrill: (t: DrillTarget) => void }) {
+  const bd = trpc.metrics.sprintBurndown.useQuery({ sprintName: s.name }, { enabled: s.state === "active" });
+  const issuePct = s.totalIssues ? Math.round((s.doneIssues / s.totalIssues) * 100) : 0;
+  const ptsPct = s.committedPoints ? Math.round((s.donePoints / s.committedPoints) * 100) : 0;
+  const late = s.daysRemaining != null && s.daysRemaining < 0;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {sprints.map((s) => {
-        const issuePct = s.totalIssues ? Math.round((s.doneIssues / s.totalIssues) * 100) : 0;
-        const ptsPct = s.committedPoints ? Math.round((s.donePoints / s.committedPoints) * 100) : 0;
-        const late = s.daysRemaining != null && s.daysRemaining < 0;
-        return (
-          <SectionCard
-            key={s.id ?? s.name}
-            title={s.name}
-            icon={<Gauge size={13} className="text-indigo-300/70" />}
-            action={
-              <Chip tone={s.state === "active" ? "accent" : "neutral"}>
-                {s.state === "active"
-                  ? s.daysRemaining != null
-                    ? late
-                      ? `${Math.abs(s.daysRemaining)}d over`
-                      : `${s.daysRemaining}d left`
-                    : "active"
-                  : "upcoming"}
-              </Chip>
-            }
-          >
-            {s.goal && <p className="text-[12px] text-white/50 mb-3 leading-relaxed">{s.goal}</p>}
+    <SectionCard
+      title={s.name}
+      icon={<Gauge size={13} className="text-indigo-300/70" />}
+      action={
+        <div className="flex items-center gap-2">
+          <Chip tone={s.state === "active" ? (late ? "danger" : "accent") : "neutral"}>
+            {s.state === "active" ? (s.daysRemaining != null ? (late ? `${Math.abs(s.daysRemaining)}d over` : `${s.daysRemaining}d left`) : "active") : "upcoming"}
+          </Chip>
+          <button onClick={() => onDrill({ kind: "SPRINT", key: s.name, title: s.name })} className="text-white/30 hover:text-white/70 transition-colors" title="View issues">
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      }
+    >
+      {s.goal && <p className="text-[12px] text-white/50 mb-3 leading-relaxed">{s.goal}</p>}
 
-            {s.hasPoints && (
-              <div className="mb-3">
-                <div className="flex items-center justify-between text-[11px] text-white/50 mb-1.5">
-                  <span>Story points</span>
-                  <span className="tabular-nums">
-                    {s.donePoints} / {s.committedPoints} ({ptsPct}%)
+      {s.hasPoints && (
+        <div className="mb-2.5">
+          <div className="flex items-center justify-between text-[11px] text-white/50 mb-1.5">
+            <span>Story points</span>
+            <span className="tabular-nums">{s.donePoints} / {s.committedPoints} ({ptsPct}%)</span>
+          </div>
+          <ProgressBar pct={ptsPct} />
+        </div>
+      )}
+
+      <div className="mb-3">
+        <div className="flex items-center justify-between text-[11px] text-white/50 mb-1.5">
+          <span>Issues</span>
+          <span className="tabular-nums">{s.doneIssues} / {s.totalIssues} ({issuePct}%)</span>
+        </div>
+        <ProgressBar pct={issuePct} color="bg-emerald-400/80" />
+      </div>
+
+      {s.state === "active" && bd.data && (
+        <div>
+          <div className="text-[10.5px] text-white/40 mb-1">Burndown — remaining vs ideal</div>
+          <Burndown committed={bd.data.committed} series={bd.data.series} />
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function JiraSprintSection({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
+  const q = trpc.metrics.sprints.useQuery();
+  const all = q.data ?? [];
+  const active = all.filter((s) => s.state === "active" || s.state === "future").slice(0, 2);
+  const closed = all.filter((s) => s.state === "closed").slice(0, 8).reverse();
+  if (all.length === 0) return null;
+
+  return (
+    <>
+      {active.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {active.map((s) => (
+            <SprintCard key={s.id ?? s.name} s={s} onDrill={onDrill} />
+          ))}
+        </div>
+      )}
+      {closed.length >= 2 && (
+        <SectionCard title="Velocity" icon={<Gauge size={13} className="text-white/40" />} action={<span className="text-[11px] text-white/30">points completed / sprint</span>}>
+          <BarTrend points={closed.map((s) => ({ week: s.name, value: s.donePoints }))} color="rgb(99,102,241)" />
+        </SectionCard>
+      )}
+    </>
+  );
+}
+
+function JiraEpicsSection({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
+  const q = trpc.metrics.epics.useQuery();
+  const epics = (q.data ?? []).slice(0, 8);
+  return (
+    <SectionCard title="Epics" icon={<Layers size={13} className="text-white/40" />} count={q.data?.length}>
+      {q.isLoading ? (
+        <div className="py-6 flex justify-center"><Loader2 size={16} className="animate-spin text-white/40" /></div>
+      ) : epics.length === 0 ? (
+        <p className="text-[12px] text-white/30 py-2">No epics found in the synced issues.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {epics.map((e) => {
+            const pct = e.total ? Math.round((e.done / e.total) * 100) : 0;
+            return (
+              <button key={e.key} onClick={() => onDrill({ kind: "EPIC", key: e.key, title: e.name })} className="w-full text-left group">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[12.5px] text-white/80 truncate group-hover:text-white flex items-center gap-1.5">
+                    {e.name}
+                    <ChevronRight size={12} className="text-white/20 group-hover:text-white/50" />
+                  </span>
+                  <span className="text-[11px] text-white/40 tabular-nums flex-shrink-0">
+                    {e.done}/{e.total}
+                    {e.hasPoints ? ` · ${e.donePoints}/${e.committedPoints}pt` : ""}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                  <div className="h-full rounded-full bg-indigo-400" style={{ width: `${Math.min(100, ptsPct)}%` }} />
-                </div>
-              </div>
-            )}
+                <ProgressBar pct={pct} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
 
-            <div>
-              <div className="flex items-center justify-between text-[11px] text-white/50 mb-1.5">
-                <span>Issues</span>
-                <span className="tabular-nums">
-                  {s.doneIssues} / {s.totalIssues} ({issuePct}%)
-                </span>
-              </div>
-              <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                <div className="h-full rounded-full bg-emerald-400/80" style={{ width: `${issuePct}%` }} />
-              </div>
-            </div>
-          </SectionCard>
-        );
-      })}
-    </div>
+function JiraReleasesSection({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
+  const q = trpc.metrics.releases.useQuery();
+  const releases = (q.data ?? []).slice(0, 8);
+  return (
+    <SectionCard title="Releases" icon={<Rocket size={13} className="text-white/40" />} count={q.data?.length}>
+      {q.isLoading ? (
+        <div className="py-6 flex justify-center"><Loader2 size={16} className="animate-spin text-white/40" /></div>
+      ) : releases.length === 0 ? (
+        <p className="text-[12px] text-white/30 py-2">No fix versions on the synced issues.</p>
+      ) : (
+        <div className="space-y-2.5">
+          {releases.map((r) => {
+            const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
+            return (
+              <button key={r.name} onClick={() => onDrill({ kind: "RELEASE", key: r.name, title: r.name })} className="w-full text-left group">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[12.5px] text-white/80 truncate group-hover:text-white flex items-center gap-1.5">
+                    {r.name}
+                    {r.status === "released" && <Chip tone="good">released</Chip>}
+                    <ChevronRight size={12} className="text-white/20 group-hover:text-white/50" />
+                  </span>
+                  <span className="text-[11px] text-white/40 tabular-nums flex-shrink-0">{r.done}/{r.total} ({pct}%)</span>
+                </div>
+                <ProgressBar pct={pct} color={r.status === "released" ? "bg-emerald-400/80" : "bg-indigo-400"} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
   );
 }
 

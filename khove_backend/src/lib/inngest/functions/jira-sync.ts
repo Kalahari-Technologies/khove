@@ -17,6 +17,8 @@ import {
 import { encrypt, decrypt } from "@backend/lib/encryption";
 import { recordSignals } from "@backend/lib/signals/record";
 import { jiraBackfillSignals, jiraWebhookSignals } from "@backend/lib/signals/jira";
+import { recordEntities, type EntityInput } from "@backend/lib/entities/record";
+import { jiraEntitiesFromIssue } from "@backend/lib/entities/jira";
 
 // ---------------------------------------------------------------------------
 // Shared upsert — maps Jira issues to workspace-scoped Tasks (no personal data)
@@ -158,6 +160,7 @@ async function syncJiraIssues(
   let created = 0;
   let updated = 0;
   const projectKeys = new Set<string>();
+  const entities = new Map<string, EntityInput>();
 
   for (const issue of issues) {
     const key = issue.fields.project?.key ?? issue.key.split("-")[0];
@@ -169,10 +172,16 @@ async function syncJiraIssues(
       // Feed the cross-platform Signal store (idempotent) so Jira lights up the
       // same flow metrics / status report / scope integrity as GitHub.
       await recordSignals(workspaceId, jiraBackfillSignals(issue)).catch(() => {});
+      // Collect the container entities embedded in this issue (dedupe by id).
+      for (const e of jiraEntitiesFromIssue(issue, fieldMap, siteUrl)) {
+        if (!entities.has(e.externalId)) entities.set(e.externalId, e);
+      }
     } catch {
       // skip individual failures
     }
   }
+
+  if (entities.size) await recordEntities(workspaceId, [...entities.values()]).catch(() => {});
 
   return { created, updated, projectKeys: [...projectKeys] };
 }
@@ -408,6 +417,7 @@ export const jiraDisconnectCleanup = inngest.createFunction(
     await step.run("delete-tasks", async () => {
       await db.task.deleteMany({ where: { workspaceId, source: { has: "JIRA" } } });
       await db.signal.deleteMany({ where: { workspaceId, provider: "JIRA" } });
+      await db.entity.deleteMany({ where: { workspaceId, provider: "JIRA" } });
     });
 
     await publishWorkspaceEvent(workspaceId, { type: "task.updated", taskId: "jira-sync" });

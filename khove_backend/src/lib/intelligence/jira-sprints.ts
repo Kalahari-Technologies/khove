@@ -74,3 +74,67 @@ export async function computeSprints(workspaceId: string): Promise<SprintSummary
   out.sort((a, b) => rank(a) - rank(b) || (b.endDate ?? "").localeCompare(a.endDate ?? ""));
   return out;
 }
+
+const DAY = 86_400_000;
+
+export interface BurndownPoint {
+  date: string; // YYYY-MM-DD
+  remaining: number | null; // actual remaining points (null after today)
+  ideal: number; // linear ideal
+}
+
+/**
+ * Sprint burndown: remaining story points per day (from WORK_MERGED completion
+ * signals) vs. the ideal linear line. Returns null series when the sprint has no
+ * points or no dates.
+ */
+export async function computeSprintBurndown(workspaceId: string, sprintName: string): Promise<{ committed: number; series: BurndownPoint[] } | null> {
+  const tasks = await db.task.findMany({
+    where: { workspaceId, source: { has: "JIRA" } },
+    select: { externalId: true, metadata: true },
+  });
+
+  let startMs: number | null = null;
+  let endMs: number | null = null;
+  const points = new Map<string, number>(); // entityKey → points
+  for (const t of tasks) {
+    const j = (t.metadata as Record<string, unknown> | null)?.jira as Record<string, unknown> | undefined;
+    const sp = j?.sprint as { name?: string; startDate?: string; endDate?: string } | undefined;
+    if (sp?.name !== sprintName || !t.externalId) continue;
+    if (sp.startDate) startMs = new Date(sp.startDate).getTime();
+    if (sp.endDate) endMs = new Date(sp.endDate).getTime();
+    const pts = typeof j?.storyPoints === "number" ? (j!.storyPoints as number) : 0;
+    points.set(t.externalId, pts);
+  }
+
+  const committed = [...points.values()].reduce((s, p) => s + p, 0);
+  if (!startMs || !endMs || committed === 0) return null;
+
+  // Completion times from the Signal store.
+  const merges = await db.signal.findMany({
+    where: { workspaceId, provider: "JIRA", kind: "WORK_MERGED", entityKey: { in: [...points.keys()] } },
+    orderBy: { occurredAt: "asc" },
+    select: { entityKey: true, occurredAt: true },
+  });
+  const doneAt = new Map<string, number>();
+  for (const m of merges) if (!doneAt.has(m.entityKey)) doneAt.set(m.entityKey, m.occurredAt.getTime());
+
+  const now = Date.now();
+  const days = Math.max(1, Math.round((endMs - startMs) / DAY));
+  const series: BurndownPoint[] = [];
+  for (let i = 0; i <= days; i++) {
+    const t = startMs + i * DAY;
+    const cutoff = t + DAY;
+    let completed = 0;
+    for (const [key, pts] of points) {
+      const d = doneAt.get(key);
+      if (d && d < cutoff) completed += pts;
+    }
+    series.push({
+      date: new Date(t).toISOString().slice(0, 10),
+      remaining: t <= now + DAY ? Math.max(0, committed - completed) : null,
+      ideal: Math.max(0, committed * (1 - i / days)),
+    });
+  }
+  return { committed, series };
+}
