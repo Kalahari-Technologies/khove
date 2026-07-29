@@ -219,6 +219,57 @@ export async function jiraFetch<T = unknown>(
 }
 
 // ---------------------------------------------------------------------------
+// Transitions — NEVER set status directly; go through the transitions API.
+// ---------------------------------------------------------------------------
+
+/** Map Khove's StatusCategory to Jira's statusCategory key (new/indeterminate/done). */
+export function khoveCategoryToJiraKey(category: string): "new" | "indeterminate" | "done" {
+  if (category === "NOT_STARTED") return "new";
+  if (category === "DONE" || category === "CANCELLED") return "done";
+  return "indeterminate"; // IN_PROGRESS / IN_REVIEW / BLOCKED
+}
+
+export interface JiraTransitionResult {
+  success: boolean;
+  movedTo?: string;
+  error?: string;
+}
+
+/**
+ * Move a Jira issue to a target Khove StatusCategory via the transitions API —
+ * lists the workflow transitions, matches the one whose `to.statusCategory.key`
+ * equals the mapped Jira key, and POSTs it. Shared by the AI tool + the tRPC
+ * mutation behind the kanban drag.
+ */
+export async function transitionJiraIssue(
+  workspaceId: string,
+  issueKey: string,
+  category: string,
+): Promise<JiraTransitionResult> {
+  try {
+    const jiraKey = khoveCategoryToJiraKey(category);
+    const data = await jiraFetch<{
+      transitions?: { id: string; name: string; to?: { name?: string; statusCategory?: { key?: string } } }[];
+    }>(workspaceId, `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`);
+    const transitions = data.transitions ?? [];
+    const match = transitions.find((t) => t.to?.statusCategory?.key === jiraKey);
+    if (!match) {
+      return {
+        success: false,
+        error: `No transition to a "${category}" status is available. Options: ${transitions.map((t) => t.name).join(", ") || "none"}`,
+      };
+    }
+    await jiraFetch(workspaceId, `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`, {
+      method: "POST",
+      body: JSON.stringify({ transition: { id: match.id } }),
+    });
+    return { success: true, movedTo: match.to?.name ?? match.name };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ADF — Atlassian Document Format (descriptions/comments must be ADF, not text)
 // ---------------------------------------------------------------------------
 

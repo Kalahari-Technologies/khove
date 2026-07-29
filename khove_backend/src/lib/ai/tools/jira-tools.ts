@@ -1,6 +1,6 @@
 import { tool, zodSchema } from "ai";
 import { z } from "zod";
-import { jiraFetch, textToADF } from "@backend/lib/integrations/jira";
+import { jiraFetch, textToADF, transitionJiraIssue } from "@backend/lib/integrations/jira";
 
 /**
  * Jira AI tools — available to all tiers when Jira is connected.
@@ -167,37 +167,10 @@ export function getJiraTools(workspaceId: string) {
         }),
       ),
       execute: async ({ issueKey, category }) => {
-        try {
-          const jiraKey = khoveCategoryToJiraKey(category);
-          const data = await jiraFetch<{
-            transitions?: { id: string; name: string; to?: { name?: string; statusCategory?: { key?: string } } }[];
-          }>(workspaceId, `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`);
-          const transitions = data.transitions ?? [];
-          const match = transitions.find((t) => t.to?.statusCategory?.key === jiraKey);
-          if (!match) {
-            return {
-              success: false,
-              error: `No transition to a "${category}" status is available. Options: ${transitions.map((t) => t.name).join(", ") || "none"}`,
-            };
-          }
-          await jiraFetch(workspaceId, `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`, {
-            method: "POST",
-            body: JSON.stringify({ transition: { id: match.id } }),
-          });
-          return { success: true, movedTo: match.to?.name ?? match.name };
-        } catch (error) {
-          return { success: false, error: String(error) };
-        }
+        return transitionJiraIssue(workspaceId, issueKey, category);
       },
     }),
   };
-}
-
-/** Map Khove's StatusCategory to Jira's statusCategory key (new/indeterminate/done). */
-function khoveCategoryToJiraKey(category: string): "new" | "indeterminate" | "done" {
-  if (category === "NOT_STARTED") return "new";
-  if (category === "DONE" || category === "CANCELLED") return "done";
-  return "indeterminate"; // IN_PROGRESS / IN_REVIEW / BLOCKED
 }
 
 /** Best-effort flatten of an ADF document to plain text (for read tools). */
