@@ -32,25 +32,34 @@ type SyncRepo = { owner: string; name: string; fullName: string };
  * connecting user's owned repos when no installation is recorded.
  */
 async function resolveSyncableRepos(workspaceId: string): Promise<SyncRepo[]> {
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "GITHUB", isActive: true },
+    select: { metadata: true },
+  });
+  const meta = (integration?.metadata ?? {}) as Record<string, unknown>;
+  const hasInstallation = typeof meta.installationId === "number";
+
   let repos: SyncRepo[] = [];
-  try {
-    const installed = await listInstallationRepos(workspaceId);
-    repos = installed.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
-  } catch {
-    // No installation token / listing failed — fall back to owned repos below.
-  }
-  if (repos.length === 0) {
+  if (hasInstallation) {
+    // Installed as an App → the installation's repos are the ONLY correct source.
+    // Never fall back to the user's personal repos here — that would sync the wrong
+    // account's data under the org.
+    try {
+      const installed = await listInstallationRepos(workspaceId);
+      repos = installed.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
+    } catch (err) {
+      console.error("[github-sync] installation repo listing failed:", err);
+      repos = [];
+    }
+  } else {
+    // OAuth-only (no App installation) → the connecting user's own repos.
     const owned = await listUserRepos(workspaceId, { per_page: 30 });
     repos = owned.map((r) => ({ owner: r.owner, name: r.name, fullName: r.fullName }));
   }
 
   // Honor the workspace's chosen scope (the product boundary). If a selection is
   // set, sync only those repos; if it no longer matches anything, fall back to all.
-  const integration = await db.integration.findFirst({
-    where: { workspaceId, provider: "GITHUB", isActive: true },
-    select: { metadata: true },
-  });
-  const scope = ((integration?.metadata ?? {}) as Record<string, unknown>).scope as { repos?: string[] } | undefined;
+  const scope = meta.scope as { repos?: string[] } | undefined;
   if (scope?.repos?.length) {
     const set = new Set(scope.repos);
     const filtered = repos.filter((r) => set.has(r.fullName));
@@ -247,6 +256,31 @@ export const initialGitHubSync = inngest.createFunction(
         } catch (err) {
           console.error(`[github-sync] ${repo.fullName} failed:`, err);
         }
+      }
+
+      // Prune stale GitHub data: delete any GITHUB Task (and its Signals) whose
+      // repo is NOT in the current scope. This makes a re-sync self-healing —
+      // switching accounts (personal → org) or narrowing scope no longer leaves
+      // orphaned tasks/repos behind.
+      let prunedTasks = 0;
+      const scopeRepos = new Set(scanned.map((r) => r.fullName));
+      const ghTasks = await db.task.findMany({
+        where: { workspaceId, source: { has: "GITHUB" } },
+        select: { id: true, externalId: true, metadata: true },
+      });
+      const stale = ghTasks.filter((t) => {
+        const repo = ((t.metadata as Record<string, unknown>)?.github as Record<string, unknown> | undefined)?.repo as
+          | string
+          | undefined;
+        return repo ? !scopeRepos.has(repo) : false;
+      });
+      if (stale.length) {
+        await db.task.deleteMany({ where: { id: { in: stale.map((t) => t.id) } } });
+        const staleKeys = stale.map((t) => t.externalId).filter((k): k is string => !!k);
+        if (staleKeys.length) {
+          await db.signal.deleteMany({ where: { workspaceId, provider: "GITHUB", entityKey: { in: staleKeys } } });
+        }
+        prunedTasks = stale.length;
       }
 
       // Persist the repos we actually scanned so the dashboard can show them even

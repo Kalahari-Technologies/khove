@@ -215,17 +215,24 @@ router.get("/repos", async (req, res) => {
   });
   if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
 
+  const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+  const hasInstallation = typeof meta.installationId === "number";
+
   let repos: { fullName: string; private: boolean }[] = [];
-  try {
-    repos = (await listInstallationRepos(workspaceId)).map((r) => ({ fullName: r.fullName, private: r.private }));
-  } catch {
-    // fall through to owned repos
-  }
-  if (repos.length === 0) {
+  if (hasInstallation) {
+    // App install → only the installation's repos. Never fall back to the user's
+    // personal repos (that showed the wrong account under an org).
+    try {
+      repos = (await listInstallationRepos(workspaceId)).map((r) => ({ fullName: r.fullName, private: r.private }));
+    } catch (err) {
+      console.error("[github/repos] installation listing failed:", err);
+      return res.status(502).json({ error: "Couldn't list installation repositories", repos: [], selected: [] });
+    }
+  } else {
     repos = (await listUserRepos(workspaceId, { per_page: 100 })).map((r) => ({ fullName: r.fullName, private: r.private }));
   }
 
-  const scope = ((integration.metadata ?? {}) as Record<string, unknown>).scope as { repos?: string[] } | undefined;
+  const scope = meta.scope as { repos?: string[] } | undefined;
   return res.json({ repos, selected: scope?.repos ?? [] });
 });
 

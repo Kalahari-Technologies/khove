@@ -112,13 +112,20 @@ export async function getGitHubClient(workspaceId: string): Promise<Octokit> {
  * Uses the GitHub App private key to generate an installation token.
  * ALWAYS check installationId exists before calling this.
  */
-export async function getInstallationClient(installationId: number) {
-  const app = new App({
+// Build the App with a FULL Octokit (rest endpoint methods + paginate). The
+// default @octokit/app Octokit lacks the paginate plugin, so installation clients
+// created from it throw on octokit.paginate(...) / some rest helpers — which is why
+// repo listing silently fell back to the user's personal repos.
+function makeApp() {
+  return new App({
     appId: GITHUB_APP_ID,
     privateKey: GITHUB_APP_PRIVATE_KEY,
+    Octokit,
   });
+}
 
-  return app.getInstallationOctokit(installationId);
+export async function getInstallationClient(installationId: number) {
+  return makeApp().getInstallationOctokit(installationId);
 }
 
 /**
@@ -130,7 +137,7 @@ export async function getInstallationAccount(
   installationId: number,
 ): Promise<{ login: string; type: string; avatarUrl: string } | null> {
   try {
-    const app = new App({ appId: GITHUB_APP_ID, privateKey: GITHUB_APP_PRIVATE_KEY });
+    const app = makeApp();
     const { data } = await app.octokit.request("GET /app/installations/{installation_id}", {
       installation_id: installationId,
     });
