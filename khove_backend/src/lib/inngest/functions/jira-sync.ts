@@ -54,6 +54,11 @@ async function upsertIssueTask(
   const externalUrl = siteUrl ? `${siteUrl}/browse/${issueKey}` : null;
   const statusId = await findStatusId(workspaceId, category);
 
+  // Jira due date → Task.dueDate, so dated issues plot on the planner (the only
+  // path besides Google Calendar that populates a plottable date).
+  const dueRaw = (f as Record<string, unknown>).duedate as string | null | undefined;
+  const dueDate = dueRaw ? new Date(dueRaw) : null;
+
   // Rich, content-only context (no assignee/reporter → still no personal data).
   const storyPoints = fieldMap.storyPoints ? (f[fieldMap.storyPoints] as number | null) ?? null : null;
   const sprint = fieldMap.sprint ? parseSprintField(f[fieldMap.sprint]) : null;
@@ -91,7 +96,7 @@ async function upsertIssueTask(
   if (existing) {
     await db.task.update({
       where: { id: existing.id },
-      data: { title: `[${issueKey}] ${summary}`, statusId, externalUrl, metadata: json },
+      data: { title: `[${issueKey}] ${summary}`, statusId, externalUrl, dueDate, metadata: json },
     });
     return "updated";
   }
@@ -105,6 +110,7 @@ async function upsertIssueTask(
       userId,
       workspaceId,
       statusId,
+      dueDate,
       priority: "MEDIUM",
       metadata: json,
     },

@@ -26,11 +26,13 @@ export default async function PlannerPage({
   const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0);
 
-  const [tasksResult, calendarEntries, googleIntegration, sync, insights, threads, agentActions] =
+  const [tasksResult, calendarEntries, googleIntegration, jiraIntegration, githubIntegration, sync, insights, threads, agentActions] =
     await Promise.all([
       trpc.task.list.query({ hasDueDate: true, limit: 200 }),
       trpc.calendarEntry.list.query({ from: monthStart, to: monthEnd }),
       trpc.integration.get.query({ provider: "GOOGLE_CALENDAR" }),
+      trpc.integration.get.query({ provider: "JIRA" }).catch(() => null),
+      trpc.integration.get.query({ provider: "GITHUB" }).catch(() => null),
       trpc.integration.syncStatus.query(),
       trpc.insight.getForRange.query({ from: monthStart, to: monthEnd }).catch(() => []),
       trpc.thread.list.query().catch(() => []),
@@ -57,7 +59,12 @@ export default async function PlannerPage({
     isGoogleConnected &&
     (syncStatus === "syncing" || (justConnected && syncStatus !== "done" && noGoogleData));
 
-  const isFirstTime = tasks.length === 0 && calendarEntries.length === 0 && !isSyncing;
+  // The full "connect your tools" empty state is ONLY for a truly fresh workspace —
+  // if ANY integration is connected, show the (possibly empty) calendar instead, so
+  // connecting Jira/GitHub alone doesn't keep nagging to connect.
+  const anyConnected = isGoogleConnected || !!jiraIntegration || !!githubIntegration;
+  const isFirstTime =
+    tasks.length === 0 && calendarEntries.length === 0 && !isSyncing && !anyConnected;
 
   return (
     <PlannerClient

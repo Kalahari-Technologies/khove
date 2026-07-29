@@ -411,6 +411,7 @@ export async function searchIssues(
     "issuetype",
     "created",
     "updated",
+    "duedate",
     "priority",
     "labels",
     "components",
