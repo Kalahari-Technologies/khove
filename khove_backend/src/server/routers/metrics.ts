@@ -4,6 +4,7 @@ import { db } from "@backend/lib/db";
 import { computeFlowMetrics } from "@backend/lib/intelligence/flow";
 import { computeScopeIntegrity } from "@backend/lib/intelligence/correlate";
 import { generateStatusReport } from "@backend/lib/intelligence/status-report";
+import { computeSprints } from "@backend/lib/intelligence/jira-sprints";
 
 export const metricsRouter = router({
   /** Flow metrics (cycle time, throughput, DORA-lite) folded from the Signal store. */
@@ -40,6 +41,11 @@ export const metricsRouter = router({
   /** Scope integrity — merged PRs not linked to any Connectivity Thread. */
   scopeIntegrity: workspaceProcedure.query(async ({ ctx }) => {
     return computeScopeIntegrity(ctx.workspace.id);
+  }),
+
+  /** Jira sprint intelligence — active sprint committed vs done points/issues. */
+  sprints: workspaceProcedure.query(async ({ ctx }) => {
+    return computeSprints(ctx.workspace.id);
   }),
 
   /** Generate a weekly status report (AI, cheapest model). Mutation — user-triggered. */

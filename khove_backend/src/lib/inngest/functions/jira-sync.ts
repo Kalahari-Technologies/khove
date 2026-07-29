@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { inngest } from "@backend/lib/inngest";
 import { db } from "@backend/lib/db";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
@@ -8,7 +9,10 @@ import {
   refreshJiraWebhooks,
   isAuthError,
   refreshAccessToken,
+  discoverJiraFields,
+  parseSprintField,
   type JiraIssue,
+  type JiraFieldMap,
 } from "@backend/lib/integrations/jira";
 import { encrypt, decrypt } from "@backend/lib/encryption";
 import { recordSignals } from "@backend/lib/signals/record";
@@ -34,27 +38,57 @@ async function upsertIssueTask(
   userId: string,
   siteUrl: string,
   issue: JiraIssue,
+  fieldMap: JiraFieldMap = {},
 ): Promise<"created" | "updated"> {
   const issueKey = issue.key;
   const externalId = `jira-${issueKey}`;
-  const summary = issue.fields.summary ?? issueKey;
-  const projectKey = issue.fields.project?.key ?? issueKey.split("-")[0];
-  const statusName = issue.fields.status?.name ?? "";
-  const category = mapJiraStatusCategory(issue.fields.status?.statusCategory?.key);
-  const issueType = issue.fields.issuetype?.name ?? "Task";
+  const f = issue.fields;
+  const summary = f.summary ?? issueKey;
+  const projectKey = f.project?.key ?? issueKey.split("-")[0];
+  const statusName = f.status?.name ?? "";
+  const category = mapJiraStatusCategory(f.status?.statusCategory?.key);
+  const issueType = f.issuetype?.name ?? "Task";
   const externalUrl = siteUrl ? `${siteUrl}/browse/${issueKey}` : null;
   const statusId = await findStatusId(workspaceId, category);
 
-  // Minimal, content-only metadata — no assignee/reporter/personal fields.
+  // Rich, content-only context (no assignee/reporter → still no personal data).
+  const storyPoints = fieldMap.storyPoints ? (f[fieldMap.storyPoints] as number | null) ?? null : null;
+  const sprint = fieldMap.sprint ? parseSprintField(f[fieldMap.sprint]) : null;
+  const parent = f.parent?.key
+    ? { key: f.parent.key, summary: f.parent.fields?.summary, type: f.parent.fields?.issuetype?.name }
+    : null;
+  const epicKey = fieldMap.epicLink ? (f[fieldMap.epicLink] as string | null) ?? null : null;
+  const epic = epicKey
+    ? { key: epicKey }
+    : parent && (parent.type ?? "").toLowerCase() === "epic"
+      ? { key: parent.key, name: parent.summary }
+      : null;
+
   const metadata = {
-    jira: { issueKey, projectKey, status: statusName, statusCategory: category, issueType, url: externalUrl },
+    jira: {
+      issueKey,
+      projectKey,
+      status: statusName,
+      statusCategory: category,
+      issueType,
+      url: externalUrl,
+      priority: f.priority?.name ?? null,
+      labels: Array.isArray(f.labels) ? f.labels : [],
+      components: Array.isArray(f.components) ? f.components.map((c) => c.name).filter(Boolean) : [],
+      fixVersions: Array.isArray(f.fixVersions) ? f.fixVersions.map((v) => v.name).filter(Boolean) : [],
+      storyPoints,
+      sprint,
+      epic,
+      parentKey: parent?.key ?? null,
+    },
   };
 
+  const json = metadata as unknown as Prisma.InputJsonObject;
   const existing = await db.task.findFirst({ where: { externalId, workspaceId } });
   if (existing) {
     await db.task.update({
       where: { id: existing.id },
-      data: { title: `[${issueKey}] ${summary}`, statusId, externalUrl, metadata },
+      data: { title: `[${issueKey}] ${summary}`, statusId, externalUrl, metadata: json },
     });
     return "updated";
   }
@@ -69,7 +103,7 @@ async function upsertIssueTask(
       workspaceId,
       statusId,
       priority: "MEDIUM",
-      metadata,
+      metadata: json,
     },
   });
   return "created";
@@ -88,6 +122,24 @@ async function scopedJql(workspaceId: string, timeClause: string): Promise<strin
   return `${timeClause} ORDER BY updated DESC`;
 }
 
+/** Get the site's custom-field ids, discovering + caching them in metadata once. */
+async function getJiraFieldMap(workspaceId: string): Promise<JiraFieldMap> {
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "JIRA", isActive: true },
+    select: { id: true, metadata: true },
+  });
+  if (!integration) return {};
+  const meta = (integration.metadata ?? {}) as Record<string, unknown>;
+  const cached = meta.jiraFields as JiraFieldMap | undefined;
+  if (cached && (cached.sprint || cached.storyPoints || cached.epicLink)) return cached;
+
+  const map = await discoverJiraFields(workspaceId);
+  await db.integration
+    .update({ where: { id: integration.id }, data: { metadata: { ...meta, jiraFields: map } as unknown as Prisma.InputJsonObject } })
+    .catch(() => {});
+  return map;
+}
+
 /** Sync issues matching a JQL into Tasks. Returns counts + distinct project keys. */
 async function syncJiraIssues(
   workspaceId: string,
@@ -100,7 +152,9 @@ async function syncJiraIssues(
   });
   const siteUrl = ((integration?.metadata ?? {}) as Record<string, unknown>).siteUrl as string ?? "";
 
-  const issues = await searchIssues(workspaceId, jql);
+  const fieldMap = await getJiraFieldMap(workspaceId);
+  const extraFields = [fieldMap.sprint, fieldMap.storyPoints, fieldMap.epicLink].filter((x): x is string => !!x);
+  const issues = await searchIssues(workspaceId, jql, 3, extraFields);
   let created = 0;
   let updated = 0;
   const projectKeys = new Set<string>();
@@ -109,7 +163,7 @@ async function syncJiraIssues(
     const key = issue.fields.project?.key ?? issue.key.split("-")[0];
     if (key) projectKeys.add(key);
     try {
-      const r = await upsertIssueTask(workspaceId, userId, siteUrl, issue);
+      const r = await upsertIssueTask(workspaceId, userId, siteUrl, issue, fieldMap);
       if (r === "created") created++;
       else updated++;
       // Feed the cross-platform Signal store (idempotent) so Jira lights up the
@@ -267,7 +321,8 @@ export const handleJiraWebhook = inngest.createFunction(
         select: { metadata: true },
       });
       const siteUrl = ((integration?.metadata ?? {}) as Record<string, unknown>).siteUrl as string ?? "";
-      await upsertIssueTask(workspaceId, userId, siteUrl, issue);
+      const fieldMap = await getJiraFieldMap(workspaceId);
+      await upsertIssueTask(workspaceId, userId, siteUrl, issue, fieldMap);
       await publishWorkspaceEvent(workspaceId, { type: "task.updated", taskId: externalId });
     });
   },

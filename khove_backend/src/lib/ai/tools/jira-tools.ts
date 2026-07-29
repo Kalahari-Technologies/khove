@@ -71,18 +71,32 @@ export function getJiraTools(workspaceId: string) {
               summary?: string;
               status?: { name?: string; statusCategory?: { name?: string } };
               issuetype?: { name?: string };
+              priority?: { name?: string };
+              labels?: string[];
+              components?: { name?: string }[];
+              fixVersions?: { name?: string }[];
+              parent?: { key?: string };
               description?: unknown;
             };
-          }>(workspaceId, `/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=summary,status,issuetype,description`);
+          }>(
+            workspaceId,
+            `/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=summary,status,issuetype,priority,labels,components,fixVersions,parent,description`,
+          );
+          const f = data.fields;
           return {
             success: true,
             issue: {
               key: data.key,
-              summary: data.fields.summary,
-              status: data.fields.status?.name,
-              statusCategory: data.fields.status?.statusCategory?.name,
-              type: data.fields.issuetype?.name,
-              description: adfToText(data.fields.description),
+              summary: f.summary,
+              status: f.status?.name,
+              statusCategory: f.status?.statusCategory?.name,
+              type: f.issuetype?.name,
+              priority: f.priority?.name,
+              labels: f.labels ?? [],
+              components: (f.components ?? []).map((c) => c.name).filter(Boolean),
+              fixVersions: (f.fixVersions ?? []).map((v) => v.name).filter(Boolean),
+              parent: f.parent?.key,
+              description: adfToText(f.description),
             },
           };
         } catch (error) {

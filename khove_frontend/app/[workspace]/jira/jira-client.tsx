@@ -65,6 +65,10 @@ interface Issue {
   issueType?: string;
   externalUrl: string | null;
   updatedAt: string;
+  priority?: string;
+  storyPoints?: number | null;
+  epicKey?: string;
+  sprintName?: string;
 }
 
 type Filter = "todo" | "in_progress" | "done" | "bugs" | "stale" | null;
@@ -73,6 +77,8 @@ function parseIssue(task: JiraTask): Issue {
   const j = (task.metadata?.jira ?? {}) as Record<string, unknown>;
   const cat = j.statusCategory as string | undefined;
   const category = cat === "DONE" ? "done" : cat === "IN_PROGRESS" ? "in_progress" : "todo";
+  const epic = j.epic as { key?: string } | undefined;
+  const sprint = j.sprint as { name?: string } | undefined;
   return {
     id: task.id,
     title: task.title,
@@ -83,6 +89,10 @@ function parseIssue(task: JiraTask): Issue {
     issueType: j.issueType as string | undefined,
     externalUrl: task.externalUrl ?? (j.url as string | undefined) ?? null,
     updatedAt: task.updatedAt,
+    priority: (j.priority as string | undefined) ?? undefined,
+    storyPoints: typeof j.storyPoints === "number" ? (j.storyPoints as number) : null,
+    epicKey: epic?.key,
+    sprintName: sprint?.name,
   };
 }
 
@@ -300,6 +310,9 @@ export function JiraClient({
           ))}
         </div>
 
+        {/* Sprint intelligence */}
+        <JiraSprintSection />
+
         {/* Status distribution + breakdowns */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <SectionCard title="Status" icon={<CircleDot size={13} className="text-white/40" />}>
@@ -367,6 +380,68 @@ export function JiraClient({
   );
 }
 
+function JiraSprintSection() {
+  const q = trpc.metrics.sprints.useQuery();
+  const sprints = (q.data ?? []).filter((s) => s.state === "active" || s.state === "future").slice(0, 2);
+  if (sprints.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {sprints.map((s) => {
+        const issuePct = s.totalIssues ? Math.round((s.doneIssues / s.totalIssues) * 100) : 0;
+        const ptsPct = s.committedPoints ? Math.round((s.donePoints / s.committedPoints) * 100) : 0;
+        const late = s.daysRemaining != null && s.daysRemaining < 0;
+        return (
+          <SectionCard
+            key={s.id ?? s.name}
+            title={s.name}
+            icon={<Gauge size={13} className="text-indigo-300/70" />}
+            action={
+              <Chip tone={s.state === "active" ? "accent" : "neutral"}>
+                {s.state === "active"
+                  ? s.daysRemaining != null
+                    ? late
+                      ? `${Math.abs(s.daysRemaining)}d over`
+                      : `${s.daysRemaining}d left`
+                    : "active"
+                  : "upcoming"}
+              </Chip>
+            }
+          >
+            {s.goal && <p className="text-[12px] text-white/50 mb-3 leading-relaxed">{s.goal}</p>}
+
+            {s.hasPoints && (
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-[11px] text-white/50 mb-1.5">
+                  <span>Story points</span>
+                  <span className="tabular-nums">
+                    {s.donePoints} / {s.committedPoints} ({ptsPct}%)
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-full rounded-full bg-indigo-400" style={{ width: `${Math.min(100, ptsPct)}%` }} />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="flex items-center justify-between text-[11px] text-white/50 mb-1.5">
+                <span>Issues</span>
+                <span className="tabular-nums">
+                  {s.doneIssues} / {s.totalIssues} ({issuePct}%)
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                <div className="h-full rounded-full bg-emerald-400/80" style={{ width: `${issuePct}%` }} />
+              </div>
+            </div>
+          </SectionCard>
+        );
+      })}
+    </div>
+  );
+}
+
 function JiraFlowSection() {
   const q = trpc.metrics.flow.useQuery({ provider: "JIRA" });
   const m = q.data;
@@ -422,6 +497,14 @@ function IssueRow({ issue, workspaceSlug }: { issue: Issue; workspaceSlug: strin
       >
         {issue.title.replace(/^\[[^\]]+\]\s*/, "")}
       </a>
+      {issue.epicKey && (
+        <span className="hidden xl:inline text-[10px] text-indigo-300/60 flex-shrink-0" title="Epic">{issue.epicKey}</span>
+      )}
+      {issue.storyPoints != null && (
+        <span className="text-[10px] text-white/45 tabular-nums flex-shrink-0 border border-white/[0.08] rounded px-1.5 py-0.5" title="Story points">
+          {issue.storyPoints}
+        </span>
+      )}
       {issue.issueType && (
         <Chip tone={isBug(issue) ? "danger" : "neutral"}>{issue.issueType}</Chip>
       )}

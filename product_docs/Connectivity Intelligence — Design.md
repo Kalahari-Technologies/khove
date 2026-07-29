@@ -274,3 +274,56 @@ become adapters.
 **Non-negotiables carried in:** never store tokens plaintext; webhooks 200→Inngest,
 never sync; `PLANS` gates features; agent **writes = approval, audited**; everything
 **workspace-scoped**; model IDs only in `lib/ai/providers/`.
+
+---
+
+## 10. Data richness — why "only issues/PRs", and the context graph
+
+**The ceiling (honest):** the first cut modeled *work items* (`Task`) + *events*
+(`Signal`). PRs, issues, and Jira tickets fit the Task shape, so they got ingested —
+but **repositories, projects, sprints, epics, releases, components, people/teams**
+are *containers and context*, not tasks. With no home for them, they were dropped.
+That's why dashboards could only count issues/PRs and the AI could only answer "how
+many". For a PM, the structure (sprint, epic, release, velocity-in-points) *is* the
+product.
+
+### 10.1 First hardening (shipped): rich work-item context
+Without any new model, the sync now enriches `Task.metadata` with the *content*
+context that lives on each work item — no personal data:
+- **Jira:** priority, labels, components, fixVersions (releases), story points,
+  **sprint** (name/state/dates/goal), **epic** (parent). Custom-field ids (Sprint /
+  Story Points / Epic Link) vary per site, so `discoverJiraFields` resolves + caches
+  them. **Sprint intelligence** (committed vs done points/issues, days remaining) is
+  grouped from this metadata — no Agile API / extra OAuth scopes needed.
+- **GitHub (already):** review decision, CI status, requested reviewers, labels,
+  head SHA, draft state.
+
+### 10.2 The context graph (next): first-class containers — `Entity`
+The structural layer the metadata approach can't fully express (a sprint as an object
+with a burndown, an epic with child progress, a release with a date, a repo as a
+product surface). A single provider-agnostic model:
+
+```prisma
+enum EntityKind { REPOSITORY PROJECT SPRINT EPIC RELEASE MILESTONE COMPONENT BOARD LABEL PERSON TEAM }
+model Entity {
+  id, workspaceId, provider, kind, externalId, key, name, url, status,
+  parentExternalId?,   // hierarchy: story→epic, sprint→board, epic→project
+  metadata (json),     // dates, goal, points target, released?, language, ...
+  @@unique([workspaceId, provider, externalId])
+}
+```
+
+- **GitHub entities:** repositories (language/topics/README), releases + tags,
+  milestones, branches, workflows/deployments, CODEOWNERS/teams.
+- **Jira entities:** projects, sprints, epics, versions (releases), components, boards.
+- **Tasks reference entities** (a PR belongs to a repo; an issue belongs to a
+  project + sprint + epic) → epic progress, release readiness, sprint burndown,
+  component churn, and cross-tool chains (epic ↔ PRs ↔ meeting ↔ release).
+- **People/teams** (opt-in, since it's personal data) unlock load/bus-factor across
+  review load (GitHub) + assigned issues (Jira) + meetings (Calendar).
+
+### 10.3 Order
+1. ✅ Rich work-item metadata + Jira sprint intelligence.
+2. GitHub rich context (releases/milestones + repo-as-entity map).
+3. The `Entity` model → epic progress + release readiness + sprint burndown charts.
+4. Cross-tool chains over the entity graph (epic → PRs → release), then opt-in people.

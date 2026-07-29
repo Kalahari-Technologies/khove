@@ -312,6 +312,67 @@ export interface JiraIssue {
     issuetype?: { name?: string };
     created?: string;
     updated?: string;
+    priority?: { name?: string };
+    labels?: string[];
+    components?: { name?: string }[];
+    fixVersions?: { name?: string; released?: boolean }[];
+    parent?: { key?: string; fields?: { summary?: string; issuetype?: { name?: string } } };
+    // Dynamic custom fields (Sprint, Story Points, Epic Link) resolved at runtime.
+    [key: string]: unknown;
+  };
+}
+
+/** Discovered custom-field ids — they vary per Jira site, so we look them up. */
+export interface JiraFieldMap {
+  sprint?: string;
+  storyPoints?: string;
+  epicLink?: string;
+}
+
+/** Resolve the ids of Sprint / Story Points / Epic Link custom fields for a site. */
+export async function discoverJiraFields(workspaceId: string): Promise<JiraFieldMap> {
+  try {
+    const fields = await jiraFetch<Array<{ id: string; name?: string; schema?: { custom?: string } }>>(
+      workspaceId,
+      "/rest/api/3/field",
+    );
+    const map: JiraFieldMap = {};
+    for (const f of fields) {
+      const custom = (f.schema?.custom ?? "").toLowerCase();
+      const name = (f.name ?? "").toLowerCase();
+      if (!map.sprint && (custom.includes("gh-sprint") || name === "sprint")) map.sprint = f.id;
+      if (!map.storyPoints && /story.?point/.test(name)) map.storyPoints = f.id;
+      if (!map.epicLink && (custom.includes("epic-link") || name === "epic link")) map.epicLink = f.id;
+    }
+    return map;
+  } catch (err) {
+    console.error("[jira] field discovery failed:", err);
+    return {};
+  }
+}
+
+export interface JiraSprint {
+  id?: number;
+  name?: string;
+  state?: string; // active | closed | future
+  startDate?: string;
+  endDate?: string;
+  goal?: string;
+}
+
+/** Extract the most relevant sprint from a Sprint custom field (array of sprints). */
+export function parseSprintField(val: unknown): JiraSprint | null {
+  if (!Array.isArray(val) || val.length === 0) return null;
+  const sprints = val.filter((s) => s && typeof s === "object") as Array<Record<string, unknown>>;
+  if (sprints.length === 0) return null;
+  const active = sprints.find((s) => s.state === "active") ?? sprints[sprints.length - 1];
+  return {
+    id: active.id as number | undefined,
+    name: active.name as string | undefined,
+    state: active.state as string | undefined,
+    startDate: active.startDate as string | undefined,
+    endDate: active.endDate as string | undefined,
+    goal: active.goal as string | undefined,
   };
 }
 
@@ -339,9 +400,24 @@ export async function searchIssues(
   workspaceId: string,
   jql: string,
   maxPages = 3,
+  extraFields: string[] = [],
 ): Promise<JiraIssue[]> {
   const issues: JiraIssue[] = [];
   let nextPageToken: string | undefined;
+  const fields = [
+    "summary",
+    "status",
+    "project",
+    "issuetype",
+    "created",
+    "updated",
+    "priority",
+    "labels",
+    "components",
+    "fixVersions",
+    "parent",
+    ...extraFields,
+  ];
 
   for (let page = 0; page < maxPages; page++) {
     const resp = await jiraFetch<{ issues?: JiraIssue[]; nextPageToken?: string; isLast?: boolean }>(
@@ -352,7 +428,7 @@ export async function searchIssues(
         body: JSON.stringify({
           jql,
           maxResults: 100,
-          fields: ["summary", "status", "project", "issuetype", "created", "updated"],
+          fields,
           ...(nextPageToken ? { nextPageToken } : {}),
         }),
       },
