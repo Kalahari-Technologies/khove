@@ -13,6 +13,7 @@ import {
   githubEntityIssues,
 } from "@backend/lib/intelligence/github-entities";
 import { computeEpicChain, computeCrossToolIntegrity } from "@backend/lib/intelligence/cross-links";
+import { getShepherdClient, listPullRequests, listIssues } from "@backend/lib/integrations/github";
 
 export const metricsRouter = router({
   /** Flow metrics (cycle time, throughput, DORA-lite) folded from the Signal store. */
@@ -151,6 +152,82 @@ export const metricsRouter = router({
           occurredAt: s.occurredAt.toISOString(),
         };
       });
+    }),
+
+  /**
+   * GitHub PRs / issues by state (open | closed | all), fetched LIVE from GitHub
+   * across the workspace's scoped repos. The Task store only holds OPEN items
+   * (closed become merge Signals), so the PRs/Issues sub-tabs read this to offer
+   * an Open/Closed/All view.
+   */
+  githubItems: workspaceProcedure
+    .input(z.object({ kind: z.enum(["pr", "issue"]), state: z.enum(["open", "closed", "all"]) }))
+    .query(async ({ ctx, input }) => {
+      const integ = await db.integration.findFirst({
+        where: { workspaceId: ctx.workspace.id, provider: "GITHUB", isActive: true },
+        select: { metadata: true },
+      });
+      if (!integ) return [];
+      const meta = (integ.metadata ?? {}) as Record<string, unknown>;
+      const scoped = (meta.scope as { repos?: string[] } | undefined)?.repos;
+      const synced = meta.syncedRepos as string[] | undefined;
+      const repos = (scoped && scoped.length ? scoped : synced) ?? [];
+      const client = await getShepherdClient(ctx.workspace.id).catch(() => undefined);
+
+      type Row = {
+        id: string;
+        number: number;
+        title: string;
+        repo: string;
+        author: string | null;
+        state: string;
+        draft: boolean;
+        url: string | null;
+        labels: string[];
+        updatedAt: string | null;
+      };
+      const rows: Row[] = [];
+      for (const full of repos.slice(0, 15)) {
+        const [owner, name] = full.split("/");
+        if (!owner || !name) continue;
+        try {
+          if (input.kind === "pr") {
+            const prs = await listPullRequests(ctx.workspace.id, owner, name, input.state, 30, client);
+            for (const p of prs)
+              rows.push({
+                id: `${full}#${p.number}`,
+                number: p.number,
+                title: p.title,
+                repo: full,
+                author: p.author ?? null,
+                state: p.mergedAt ? "merged" : p.state,
+                draft: !!p.draft,
+                url: p.url,
+                labels: p.labels ?? [],
+                updatedAt: p.updatedAt ?? null,
+              });
+          } else {
+            const issues = await listIssues(ctx.workspace.id, owner, name, input.state, 30, client);
+            for (const i of issues)
+              rows.push({
+                id: `${full}#${i.number}`,
+                number: i.number,
+                title: i.title,
+                repo: full,
+                author: i.author ?? null,
+                state: i.state,
+                draft: false,
+                url: i.url,
+                labels: i.labels ?? [],
+                updatedAt: i.updatedAt ?? null,
+              });
+          }
+        } catch {
+          /* skip a repo that fails */
+        }
+      }
+      rows.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+      return rows;
     }),
 
   /** Generate a weekly status report (AI, cheapest model). Mutation — user-triggered. */
