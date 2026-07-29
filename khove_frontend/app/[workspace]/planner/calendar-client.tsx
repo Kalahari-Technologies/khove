@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
   ChevronRight,
   GitBranch,
   Home,
 } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
+import { sourceKindOf, type SourceKind } from "./lib/time-utils";
 import { useConnectIntegration } from "@/lib/trpc/api";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
@@ -268,6 +270,13 @@ function PlannerEmptyState({ planTier, canAdmin, workspaceId }: { planTier: stri
 // Planner Calendar (normal state) — delegates to Month/Week/Day views
 // ---------------------------------------------------------------------------
 
+const SOURCE_LAYERS: { kind: SourceKind; label: string; color: string }[] = [
+  { kind: "google", label: "Meetings", color: "#F43F5E" },
+  { kind: "jira", label: "Jira", color: "#6366F1" },
+  { kind: "github", label: "GitHub", color: "#10B981" },
+];
+const VIEW_LABEL: Record<"month" | "week" | "day", string> = { month: "Month", week: "Week", day: "Day" };
+
 function PlannerCalendar({
   tasks,
   calendarEntries,
@@ -277,7 +286,6 @@ function PlannerCalendar({
   canAdmin,
   workspaceId,
   planTier,
-  view = "month",
 }: {
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
@@ -287,9 +295,61 @@ function PlannerCalendar({
   canAdmin: boolean;
   workspaceId: string;
   planTier: string;
-  view?: "month" | "week" | "day";
 }) {
   const workspace = useWorkspace();
+  // View + layer state live here (shared across all three views) and persist to
+  // localStorage, so switching views keeps your layers — and the view switcher is
+  // a top-right dropdown rather than a full navigation.
+  const [view, setView] = useState<"month" | "week" | "day">("month");
+  const [hiddenSources, setHiddenSources] = useState<Set<SourceKind>>(new Set());
+  const [viewOpen, setViewOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(`planner:view:${workspaceId}`);
+      if (v === "week" || v === "day" || v === "month") setView(v);
+      const h = localStorage.getItem(`planner:layers:${workspaceId}`);
+      if (h) setHiddenSources(new Set(JSON.parse(h) as SourceKind[]));
+    } catch {
+      /* ignore */
+    }
+  }, [workspaceId]);
+
+  const chooseView = (v: "month" | "week" | "day") => {
+    setView(v);
+    setViewOpen(false);
+    try {
+      localStorage.setItem(`planner:view:${workspaceId}`, v);
+    } catch {
+      /* ignore */
+    }
+  };
+  const toggleLayer = (k: SourceKind) =>
+    setHiddenSources((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      try {
+        localStorage.setItem(`planner:layers:${workspaceId}`, JSON.stringify([...n]));
+      } catch {
+        /* ignore */
+      }
+      return n;
+    });
+
+  const present = useMemo(() => {
+    const s = new Set<SourceKind>();
+    for (const t of tasks) s.add(sourceKindOf(t.source));
+    if (calendarEntries.length) s.add("google");
+    return s;
+  }, [tasks, calendarEntries]);
+
+  const visibleTasks = useMemo(
+    () => tasks.filter((t) => !hiddenSources.has(sourceKindOf(t.source))),
+    [tasks, hiddenSources],
+  );
+  const visibleEntries = hiddenSources.has("google") ? [] : calendarEntries;
+
   return (
     <PlannerInteractionsProvider
       workspaceId={workspaceId}
@@ -300,22 +360,66 @@ function PlannerCalendar({
       <div className="flex flex-col h-full bg-black overflow-hidden">
         {insights.length > 0 && <InsightBanner insights={insights} />}
         {agentActions.length > 0 && <PlannerAgentPanel actions={agentActions} slug={workspace.slug} />}
+
+        {/* Toolbar — layer toggles (left), view dropdown (right) */}
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {SOURCE_LAYERS.filter((l) => present.has(l.kind)).map((l) => {
+              const on = !hiddenSources.has(l.kind);
+              return (
+                <button
+                  key={l.kind}
+                  onClick={() => toggleLayer(l.kind)}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors ${
+                    on ? "border-white/[0.12] bg-white/[0.05] text-white/80" : "border-white/[0.06] text-white/30"
+                  }`}
+                >
+                  <span className="h-2 w-2 rounded-full" style={on ? { backgroundColor: l.color } : { border: `1px solid ${l.color}` }} />
+                  {l.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => setViewOpen((o) => !o)}
+              className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 py-1.5 text-[12.5px] text-white/80 hover:bg-white/[0.07]"
+            >
+              {VIEW_LABEL[view]} <ChevronDown size={13} className="text-white/45" />
+            </button>
+            {viewOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setViewOpen(false)} />
+                <div className="absolute right-0 z-20 mt-1 w-32 overflow-hidden rounded-lg border border-white/[0.10] bg-[#0d0d0f] py-1 shadow-xl">
+                  {(["month", "week", "day"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => chooseView(v)}
+                      className={`block w-full px-3 py-1.5 text-left text-[12.5px] ${
+                        v === view ? "bg-white/[0.06] text-white" : "text-white/65 hover:bg-white/[0.04] hover:text-white"
+                      }`}
+                    >
+                      {VIEW_LABEL[v]}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
         {view === "month" && (
           <MonthView
-            tasks={tasks}
-            calendarEntries={calendarEntries}
+            tasks={visibleTasks}
+            calendarEntries={visibleEntries}
             isGoogleConnected={isGoogleConnected}
             canAdmin={canAdmin}
             workspaceId={workspaceId}
             planTier={planTier}
           />
         )}
-        {view === "week" && (
-          <WeekView tasks={tasks} calendarEntries={calendarEntries} />
-        )}
-        {view === "day" && (
-          <DayView tasks={tasks} calendarEntries={calendarEntries} />
-        )}
+        {view === "week" && <WeekView tasks={visibleTasks} calendarEntries={visibleEntries} />}
+        {view === "day" && <DayView tasks={visibleTasks} calendarEntries={visibleEntries} />}
       </div>
     </PlannerInteractionsProvider>
   );
@@ -325,10 +429,10 @@ function PlannerCalendar({
 // Export
 // ---------------------------------------------------------------------------
 
-export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, insights = [], agentActions = [], view = "month" }: PlannerClientProps) {
+export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, insights = [], agentActions = [] }: PlannerClientProps) {
   if (isSyncing) return <PlannerSyncingState />;
   if (isFirstTime) return <PlannerEmptyState planTier={planTier} canAdmin={canAdmin} workspaceId={workspaceId} />;
-  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} insights={insights} agentActions={agentActions} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} view={view} />;
+  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} insights={insights} agentActions={agentActions} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} />;
 }
 
 // ---------------------------------------------------------------------------

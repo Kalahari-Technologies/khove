@@ -9,6 +9,19 @@ export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 export const DEFAULT_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
 // ---------------------------------------------------------------------------
+// Source layers — which tool an item came from (drives the layer toggles)
+// ---------------------------------------------------------------------------
+
+export type SourceKind = "google" | "jira" | "github" | "other";
+
+export function sourceKindOf(sources: string[]): SourceKind {
+  if (sources.includes("GOOGLE_CALENDAR")) return "google";
+  if (sources.includes("JIRA")) return "jira";
+  if (sources.includes("GITHUB")) return "github";
+  return "other";
+}
+
+// ---------------------------------------------------------------------------
 // Unified time slot item (used by day + week views)
 // ---------------------------------------------------------------------------
 

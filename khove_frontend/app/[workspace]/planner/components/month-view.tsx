@@ -7,6 +7,7 @@ import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
 import { ChevronLeft, ChevronRight, Plus, Unplug } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
 import { usePlannerInteractions, type PlannerEventDetail } from "./planner-interactions";
+import { sourceKindOf, type SourceKind } from "../lib/time-utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 function taskToDetail(t: PlannerTask): PlannerEventDetail {
@@ -56,8 +57,6 @@ const MONTH_NAMES = [
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-type SourceKind = "google" | "jira" | "github" | "other";
-
 interface CellItem {
   id: string;
   title: string;
@@ -67,20 +66,6 @@ interface CellItem {
   isGoogleCalendar?: boolean;
   hasMeetLink?: boolean;
 }
-
-function sourceKindOf(sources: string[]): SourceKind {
-  if (sources.includes("GOOGLE_CALENDAR")) return "google";
-  if (sources.includes("JIRA")) return "jira";
-  if (sources.includes("GITHUB")) return "github";
-  return "other";
-}
-
-// The layers a user can toggle on/off — one per connected tool.
-const SOURCE_LAYERS: { kind: SourceKind; label: string; color: string }[] = [
-  { kind: "google", label: "Meetings", color: "#F43F5E" },
-  { kind: "jira", label: "Jira", color: "#6366F1" },
-  { kind: "github", label: "GitHub", color: "#10B981" },
-];
 
 // ---------------------------------------------------------------------------
 // Icons
@@ -121,17 +106,8 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [disconnecting, setDisconnecting] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
-  const [hiddenSources, setHiddenSources] = useState<Set<SourceKind>>(new Set());
 
   const taskById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
-
-  // Which source layers actually have data — only offer toggles for those.
-  const presentSources = useMemo(() => {
-    const s = new Set<SourceKind>();
-    for (const t of tasks) s.add(sourceKindOf(t.source));
-    if (calendarEntries.length) s.add("google");
-    return s;
-  }, [tasks, calendarEntries]);
 
   // Drop a task chip on a day → keep its time-of-day, change the date.
   function handleDrop(taskId: string, day: Date) {
@@ -147,7 +123,6 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
 
   for (const task of tasks) {
     const kind = sourceKindOf(task.source);
-    if (hiddenSources.has(kind)) continue;
     // Apply any optimistic reschedule so the chip moves instantly on drop.
     const d = new Date(pendingReschedules[task.id] ?? task.dueDate);
     const key = toDateKey(d);
@@ -164,7 +139,6 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
   }
 
   for (const entry of calendarEntries) {
-    if (hiddenSources.has("google")) continue; // entries are Google Calendar
     const d = new Date(entry.startDate);
     if (isNaN(d.getTime())) continue;
     const key = toDateKey(d);
@@ -278,38 +252,6 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
           </button>
         </div>
       </div>
-
-      {/* Layers — one per connected tool; click to show/hide on the calendar */}
-      {SOURCE_LAYERS.some((l) => presentSources.has(l.kind)) && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-white/[0.06] shrink-0">
-          <span className="mr-1 text-[10.5px] uppercase tracking-wider text-white/30">Layers</span>
-          {SOURCE_LAYERS.filter((l) => presentSources.has(l.kind)).map((l) => {
-            const on = !hiddenSources.has(l.kind);
-            return (
-              <button
-                key={l.kind}
-                onClick={() =>
-                  setHiddenSources((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(l.kind)) next.delete(l.kind);
-                    else next.add(l.kind);
-                    return next;
-                  })
-                }
-                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors ${
-                  on ? "border-white/[0.12] bg-white/[0.05] text-white/80" : "border-white/[0.06] text-white/30"
-                }`}
-              >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={on ? { backgroundColor: l.color } : { border: `1px solid ${l.color}` }}
-                />
-                {l.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* Day headers */}
       <div className="grid grid-cols-7 border-b border-white/[0.06] shrink-0">

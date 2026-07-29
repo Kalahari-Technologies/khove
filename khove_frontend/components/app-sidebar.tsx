@@ -14,7 +14,6 @@ import {
   ChevronRight,
   Plus,
   Search,
-  Filter,
   Clock,
   LayoutGrid,
   List,
@@ -146,28 +145,11 @@ function getSections(section: string, slug: string): { title: string; sections: 
       title: "My Tasks",
       sections: [
         {
-          title: "Quick Actions",
           items: [
             { label: "New task", icon: Plus, action: true },
-            { label: "Filter", icon: Filter, action: true },
-          ],
-        },
-        {
-          title: "Views",
-          items: [
-            { label: "All tasks",      href: wsHref(slug, "/tasks"),                        icon: List },
-            { label: "In progress",    href: wsHref(slug, "/tasks?status=in_progress"),     icon: Clock },
-            { label: "Assigned to me", href: wsHref(slug, "/tasks?mine=true"),              icon: Users },
-          ],
-        },
-        {
-          title: "Status",
-          items: [
-            { label: "Not started" },
-            { label: "In progress" },
-            { label: "In review" },
-            { label: "Blocked" },
-            { label: "Done" },
+            { label: "All tasks", href: wsHref(slug, "/tasks"), icon: List },
+            { label: "In progress", href: wsHref(slug, "/tasks?status=in_progress"), icon: Clock },
+            { label: "Assigned to me", href: wsHref(slug, "/tasks?mine=true"), icon: Users },
           ],
         },
       ],
@@ -176,18 +158,10 @@ function getSections(section: string, slug: string): { title: string; sections: 
       title: "Planner",
       sections: [
         {
-          title: "Views",
           items: [
-            { label: "Month", icon: LayoutGrid, href: wsHref(slug, "/planner?view=month") },
-            { label: "Week",  icon: CalendarDays, href: wsHref(slug, "/planner?view=week") },
-            { label: "Day",   icon: List, href: wsHref(slug, "/planner?view=day") },
-          ],
-        },
-        {
-          title: "Show",
-          items: [
-            { label: "Tasks with due dates" },
-            { label: "Google Calendar events", sub: "Phase 3" },
+            { label: "Overview", href: wsHref(slug, "/planner"), icon: CalendarDays },
+            { label: "Meetings", href: wsHref(slug, "/planner/meetings"), icon: Users },
+            { label: "Backlog", href: wsHref(slug, "/planner/backlog"), icon: List },
           ],
         },
       ],
@@ -196,7 +170,6 @@ function getSections(section: string, slug: string): { title: string; sections: 
       title: "GitHub",
       sections: [
         {
-          title: "Views",
           items: [
             { label: "Dashboard", href: wsHref(slug, "/github"), icon: LayoutGrid },
             { label: "Pull requests", href: wsHref(slug, "/github/prs"), icon: GitPullRequest },
@@ -209,13 +182,7 @@ function getSections(section: string, slug: string): { title: string; sections: 
       title: "Delivery",
       sections: [
         {
-          title: "About",
-          items: [
-            {
-              label: "Initiatives are Connectivity Threads with a target date. Khove folds GitHub merges into a burn-up and forecasts whether you'll hit it.",
-              sub: "placeholder",
-            },
-          ],
+          items: [{ label: "Overview", href: wsHref(slug, "/initiatives"), icon: Target }],
         },
       ],
     },
@@ -223,16 +190,7 @@ function getSections(section: string, slug: string): { title: string; sections: 
       title: "Agent",
       sections: [
         {
-          title: "Review",
-          items: [
-            { label: "Pending approvals", href: wsHref(slug, "/agent"), icon: Bot },
-          ],
-        },
-        {
-          title: "About",
-          items: [
-            { label: "Khove proposes calendar actions from your schedule. Nothing runs until you approve.", sub: "placeholder" },
-          ],
+          items: [{ label: "Pending approvals", href: wsHref(slug, "/agent"), icon: Bot }],
         },
       ],
     },
@@ -240,7 +198,6 @@ function getSections(section: string, slug: string): { title: string; sections: 
       title: "Jira",
       sections: [
         {
-          title: "Views",
           items: [
             { label: "Dashboard", href: wsHref(slug, "/jira"), icon: LayoutGrid },
             { label: "Board", href: wsHref(slug, "/jira/board"), icon: SquareKanban },
