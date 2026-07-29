@@ -108,8 +108,26 @@ export function JiraClient({
   const connectIntegration = useConnectIntegration();
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
   const [filter, setFilter] = useState<Filter>(null);
   const syncing = useInitialSync(tasks.length > 0);
+
+  async function handleResync() {
+    setResyncing(true);
+    try {
+      await backendFetch("/api/integrations/jira/resync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+      setTimeout(() => {
+        router.refresh();
+        setResyncing(false);
+      }, 4000);
+    } catch {
+      setResyncing(false);
+    }
+  }
 
   const { issues, insights } = useMemo(() => {
     const all = tasks.map(parseIssue);
@@ -234,6 +252,15 @@ export function JiraClient({
                 <Plus size={12} /> New issue
               </a>
             )}
+            <button
+              onClick={handleResync}
+              disabled={resyncing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-white/60 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white/90 transition-colors disabled:opacity-50"
+              style={{ transitionTimingFunction: ease }}
+            >
+              <Loader2 size={12} className={resyncing ? "animate-spin" : ""} />
+              {resyncing ? "Syncing…" : "Re-sync"}
+            </button>
             <button
               onClick={handleDisconnect}
               disabled={disconnecting}
