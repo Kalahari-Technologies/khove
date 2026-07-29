@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { SectionCard, StatTile, Chip, ago, type Tone } from "@/components/integrations/insight-ui";
 import { BurnupChart } from "@/components/integrations/burnup-chart";
+import { RichText } from "@/components/rich-text";
 
 interface LinkView {
   kind: string;
@@ -160,7 +161,7 @@ function StatusReportDialog({ onClose }: { onClose: () => void }) {
               <Loader2 size={18} className="animate-spin" />
             </div>
           ) : (
-            <div className="text-[13.5px] text-white/85 leading-relaxed whitespace-pre-wrap font-sans">{report}</div>
+            <RichText content={report ?? ""} className="text-[13.5px] text-white/85 leading-relaxed" />
           )}
         </div>
 

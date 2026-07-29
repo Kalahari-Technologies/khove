@@ -5,6 +5,7 @@ import { Home, ChevronRight, ArrowLeft, Calendar, User } from "lucide-react";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import type { TaskWithDetails } from "@/lib/types";
 import { useRouter } from "next/navigation";
+import { RichText } from "@/components/rich-text";
 
 // ─── Priority Badge ───────────────────────────────────────────────────────────
 
@@ -97,16 +98,10 @@ export function TaskDetailClient({ task }: { task: TaskWithDetails }) {
           {task.title}
         </h1>
 
-        {/* Description */}
+        {/* Description — renders Markdown and (e.g. Google Calendar) sanitized HTML */}
         {task.description && (
           <div className="mb-6 pb-6 border-b border-white/[0.06]">
-            <p className="text-[13px] text-white/65 leading-relaxed whitespace-pre-wrap">
-              {task.description.split(/([@#]\w+)/g).map((tok: string, i: number) =>
-                /^[@#]\w+/.test(tok)
-                  ? <span key={i} className="text-blue-400">{tok}</span>
-                  : tok
-              )}
-            </p>
+            <RichText content={task.description} className="text-[13px] text-white/70 leading-relaxed" />
           </div>
         )}
 
