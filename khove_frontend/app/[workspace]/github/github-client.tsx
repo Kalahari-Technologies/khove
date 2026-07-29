@@ -33,7 +33,9 @@ import {
 import { Loader2 } from "lucide-react";
 import { AgentActionCard, type AgentActionView } from "@/components/agent/agent-action-card";
 import { GitHubScopeDialog } from "@/components/integrations/github-scope-dialog";
-import { SlidersHorizontal } from "lucide-react";
+import { BarTrend, LineTrend, fmtHours } from "@/components/integrations/metric-charts";
+import { trpc } from "@/lib/trpc/client";
+import { SlidersHorizontal, Activity, Gauge } from "lucide-react";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 const EMERALD = "rgba(16,185,129,0.55)";
@@ -376,6 +378,9 @@ export function GitHubClient({
           </SectionCard>
         )}
 
+        {/* Flow & delivery metrics (DORA-lite, folded from the Signal store) */}
+        <FlowSection />
+
         {/* PR pipeline */}
         <SectionCard
           title="Pull request pipeline"
@@ -518,6 +523,54 @@ function PrRow({ pr, workspaceSlug }: { pr: Pr; workspaceSlug: string }) {
         </a>
       )}
     </div>
+  );
+}
+
+function FlowSection() {
+  const q = trpc.metrics.flow.useQuery({ provider: "GITHUB" });
+  const m = q.data;
+  const weeks = m ? Math.round(m.windowDays / 7) : 12;
+
+  return (
+    <SectionCard
+      title="Flow & delivery"
+      icon={<Activity size={13} className="text-white/40" />}
+      action={<span className="text-[11px] text-white/30">last {weeks} weeks</span>}
+    >
+      {q.isLoading ? (
+        <div className="py-8 flex justify-center">
+          <Loader2 size={16} className="animate-spin text-white/40" />
+        </div>
+      ) : !m || m.merged === 0 ? (
+        <p className="text-[12px] text-white/30 py-3">
+          No merges in the last {weeks} weeks yet — cycle time, throughput, and DORA metrics fill in as PRs merge.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+            <StatTile label="Throughput" value={`${m.throughputPerWeek}/wk`} icon={<Gauge size={12} />} hint={`${m.merged} merged`} />
+            <StatTile
+              label="Cycle time p50"
+              value={fmtHours(m.cycleTimeP50Hours)}
+              hint={`p90 ${fmtHours(m.cycleTimeP90Hours)}`}
+              tone="good"
+            />
+            <StatTile label="Review latency p50" value={fmtHours(m.reviewLatencyP50Hours)} icon={<Clock size={12} />} />
+            <StatTile label="Deploy freq" value={`${m.deployFrequencyPerWeek}/wk`} icon={<GitMerge size={12} />} tone="good" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <div className="text-[11px] text-white/45 mb-1.5">Throughput — merges per week</div>
+              <BarTrend points={m.throughputSeries} />
+            </div>
+            <div>
+              <div className="text-[11px] text-white/45 mb-1.5">Cycle time p50 — weekly</div>
+              <LineTrend points={m.cycleTimeSeries} format={fmtHours} />
+            </div>
+          </div>
+        </>
+      )}
+    </SectionCard>
   );
 }
 

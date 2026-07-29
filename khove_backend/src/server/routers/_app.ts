@@ -8,6 +8,7 @@ import { calendarEntryRouter } from "@backend/server/routers/calendar-entry";
 import { insightRouter } from "@backend/server/routers/insight";
 import { threadRouter } from "@backend/server/routers/thread";
 import { agentActionRouter } from "@backend/server/routers/agent-action";
+import { metricsRouter } from "@backend/server/routers/metrics";
 
 export const appRouter = router({
   task: taskRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   insight: insightRouter,
   thread: threadRouter,
   agentAction: agentActionRouter,
+  metrics: metricsRouter,
 });
 
 export type AppRouter = typeof appRouter;
