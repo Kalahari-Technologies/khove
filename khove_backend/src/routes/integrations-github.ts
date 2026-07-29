@@ -5,6 +5,7 @@ import { encrypt } from "@backend/lib/encryption";
 import { canAdminWorkspace } from "@backend/lib/workspace/authorization";
 import {
   createGitHubInstallUrl,
+  createGitHubOAuthUrl,
   exchangeCodeForToken,
   listInstallationRepos,
   listUserRepos,
@@ -33,12 +34,28 @@ router.get("/connect", async (req, res) => {
     return res.status(403).json({ error: "Only workspace admins can connect integrations" });
   }
 
-  // Return the App INSTALL URL as JSON — the authenticated frontend redirects to
-  // it (a cross-origin browser navigation to this route wouldn't carry the
-  // session). Installing + authorizing in one step gives the callback both the
-  // OAuth `code` and the `installation_id` the Shepherd needs.
   const state = await createOAuthState("github", { userId: user.id, workspaceId });
-  return res.json({ url: createGitHubInstallUrl(state) });
+
+  // Choose the right GitHub entry point:
+  //  • First-time connect → the App INSTALL URL. Installing + authorizing in one
+  //    step gives the callback both the OAuth `code` and the `installation_id`
+  //    the Shepherd needs, and lets the user pick which org/repos to grant.
+  //  • Re-connect (this workspace already has an active install) → the plain
+  //    OAuth AUTHORIZE URL. GitHub's install endpoint dead-ends on the manage/
+  //    configure page for an already-installed org; the authorize URL instead
+  //    round-trips silently back to the callback with a fresh code, which reuses
+  //    the stored installationId and re-syncs. This is the "just continue to
+  //    syncing" path for an org that was added before.
+  const existing = await db.integration.findUnique({
+    where: { provider_workspaceId: { provider: "GITHUB", workspaceId } },
+    select: { isActive: true, metadata: true },
+  });
+  const storedInstallId = (existing?.metadata as Record<string, unknown> | null)?.installationId;
+  const alreadyInstalled = !!existing?.isActive && typeof storedInstallId === "number";
+
+  return res.json({
+    url: alreadyInstalled ? createGitHubOAuthUrl(state) : createGitHubInstallUrl(state),
+  });
 });
 
 // GET /api/integrations/github/callback — redirects back to the FRONTEND origin.
@@ -73,10 +90,23 @@ router.get("/callback", async (req, res) => {
       select: { metadata: true },
     });
     const existingMeta = (existing?.metadata ?? {}) as Record<string, unknown>;
-    const installationId =
+    let installationId =
       installationIdParam && !Number.isNaN(Number(installationIdParam))
         ? Number(installationIdParam)
         : (typeof existingMeta.installationId === "number" ? existingMeta.installationId : null);
+
+    // Safety net: on a silent re-authorize (no `installation_id` param) with no
+    // stored id, resolve the installation from the user's own grants. Only adopt
+    // it when there's exactly one — multiple installs are ambiguous (no target
+    // org in state), so we leave it null rather than risk attaching the wrong org.
+    if (installationId === null) {
+      try {
+        const { data } = await octokit.apps.listInstallationsForAuthenticatedUser({ per_page: 100 });
+        if (data.total_count === 1) installationId = data.installations[0].id;
+      } catch {
+        /* non-fatal — user token may lack the scope; Shepherd degrades gracefully */
+      }
+    }
 
     // The account the app was INSTALLED on (org or user) — this is the identity
     // we display, not the connecting user. Falls back to the OAuth user if the
