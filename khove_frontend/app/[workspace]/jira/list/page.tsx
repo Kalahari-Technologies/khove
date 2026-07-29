@@ -23,7 +23,7 @@ export default async function JiraListPage({ params }: { params: Promise<{ works
   const connected = !!(await trpc.integration.get.query({ provider: "JIRA" }).catch(() => null));
   if (!connected) return <ConnectNotice tool="Jira" href={`/${slug}/jira`} />;
 
-  const tasks = (await trpc.task.list.query({ source: "JIRA", limit: 300 })).items;
+  const tasks = (await trpc.task.list.query({ source: "JIRA", limit: 200 })).items;
   const rows = tasks
     .map((t) => {
       const j = ((t.metadata as { jira?: JiraMeta } | null)?.jira) ?? {};

@@ -14,7 +14,7 @@ export default async function GithubIssuesPage({ params }: { params: Promise<{ w
   const connected = !!(await trpc.integration.get.query({ provider: "GITHUB" }).catch(() => null));
   if (!connected) return <ConnectNotice tool="GitHub" href={`/${slug}/github`} />;
 
-  const tasks = (await trpc.task.list.query({ source: "GITHUB", limit: 300 })).items;
+  const tasks = (await trpc.task.list.query({ source: "GITHUB", limit: 200 })).items;
   const rows = tasks
     .map((t) => ({ t, g: ((t.metadata as { github?: GhMeta } | null)?.github) ?? {} }))
     .filter(({ g }) => g.type === "issue")
