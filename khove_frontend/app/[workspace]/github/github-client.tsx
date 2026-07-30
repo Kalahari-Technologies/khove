@@ -160,13 +160,19 @@ export function GitHubClient({
         const res = await backendFetch(`/api/integrations/github/sync-status?workspaceId=${workspaceId}`, {}, workspaceId);
         const data = (await res.json()) as { status?: string };
         if (!active) return;
-        if (data.status === "syncing") {
+        if (data.status === "disconnecting") {
+          // Persistent disconnect indicator — survives navigation/reload.
+          setDisconnecting(true);
+          setSyncing(false);
+          timer = setTimeout(poll, 2000);
+        } else if (data.status === "syncing") {
           setSyncing(true);
           setResyncing(false); // the real sync has taken over the loader
           wasSyncing.current = true;
           timer = setTimeout(poll, 3000);
         } else {
           setSyncing(false);
+          setDisconnecting(false);
           if (wasSyncing.current) {
             wasSyncing.current = false;
             router.refresh(); // sync just finished — pull the new data in

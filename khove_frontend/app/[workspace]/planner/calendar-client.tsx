@@ -97,6 +97,7 @@ interface PlannerClientProps {
   isFirstTime: boolean;
   isGoogleConnected: boolean;
   isSyncing: boolean;
+  isDisconnecting?: boolean;
   canAdmin: boolean;
   workspaceId: string;
   planTier: string;
@@ -605,7 +606,16 @@ function PlannerCalendar({
 // Export
 // ---------------------------------------------------------------------------
 
-export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, calendars = [], insights = [], agentActions = [] }: PlannerClientProps) {
+export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, isDisconnecting = false, canAdmin, workspaceId, planTier, tasks, calendarEntries, calendars = [], insights = [], agentActions = [] }: PlannerClientProps) {
+  const disconnectRouter = useRouter();
+  // Persistent disconnect indicator — the server read (cal-sync) shows it on
+  // load/reload; auto-refresh once the inline purge is done to reveal the result.
+  useEffect(() => {
+    if (!isDisconnecting) return;
+    const t = setTimeout(() => disconnectRouter.refresh(), 2500);
+    return () => clearTimeout(t);
+  }, [isDisconnecting, disconnectRouter]);
+  if (isDisconnecting) return <PlannerSyncingState label="Disconnecting Google Calendar…" sub="Clearing synced data." />;
   if (isSyncing) return <PlannerSyncingState />;
   if (isFirstTime) return <PlannerEmptyState planTier={planTier} canAdmin={canAdmin} workspaceId={workspaceId} />;
   return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} calendars={calendars} insights={insights} agentActions={agentActions} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} />;
@@ -615,7 +625,7 @@ export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAd
 // Syncing state — shown while Inngest is importing calendar events
 // ---------------------------------------------------------------------------
 
-function PlannerSyncingState() {
+function PlannerSyncingState({ label = "Syncing your calendar...", sub }: { label?: string; sub?: string }) {
   return (
     <div className="flex flex-col h-full bg-[#0a0a0a] overflow-hidden">
       <div className="flex items-center px-6 py-4 border-b border-white/[0.06]">
@@ -623,8 +633,8 @@ function PlannerSyncingState() {
       </div>
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <div className="w-8 h-8 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
-        <p className="text-[14px] text-white/50">Syncing your calendar...</p>
-        <p className="text-[12px] text-white/25">This may take a moment. The page will update automatically.</p>
+        <p className="text-[14px] text-white/50">{label}</p>
+        <p className="text-[12px] text-white/25">{sub ?? "This may take a moment. The page will update automatically."}</p>
       </div>
     </div>
   );

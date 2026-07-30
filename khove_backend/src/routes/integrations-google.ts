@@ -135,6 +135,10 @@ router.post("/disconnect", async (req, res) => {
     return res.status(404).json({ error: "No active Google Calendar integration found." });
   }
 
+  // Persist a "disconnecting" state so the full-screen loader shows across pages
+  // and reloads while cleanup runs (mirrors the sync-status indicator).
+  await redis.set(`cal-sync:${workspaceId}`, JSON.stringify({ status: "disconnecting" }), { ex: 120 }).catch(() => {});
+
   try {
     const accessToken = decrypt(integration.accessTokenEnc);
     const oauth2 = createOAuth2Client();
@@ -142,10 +146,16 @@ router.post("/disconnect", async (req, res) => {
   } catch {}
 
   await db.integration.update({ where: { id: integration.id }, data: { isActive: false } });
+  // Purge synced calendar data inline so disconnect completes even if the Inngest
+  // runtime isn't processing events.
+  await db.task.deleteMany({ where: { workspaceId, source: { has: "GOOGLE_CALENDAR" } } }).catch(() => {});
+  await db.calendarEntry.deleteMany({ where: { workspaceId } }).catch(() => {});
+  await redis.del(`cal-sync:${workspaceId}`).catch(() => {});
+
   await inngest.send({
     name: "google-calendar/disconnected",
     data: { userId: user.id, workspaceId },
-  });
+  }).catch(() => {});
 
   return res.json({ success: true });
 });

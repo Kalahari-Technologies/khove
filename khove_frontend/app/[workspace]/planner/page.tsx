@@ -50,6 +50,7 @@ export default async function PlannerPage({
   }
   const isGoogleConnected = !!googleIntegration;
   const syncStatus = (sync as { status?: string }).status;
+  const isDisconnecting = syncStatus === "disconnecting";
   const noGoogleData =
     tasks.filter((t) => t.source.includes("GOOGLE_CALENDAR")).length === 0 &&
     calendarEntries.length === 0;
@@ -76,6 +77,7 @@ export default async function PlannerPage({
       isFirstTime={isFirstTime}
       isGoogleConnected={isGoogleConnected}
       isSyncing={isSyncing}
+      isDisconnecting={isDisconnecting}
       canAdmin={canAdmin}
       workspaceId={ws.id}
       planTier={me.user.planTier}

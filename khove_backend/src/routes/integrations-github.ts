@@ -180,9 +180,19 @@ router.post("/disconnect", async (req, res) => {
   });
   if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
 
+  // Persist a "disconnecting" state so the full-screen loader shows across pages
+  // and reloads while cleanup runs (mirrors the sync-status indicator).
+  await redis.set(`gh-sync:${workspaceId}`, JSON.stringify({ status: "disconnecting" }), { ex: 120 }).catch(() => {});
+
   await db.integration.update({ where: { id: integration.id }, data: { isActive: false } });
-  // Purge synced GitHub data (Tasks + Signals) so nothing goes stale.
-  await inngest.send({ name: "github/disconnected", data: { workspaceId } });
+  // Purge synced GitHub data inline (Tasks + Signals) so disconnect completes even
+  // if the Inngest runtime isn't processing events.
+  await db.task.deleteMany({ where: { workspaceId, source: { has: "GITHUB" } } }).catch(() => {});
+  await db.signal.deleteMany({ where: { workspaceId, provider: "GITHUB" } }).catch(() => {});
+  await db.entity.deleteMany({ where: { workspaceId, provider: "GITHUB" } }).catch(() => {});
+  await redis.del(`gh-sync:${workspaceId}`).catch(() => {});
+
+  await inngest.send({ name: "github/disconnected", data: { workspaceId } }).catch(() => {});
   await publishEvent(user.id, { type: "refresh" }).catch(() => {});
 
   return res.json({ success: true });

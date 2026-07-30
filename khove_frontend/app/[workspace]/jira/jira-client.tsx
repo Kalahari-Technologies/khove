@@ -154,7 +154,12 @@ export function JiraClient({
           at?: string;
         };
         if (!active) return;
-        if (data.status === "syncing") {
+        if (data.status === "disconnecting") {
+          // Persistent disconnect indicator — survives navigation/reload.
+          setDisconnecting(true);
+          setSyncing(false);
+          timer = setTimeout(poll, 2000);
+        } else if (data.status === "syncing") {
           setSyncing(true);
           setSyncError(null);
           setSyncDiag(null);
@@ -163,6 +168,7 @@ export function JiraClient({
           timer = setTimeout(poll, 3000);
         } else {
           setSyncing(false);
+          setDisconnecting(false);
           if (data.status === "error") setSyncError(data.message ?? "The last Jira sync failed.");
           else setSyncError(null);
           // A completed sync that found nothing — the exact site + query it ran,

@@ -131,13 +131,24 @@ router.post("/disconnect", async (req, res) => {
   });
   if (!integration) return res.status(404).json({ error: "No active Jira integration found." });
 
+  // Persist a "disconnecting" state so the full-screen loader shows across pages
+  // and reloads while cleanup runs (mirrors the sync-status indicator).
+  await redis.set(`jira-sync:${workspaceId}`, JSON.stringify({ status: "disconnecting" }), { ex: 120 }).catch(() => {});
+
   // Delete the dynamic webhook while the token is still valid, then deactivate.
   const meta = (integration.metadata ?? {}) as Record<string, unknown>;
   const webhookIds = Array.isArray(meta.webhookIds) ? (meta.webhookIds as number[]) : [];
   if (webhookIds.length) await deleteJiraWebhooks(workspaceId, webhookIds).catch(() => {});
 
   await db.integration.update({ where: { id: integration.id }, data: { isActive: false } });
-  await inngest.send({ name: "jira/disconnected", data: { userId: user.id, workspaceId } });
+  // Purge synced data inline so disconnect completes even if the Inngest runtime
+  // isn't processing events (the cleanup job otherwise never runs).
+  await db.task.deleteMany({ where: { workspaceId, source: { has: "JIRA" } } }).catch(() => {});
+  await db.signal.deleteMany({ where: { workspaceId, provider: "JIRA" } }).catch(() => {});
+  await db.entity.deleteMany({ where: { workspaceId, provider: "JIRA" } }).catch(() => {});
+  await redis.del(`jira-sync:${workspaceId}`).catch(() => {});
+
+  await inngest.send({ name: "jira/disconnected", data: { userId: user.id, workspaceId } }).catch(() => {});
   await publishEvent(user.id, { type: "refresh" }).catch(() => {});
 
   return res.json({ success: true });
