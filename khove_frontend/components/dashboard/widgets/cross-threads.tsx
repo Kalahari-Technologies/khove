@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Waypoints } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Chip, ago } from "@/components/integrations/insight-ui";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -13,7 +14,7 @@ export function CrossThreadsWidget({ slug }: WidgetProps) {
   if (isLoading) return <WLoading height={140} />;
 
   const threads = data ?? [];
-  if (threads.length === 0) return <WEmpty>No connectivity threads yet.</WEmpty>;
+  if (threads.length === 0) return <WEmpty icon={<Waypoints size={18} />}>No connectivity threads yet.</WEmpty>;
 
   return (
     <ul className="space-y-1">

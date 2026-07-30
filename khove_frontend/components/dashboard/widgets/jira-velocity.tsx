@@ -1,5 +1,6 @@
 "use client";
 
+import { TrendingUp } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { StackedBar } from "@/components/integrations/metric-charts";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -19,7 +20,7 @@ export function JiraVelocityWidget(_props: WidgetProps) {
       donePoints: s.donePoints,
     }));
 
-  if (rows.length === 0) return <WEmpty>No completed sprints with points.</WEmpty>;
+  if (rows.length === 0) return <WEmpty icon={<TrendingUp size={18} />}>No completed sprints with points.</WEmpty>;
 
   return (
     <StackedBar

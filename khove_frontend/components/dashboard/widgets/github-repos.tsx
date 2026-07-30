@@ -1,5 +1,6 @@
 "use client";
 
+import { FolderGit2 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
 import { WLoading, WEmpty } from "./_kit";
@@ -11,7 +12,7 @@ export function GithubReposWidget(_props: WidgetProps) {
   if (isLoading) return <WLoading height={140} />;
 
   const repos = (data ?? []).slice(0, 12);
-  if (repos.length === 0) return <WEmpty>No repositories synced.</WEmpty>;
+  if (repos.length === 0) return <WEmpty icon={<FolderGit2 size={18} />}>No repositories synced.</WEmpty>;
 
   return (
     <div className="space-y-0.5">

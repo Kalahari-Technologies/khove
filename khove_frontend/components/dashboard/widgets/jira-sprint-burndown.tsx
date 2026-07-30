@@ -1,5 +1,6 @@
 "use client";
 
+import { Activity } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Burndown } from "@/components/integrations/metric-charts";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -19,9 +20,9 @@ export function JiraSprintBurndownWidget(_props: WidgetProps) {
   );
 
   if (sprints.isLoading) return <WLoading height={170} />;
-  if (!active) return <WEmpty>No active sprint.</WEmpty>;
+  if (!active) return <WEmpty icon={<Activity size={18} />}>No active sprint.</WEmpty>;
   if (burndown.isLoading) return <WLoading height={170} />;
-  if (!burndown.data) return <WEmpty>No burndown data for this sprint.</WEmpty>;
+  if (!burndown.data) return <WEmpty icon={<Activity size={18} />}>No burndown data for this sprint.</WEmpty>;
 
   return (
     <div>

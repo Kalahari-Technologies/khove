@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { trpc } from "@/lib/trpc/client";
-import { SectionCard, StatTile, Chip, ago } from "@/components/integrations/insight-ui";
+import { SectionCard, StatTile, Chip, EmptyState, ago } from "@/components/integrations/insight-ui";
 import { RichText } from "@/components/rich-text";
 import { ThreadsPanel } from "./thread-panel";
 import {
@@ -22,6 +22,8 @@ import {
   Link2,
   TriangleAlert,
   Sparkles,
+  CheckCircle2,
+  Target,
   X,
 } from "lucide-react";
 
@@ -191,9 +193,10 @@ function ActivityTimeline({ items, loading }: { items: ActivityItem[]; loading: 
       {loading ? (
         <div className="py-10 text-center text-[12.5px] text-white/30">Loading activity…</div>
       ) : items.length === 0 ? (
-        <div className="py-10 text-center text-[12.5px] text-white/30">
-          No activity yet — it fills in as PRs move and tickets change.
-        </div>
+        <EmptyState
+          icon={<Activity size={18} />}
+          message="No activity yet — it fills in as PRs move and tickets change."
+        />
       ) : (
         <div className="space-y-0.5">
           {items.map((it) => {
@@ -250,7 +253,7 @@ function CrossToolGaps() {
       action={<span className="text-[11px] text-white/30">Jira ↔ GitHub</span>}
     >
       {empty ? (
-        <div className="py-6 text-center text-[12px] text-white/30">Jira and GitHub are in sync. 🎯</div>
+        <EmptyState icon={<CheckCircle2 size={18} />} message="Jira and GitHub are in sync. 🎯" />
       ) : (
         <div className="space-y-3">
           {d!.codeAheadOfTicket.length > 0 && (
@@ -283,9 +286,10 @@ function UnplannedWork() {
   if (!d || d.unplanned === 0) {
     return (
       <SectionCard title="Unplanned work" icon={<TriangleAlert size={13} className="text-white/40" />}>
-        <div className="py-6 text-center text-[12px] text-white/30">
-          {d ? "Every merge traces to a plan." : "Connect GitHub to track scope."}
-        </div>
+        <EmptyState
+          icon={<Target size={18} />}
+          message={d ? "Every merge traces to a plan." : "Connect GitHub to track scope."}
+        />
       </SectionCard>
     );
   }

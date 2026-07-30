@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { CheckCircle2, GitCompareArrows } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
 import { WLoading, WEmpty } from "./_kit";
@@ -40,12 +41,12 @@ export function CrossGapsWidget(_props: WidgetProps) {
   const { data, isLoading } = trpc.metrics.crossToolIntegrity.useQuery(undefined, { staleTime: 60_000 });
 
   if (isLoading) return <WLoading height={140} />;
-  if (!data) return <WEmpty>No linked work items.</WEmpty>;
+  if (!data) return <WEmpty icon={<GitCompareArrows size={18} />}>No linked work items.</WEmpty>;
 
   const ahead = data.codeAheadOfTicket ?? [];
   const behind = data.doneWithOpenPr ?? [];
   if (ahead.length === 0 && behind.length === 0) {
-    return <WEmpty>Code and tickets are in sync.</WEmpty>;
+    return <WEmpty icon={<CheckCircle2 size={18} />}>Code and tickets are in sync.</WEmpty>;
   }
 
   return (

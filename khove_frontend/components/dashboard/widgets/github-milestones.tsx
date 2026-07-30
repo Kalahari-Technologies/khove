@@ -1,5 +1,6 @@
 "use client";
 
+import { Milestone } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { DistributionBar, ago } from "@/components/integrations/insight-ui";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -12,7 +13,7 @@ export function GithubMilestonesWidget(_props: WidgetProps) {
   if (isLoading) return <WLoading height={140} />;
 
   const rows = [...(data ?? [])].sort((a, b) => b.open - a.open).slice(0, 5);
-  if (rows.length === 0) return <WEmpty>No open milestones.</WEmpty>;
+  if (rows.length === 0) return <WEmpty icon={<Milestone size={18} />}>No open milestones.</WEmpty>;
 
   return (
     <div className="space-y-3">

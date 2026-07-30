@@ -18,6 +18,7 @@ import {
   ReferenceLine,
   type TooltipProps,
 } from "recharts";
+import { LineChart as LineChartIcon } from "lucide-react";
 
 export interface Point {
   week: string;
@@ -57,8 +58,11 @@ function DarkTooltip({ active, payload, label, fmt }: TooltipProps<number, strin
 
 function Empty({ height }: { height: number }) {
   return (
-    <div className="flex items-center justify-center text-[11.5px] text-white/30" style={{ height }}>
-      Not enough history yet.
+    <div className="flex flex-col items-center justify-center gap-2 text-center" style={{ height }}>
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/25">
+        <LineChartIcon size={16} />
+      </span>
+      <span className="text-[11.5px] text-white/35">Not enough history yet.</span>
     </div>
   );
 }

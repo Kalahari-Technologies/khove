@@ -52,7 +52,10 @@ router.get("/connect", async (req, res) => {
     select: { isActive: true, metadata: true },
   });
   const storedInstallId = (existing?.metadata as Record<string, unknown> | null)?.installationId;
-  const alreadyInstalled = !!existing?.isActive && typeof storedInstallId === "number";
+  // If this workspace EVER had an installation (even after a disconnect, which keeps
+  // the id but flips isActive:false), re-connect via the OAuth authorize URL — the
+  // install URL dead-ends on GitHub's manage page for an already-installed org.
+  const alreadyInstalled = typeof storedInstallId === "number";
 
   return res.json({
     url: alreadyInstalled ? createGitHubOAuthUrl(state) : createGitHubInstallUrl(state),
@@ -109,12 +112,22 @@ router.get("/callback", async (req, res) => {
       }
     }
 
+    // Couldn't resolve an installation (app not installed for this user) — send them
+    // to the install URL to finish setup instead of "connecting" with no repos.
+    if (installationId === null) {
+      const setupState = await createOAuthState("github", { userId, workspaceId });
+      return res.redirect(createGitHubInstallUrl(setupState));
+    }
+
     // The account the app was INSTALLED on (org or user) — this is the identity
     // we display, not the connecting user. Falls back to the OAuth user if the
     // installation account can't be resolved.
-    const account = installationId ? await getInstallationAccount(installationId) : null;
+    const account = await getInstallationAccount(installationId);
 
+    // Preserve any existing scope/config on re-connect (the metadata rebuild below
+    // must not wipe the workspace's product boundary).
     const metadata = {
+      ...existingMeta,
       login: ghUser.login,
       githubId: ghUser.id,
       avatarUrl: ghUser.avatar_url,
@@ -141,19 +154,19 @@ router.get("/callback", async (req, res) => {
       },
     });
 
-    await inngest.send({
-      name: "github/initial-sync",
-      data: { userId, workspaceId },
-    }).catch(() => {});
-    // Also sync inline so repos/PRs are present the moment the browser lands, even
-    // if the Inngest runtime isn't processing events. Best-effort (don't block the
-    // redirect on a failure — the sync-status banner will report it).
-    await performGitHubSync(workspaceId, userId).catch((e) =>
-      console.error("[GitHub connect] inline sync failed:", e instanceof Error ? e.message : e),
-    );
-    await publishEvent(userId, { type: "refresh" }).catch(() => {});
-
-    return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?connected=true`);
+    // Scope-first: don't sync the whole account here. If the workspace already chose a
+    // scope (a re-connect), kick a scoped background sync + syncing indicator; if not
+    // (first connect), land on the dashboard and let the client open the scope picker,
+    // whose "save" triggers the first scoped sync.
+    const hasScope = existingMeta.scopeConfigured === true || existingMeta.scope !== undefined;
+    if (hasScope) {
+      await redis.set(`gh-sync:${workspaceId}`, "syncing", { ex: 300 }).catch(() => {});
+      void performGitHubSync(workspaceId, userId)
+        .then(() => publishEvent(userId, { type: "refresh" }).catch(() => {}))
+        .catch((e) => console.error("[GitHub connect] background sync failed:", e instanceof Error ? e.message : e));
+      return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?connected=true`);
+    }
+    return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?connected=true&setup=scope`);
   } catch (error) {
     console.error("[GitHub OAuth callback] Error:", error);
     return res.redirect(`${env.FRONTEND_ORIGIN}${githubPath}?error=github_auth_failed`);
@@ -218,9 +231,7 @@ router.post("/resync", async (req, res) => {
   });
   if (!integration) return res.status(404).json({ error: "GitHub is not connected" });
 
-  // Fire the background job AND run the sync inline so data lands + the real outcome
-  // is returned even if the Inngest runtime isn't processing events.
-  await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } }).catch(() => {});
+  // Run the sync inline (single run — no concurrent Inngest job, which would race).
   try {
     const result = await performGitHubSync(workspaceId, integration.userId);
     return res.json({ success: true, ...result });
@@ -315,10 +326,17 @@ router.post("/scope", async (req, res) => {
   const meta = (integration.metadata ?? {}) as Record<string, unknown>;
   await db.integration.update({
     where: { id: integration.id },
-    data: { metadata: { ...meta, scope: { repos: (repos as string[]).filter(Boolean) } } },
+    data: {
+      metadata: { ...meta, scope: { repos: (repos as string[]).filter(Boolean) }, scopeConfigured: true },
+    },
   });
 
-  await inngest.send({ name: "github/initial-sync", data: { userId: integration.userId, workspaceId } });
+  // Saving scope is the sync trigger: run the scoped sync in the BACKGROUND (Inngest
+  // isn't reliable in prod), with the syncing indicator, and return immediately.
+  await redis.set(`gh-sync:${workspaceId}`, "syncing", { ex: 300 }).catch(() => {});
+  void performGitHubSync(workspaceId, integration.userId)
+    .then(() => publishEvent(integration.userId, { type: "refresh" }).catch(() => {}))
+    .catch((e) => console.error("[GitHub scope] background sync failed:", e instanceof Error ? e.message : e));
   return res.json({ success: true });
 });
 

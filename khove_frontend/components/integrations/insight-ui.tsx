@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ListX, Loader2 } from "lucide-react";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 
@@ -95,6 +95,37 @@ export function StatTile({
   );
 }
 
+// ─── EmptyState — engaging empty placeholder (icon + message) ───────────────
+
+/**
+ * A friendly empty state: a muted icon in a subtle rounded container, a message,
+ * and optional sub-text. Used across widgets, charts, and dashboard sections so
+ * "nothing here yet" reads as intentional and professional rather than blank.
+ */
+export function EmptyState({
+  icon,
+  message,
+  sub,
+  className = "",
+}: {
+  icon?: ReactNode;
+  message: ReactNode;
+  sub?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col items-center justify-center gap-2.5 py-8 text-center ${className}`}>
+      {icon && (
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/25">
+          {icon}
+        </span>
+      )}
+      <p className="max-w-[34ch] text-[12.5px] leading-relaxed text-white/40">{message}</p>
+      {sub && <p className="max-w-[34ch] text-[11px] leading-relaxed text-white/25">{sub}</p>}
+    </div>
+  );
+}
+
 // ─── DistributionBar — stacked horizontal proportion bar ────────────────────
 
 export interface Segment {
@@ -144,7 +175,7 @@ export function BreakdownList({
   emptyLabel?: string;
   max?: number;
 }) {
-  if (rows.length === 0) return <p className="text-[12px] text-white/30 py-2">{emptyLabel}</p>;
+  if (rows.length === 0) return <EmptyState icon={<ListX size={16} />} message={emptyLabel} className="py-4" />;
   const peak = Math.max(...rows.map((r) => r.value), 1);
   return (
     <div className="space-y-2">

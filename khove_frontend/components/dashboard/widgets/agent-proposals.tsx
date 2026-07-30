@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Bot } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Chip } from "@/components/integrations/insight-ui";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -13,7 +14,7 @@ export function AgentProposalsWidget({ slug }: WidgetProps) {
   if (isLoading) return <WLoading height={120} />;
 
   const pending = (data ?? []).filter((a) => a.status === "PENDING");
-  if (pending.length === 0) return <WEmpty>No pending proposals</WEmpty>;
+  if (pending.length === 0) return <WEmpty icon={<Bot size={18} />}>No pending proposals</WEmpty>;
 
   return (
     <div className="space-y-2">

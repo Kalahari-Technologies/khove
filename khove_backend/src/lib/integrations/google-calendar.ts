@@ -693,11 +693,23 @@ export async function syncGoogleCalendar(
   const events = await listAllCalendarEvents(workspaceId, { timeMin, timeMax, maxResults: 100 });
   await persistCalendars(workspaceId);
 
+  // Collapse the same Google event returned under multiple calendars to a single
+  // occurrence, preferring an actionable (writable) calendar — otherwise one event
+  // could land as both a Task (from a writable calendar) AND a CalendarEntry (from a
+  // reader/subscribed one) and show twice in the planner.
+  const byId = new Map<string, (typeof events)[number]>();
+  for (const ev of events) {
+    if (!ev.id) continue;
+    const prev = byId.get(ev.id);
+    if (!prev || (prev._isHolidayOrBirthday && !ev._isHolidayOrBirthday)) byId.set(ev.id, ev);
+  }
+  const deduped = [...byId.values()];
+
   let tasksCreated = 0;
   let tasksUpdated = 0;
   let entriesCreated = 0;
 
-  for (const event of events) {
+  for (const event of deduped) {
     if (eventBecomesTask(event)) {
       const result = await upsertTaskFromEvent(workspaceId, event, event._calendarId);
       if (result === "created") tasksCreated++;
@@ -708,7 +720,31 @@ export async function syncGoogleCalendar(
     }
   }
 
+  // Self-heal any pre-existing duplicate meeting Tasks left by the old
+  // concurrent-sync race (inline + Inngest ran together with no unique guard on
+  // Task(workspaceId, externalId)). Keep the earliest row per externalId.
+  await dedupeGoogleTasks(workspaceId);
+
   return { tasksCreated, tasksUpdated, entriesCreated };
+}
+
+/** Delete duplicate GOOGLE_CALENDAR Tasks sharing an externalId, keeping the oldest. */
+async function dedupeGoogleTasks(workspaceId: string): Promise<void> {
+  const rows = await db.task.findMany({
+    where: { workspaceId, source: { has: "GOOGLE_CALENDAR" }, externalId: { not: null } },
+    select: { id: true, externalId: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const seen = new Set<string>();
+  const dupeIds: string[] = [];
+  for (const r of rows) {
+    const key = r.externalId as string;
+    if (seen.has(key)) dupeIds.push(r.id);
+    else seen.add(key);
+  }
+  if (dupeIds.length) {
+    await db.task.deleteMany({ where: { id: { in: dupeIds } } }).catch(() => {});
+  }
 }
 
 /** True for a Google API "410 Gone" — the sync token has expired. */
