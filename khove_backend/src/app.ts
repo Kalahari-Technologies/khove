@@ -28,6 +28,7 @@ import { deliveryRiskScan } from "@backend/lib/inngest/functions/delivery";
 import {
   jiraInitialSync,
   jiraPollSync,
+  jiraActiveSprintPoll,
   handleJiraWebhook,
   refreshJiraTokens,
   renewJiraWebhooks,
@@ -95,6 +96,7 @@ export function createApp() {
         deliveryRiskScan,
         jiraInitialSync,
         jiraPollSync,
+        jiraActiveSprintPoll,
         handleJiraWebhook,
         refreshJiraTokens,
         renewJiraWebhooks,
