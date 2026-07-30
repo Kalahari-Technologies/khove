@@ -4,7 +4,7 @@ import { CalendarDays } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { ProviderIcon } from "@/components/provider-icon";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
-import { WLoading, WEmpty, metaKey } from "./_kit";
+import { WLoading, WEmpty, WFill, metaKey } from "./_kit";
 
 function timeOf(d: Date): string {
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -47,22 +47,24 @@ export function CalendarTodayWidget(_props: WidgetProps) {
   if (rows.length === 0) return <WEmpty icon={<CalendarDays size={18} />}>Nothing on today.</WEmpty>;
 
   return (
-    <ul className="space-y-1.5">
-      {rows.slice(0, 10).map((r) => (
-        <li key={r.id} className="flex items-center gap-2.5">
-          <span className="w-14 shrink-0 text-[11px] tabular-nums text-white/45">{r.allDay ? "All day" : timeOf(new Date(r.at))}</span>
-          <span className="flex w-4 shrink-0 items-center justify-center">
-            {r.meetLink ? (
-              <a href={r.meetLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Join Google Meet">
-                <ProviderIcon provider="google_meet" size={15} />
-              </a>
-            ) : (
-              <ProviderIcon provider="google_calendar" size={13} className="opacity-60" title="Calendar" />
-            )}
-          </span>
-          <span className="min-w-0 flex-1 truncate text-[12px] text-white/80">{r.title}</span>
-        </li>
-      ))}
-    </ul>
+    <WFill provider="google_calendar">
+      <ul className="space-y-1.5">
+        {rows.slice(0, 10).map((r) => (
+          <li key={r.id} className="flex items-center gap-2.5">
+            <span className="w-14 shrink-0 text-[11px] tabular-nums text-white/45">{r.allDay ? "All day" : timeOf(new Date(r.at))}</span>
+            <span className="flex w-4 shrink-0 items-center justify-center">
+              {r.meetLink ? (
+                <a href={r.meetLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Join Google Meet">
+                  <ProviderIcon provider="google_meet" size={15} />
+                </a>
+              ) : (
+                <ProviderIcon provider="google_calendar" size={13} className="opacity-60" title="Calendar" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[12px] text-white/80">{r.title}</span>
+          </li>
+        ))}
+      </ul>
+    </WFill>
   );
 }

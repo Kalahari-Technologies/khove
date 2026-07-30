@@ -22,14 +22,21 @@ export function JiraSprintBurndownWidget(_props: WidgetProps) {
   if (sprints.isLoading) return <WLoading height={170} />;
   if (!active) return <WEmpty icon={<Activity size={18} />}>No active sprint.</WEmpty>;
   if (burndown.isLoading) return <WLoading height={170} />;
-  if (!burndown.data) return <WEmpty icon={<Activity size={18} />}>No burndown data for this sprint.</WEmpty>;
+  if (!burndown.data)
+    return (
+      <WEmpty icon={<Activity size={18} />}>
+        This sprint needs start &amp; end dates and at least one issue to chart a burndown.
+      </WEmpty>
+    );
 
+  const unitLabel = burndown.data.unit === "points" ? "story points" : "issues";
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <span className="truncate text-[12px] font-medium text-white/80">{active.name}</span>
         <span className="shrink-0 text-[10.5px] text-white/40">{active.daysRemaining}d left</span>
       </div>
+      <div className="mb-1 text-[10.5px] text-white/40">Remaining {unitLabel} vs ideal</div>
       <Burndown committed={burndown.data.committed} series={burndown.data.series} />
     </div>
   );
