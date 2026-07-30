@@ -562,8 +562,24 @@ export async function upsertTaskFromEvent(
   // push path and every frontend reader, which all read metadata.googleCalendar.*).
   const gcalMeta = buildEventMetadata(event, calendarId);
 
+  // A meeting that has already ended is imported as completed (Done). Source is
+  // authoritative for timing; Khove only fills status where the source implies it.
+  const endStr = event.end?.dateTime ?? event.end?.date ?? event.start?.dateTime ?? event.start?.date;
+  const hasEnded = !!endStr && new Date(endStr).getTime() < Date.now();
+
+  const defaultStatus =
+    (await db.workflowStatus.findFirst({ where: { category: "NOT_STARTED", workspaceId, isDefault: true } })) ??
+    (await db.workflowStatus.findFirst({ where: { category: "NOT_STARTED", workspaceId: null, isDefault: true } }));
+  const doneStatus = hasEnded
+    ? ((await db.workflowStatus.findFirst({ where: { category: "DONE", workspaceId } })) ??
+      (await db.workflowStatus.findFirst({ where: { category: "DONE", workspaceId: null } })))
+    : null;
+
   if (existing) {
     const existingMeta = (existing.metadata ?? {}) as Record<string, unknown>;
+    // Auto-complete a past meeting on re-sync ONLY if its status is still the
+    // untouched Not-Started default — never clobber a status the user changed.
+    const autoComplete = hasEnded && doneStatus && existing.statusId === defaultStatus?.id;
     await db.task.update({
       where: { id: existing.id },
       data: {
@@ -571,6 +587,7 @@ export async function upsertTaskFromEvent(
         description: event.description ?? existing.description,
         dueDate,
         externalUrl: event.htmlLink ?? existing.externalUrl,
+        ...(autoComplete && { statusId: doneStatus.id }),
         metadata: { ...existingMeta, googleCalendar: gcalMeta },
       },
     });
@@ -583,14 +600,7 @@ export async function upsertTaskFromEvent(
     select: { userId: true },
   });
 
-  const defaultStatus =
-    await db.workflowStatus.findFirst({
-      where: { category: "NOT_STARTED", workspaceId, isDefault: true },
-    }) ??
-    await db.workflowStatus.findFirst({
-      where: { category: "NOT_STARTED", workspaceId: null, isDefault: true },
-    });
-
+  // Source-authoritative import: createdAt from the Google event; past meetings → Done.
   await db.task.create({
     data: {
       title,
@@ -599,10 +609,11 @@ export async function upsertTaskFromEvent(
       externalUrl: event.htmlLink ?? null,
       description: event.description ?? null,
       dueDate,
-      priority: "MEDIUM",
-      statusId: defaultStatus?.id ?? null,
+      priority: "MEDIUM", // Google events have no priority — keep the neutral default
+      statusId: (doneStatus?.id ?? defaultStatus?.id) ?? null,
       userId: integration?.userId ?? "",
       workspaceId,
+      ...(event.created ? { createdAt: new Date(event.created) } : {}),
       metadata: { googleCalendar: gcalMeta },
     },
   });
@@ -671,6 +682,7 @@ export async function upsertCalendarEntry(
       isAllDay,
       externalId: event.id,
       source: "GOOGLE_CALENDAR",
+      ...(event.created ? { createdAt: new Date(event.created) } : {}),
       metadata: buildEntryMetadata(event),
     },
   });
