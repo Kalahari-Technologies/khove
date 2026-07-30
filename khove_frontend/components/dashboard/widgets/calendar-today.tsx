@@ -50,7 +50,7 @@ export function CalendarTodayWidget(_props: WidgetProps) {
     <ul className="space-y-1.5">
       {rows.slice(0, 10).map((r) => (
         <li key={r.id} className="flex items-center gap-2">
-          <span className="shrink-0 text-[11px] tabular-nums text-white/45">{r.allDay ? "All day" : timeOf(new Date(r.at))}</span>
+          <span className="w-12 shrink-0 text-[11px] tabular-nums text-white/45">{r.allDay ? "All day" : timeOf(new Date(r.at))}</span>
           <span className="flex w-4 shrink-0 items-center justify-center">
             {r.meetLink ? (
               <a href={r.meetLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Join Google Meet">
