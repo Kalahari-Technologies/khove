@@ -9,6 +9,8 @@ import {
   unlinkFromThread,
   autoLinkMeeting,
 } from "@backend/lib/threads";
+import { generateThreadNarrative } from "@backend/lib/threads/narrative";
+import { suggestThreads } from "@backend/lib/threads/suggest";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 import { db } from "@backend/lib/db";
 import { computeInitiativeDelivery, refreshInitiativeHealth } from "@backend/lib/intelligence/delivery";
@@ -101,4 +103,18 @@ export const threadRouter = router({
     .query(async ({ ctx, input }) => {
       return computeInitiativeDelivery(ctx.workspace.id, input.id);
     }),
+
+  /** AI context-aware narrative for a thread — generated on open, cached until it changes. */
+  narrative: workspaceProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return generateThreadNarrative(ctx.workspace.id, input.id);
+    }),
+
+  /** Scan for related work and draft approval-gated SUGGEST_THREAD proposals. */
+  suggestNow: workspaceWriteProcedure.mutation(async ({ ctx }) => {
+    const result = await suggestThreads(ctx.workspace.id, ctx.user!.id);
+    await publishWorkspaceEvent(ctx.workspace.id, { type: "agent-action.created", actionId: "suggest" }).catch(() => {});
+    return result;
+  }),
 });
