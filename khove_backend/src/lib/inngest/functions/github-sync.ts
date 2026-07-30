@@ -203,6 +203,7 @@ async function syncGithubData(workspaceId: string, userId: string): Promise<GitH
                   workspaceId,
                   statusId: defaultStatus?.id ?? null,
                   priority: "MEDIUM",
+                  ...(pr.createdAt ? { createdAt: new Date(pr.createdAt) } : {}), // source-authoritative
                   metadata: {
                     github: {
                       type: "pull_request",
@@ -245,6 +246,7 @@ async function syncGithubData(workspaceId: string, userId: string): Promise<GitH
                   workspaceId,
                   statusId: defaultStatus?.id ?? null,
                   priority: "MEDIUM",
+                  ...(issue.createdAt ? { createdAt: new Date(issue.createdAt) } : {}), // source-authoritative
                   metadata: {
                     github: {
                       type: "issue",
@@ -508,6 +510,7 @@ export const handleGitHubWebhook = inngest.createFunction(
                   workspaceId: wsId,
                   statusId: defaultStatus?.id ?? null,
                   priority: "MEDIUM",
+                  ...(pr.pull_request.created_at ? { createdAt: new Date(pr.pull_request.created_at) } : {}), // source-authoritative
                   metadata: {
                     github: {
                       type: "pull_request",
@@ -659,6 +662,7 @@ export const handleGitHubWebhook = inngest.createFunction(
               html_url: string;
               user: { login: string };
               labels: { name: string }[];
+              created_at?: string;
             };
             repository: { full_name: string };
           };
@@ -687,6 +691,7 @@ export const handleGitHubWebhook = inngest.createFunction(
                     workspaceId: wsId,
                     statusId: defaultStatus?.id ?? null,
                     priority: "MEDIUM",
+                    ...(issue.issue.created_at ? { createdAt: new Date(issue.issue.created_at) } : {}), // source-authoritative
                     metadata: {
                       github: {
                         type: "issue",

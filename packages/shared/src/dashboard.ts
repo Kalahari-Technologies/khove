@@ -29,8 +29,13 @@ export type WidgetType =
   | "cross.activity"
   | "cross.gaps"
   | "cross.threads"
-  // Calendar / Agent / AI
+  // Calendar / Planner
   | "calendar.agenda"
+  | "calendar.today"
+  | "calendar.insights"
+  | "planner.deadlines"
+  | "planner.overdue"
+  // Agent / AI
   | "agent.proposals"
   | "ai.weeklyReport";
 
