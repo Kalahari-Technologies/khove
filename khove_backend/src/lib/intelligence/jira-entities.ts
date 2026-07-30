@@ -6,15 +6,17 @@ import { db } from "@backend/lib/db";
 interface Prog {
   total: number;
   done: number;
+  inProgress: number;
   committedPoints: number;
   donePoints: number;
   anyPts: boolean;
 }
-const mk = (): Prog => ({ total: 0, done: 0, committedPoints: 0, donePoints: 0, anyPts: false });
+const mk = (): Prog => ({ total: 0, done: 0, inProgress: 0, committedPoints: 0, donePoints: 0, anyPts: false });
 const acc = (g: Prog, j: Record<string, unknown>) => {
   g.total++;
   const done = j.statusCategory === "DONE";
   if (done) g.done++;
+  if (j.statusCategory === "IN_PROGRESS") g.inProgress++;
   const pts = typeof j.storyPoints === "number" ? (j.storyPoints as number) : 0;
   if (typeof j.storyPoints === "number") g.anyPts = true;
   g.committedPoints += pts;
@@ -27,6 +29,7 @@ export interface EpicSummary {
   url: string | null;
   total: number;
   done: number;
+  inProgress: number;
   committedPoints: number;
   donePoints: number;
   hasPoints: boolean;
@@ -55,6 +58,7 @@ export async function computeEpics(workspaceId: string): Promise<EpicSummary[]> 
       url: byKey.get(key)?.url ?? null,
       total: g.total,
       done: g.done,
+      inProgress: g.inProgress,
       committedPoints: Math.round(g.committedPoints * 10) / 10,
       donePoints: Math.round(g.donePoints * 10) / 10,
       hasPoints: g.anyPts,

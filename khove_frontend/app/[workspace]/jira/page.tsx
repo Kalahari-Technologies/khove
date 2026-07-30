@@ -33,6 +33,8 @@ export default async function JiraPage({
         externalUrl: t.externalUrl,
         metadata: t.metadata as Record<string, unknown> | null,
         updatedAt: t.updatedAt.toISOString(),
+        createdAt: t.createdAt.toISOString(),
+        dueDate: t.dueDate ? t.dueDate.toISOString() : null,
       }))}
     />
   );

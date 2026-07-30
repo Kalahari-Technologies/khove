@@ -25,6 +25,11 @@ export type WidgetType =
   | "jira.velocity"
   | "jira.epics"
   | "jira.statusDistribution"
+  | "jira.priority"
+  | "jira.types"
+  | "jira.teamWorkload"
+  | "jira.statTiles"
+  | "jira.epicProgress"
   // Cross-tool
   | "cross.activity"
   | "cross.gaps"

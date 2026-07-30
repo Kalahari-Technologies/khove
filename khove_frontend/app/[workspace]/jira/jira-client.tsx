@@ -28,6 +28,8 @@ import {
   Link2,
   Inbox,
   Tag,
+  Flag,
+  Users,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { BarTrend, LineTrend, Burndown, Donut, StackedBar, fmtHours } from "@/components/integrations/metric-charts";
@@ -49,6 +51,7 @@ import {
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 const INDIGO = "rgba(99,102,241,0.55)";
+const PRIORITY_ORDER = ["Highest", "High", "Medium", "Low", "Lowest"];
 
 const CAT = {
   todo: { label: "To Do", color: "#64748b", tone: "neutral" as Tone },
@@ -64,6 +67,8 @@ interface JiraTask {
   externalUrl: string | null;
   metadata: Record<string, unknown> | null;
   updatedAt: string;
+  createdAt: string;
+  dueDate: string | null;
 }
 
 interface Issue {
@@ -76,10 +81,13 @@ interface Issue {
   issueType?: string;
   externalUrl: string | null;
   updatedAt: string;
+  createdAt: string;
+  dueDate: string | null;
   priority?: string;
   storyPoints?: number | null;
   epicKey?: string;
   sprintName?: string;
+  assignee: { displayName: string; avatarUrl: string | null } | null;
 }
 
 type Filter = "todo" | "in_progress" | "done" | "bugs" | "stale" | null;
@@ -90,6 +98,10 @@ function parseIssue(task: JiraTask): Issue {
   const category = cat === "DONE" ? "done" : cat === "IN_PROGRESS" ? "in_progress" : "todo";
   const epic = j.epic as { key?: string } | undefined;
   const sprint = j.sprint as { name?: string } | undefined;
+  const rawAssignee = j.assignee as { displayName?: string; avatarUrl?: string | null } | undefined;
+  const assignee = rawAssignee?.displayName
+    ? { displayName: rawAssignee.displayName, avatarUrl: rawAssignee.avatarUrl ?? null }
+    : null;
   return {
     id: task.id,
     title: task.title,
@@ -100,10 +112,13 @@ function parseIssue(task: JiraTask): Issue {
     issueType: j.issueType as string | undefined,
     externalUrl: task.externalUrl ?? (j.url as string | undefined) ?? null,
     updatedAt: task.updatedAt,
+    createdAt: task.createdAt,
+    dueDate: task.dueDate,
     priority: (j.priority as string | undefined) ?? undefined,
     storyPoints: typeof j.storyPoints === "number" ? (j.storyPoints as number) : null,
     epicKey: epic?.key,
     sprintName: sprint?.name,
+    assignee,
   };
 }
 
@@ -263,11 +278,37 @@ export function JiraClient({
 
     const projectLoad: Record<string, number> = {};
     const typeLoad: Record<string, number> = {};
+    const priorityLoad: Record<string, number> = {};
+    const assigneeLoad: Record<string, number> = {};
     for (const i of all) {
       if (i.projectKey) projectLoad[i.projectKey] = (projectLoad[i.projectKey] ?? 0) + 1;
       const t = i.issueType ?? "Other";
       typeLoad[t] = (typeLoad[t] ?? 0) + 1;
+      const p = i.priority && PRIORITY_ORDER.includes(i.priority) ? i.priority : "None";
+      priorityLoad[p] = (priorityLoad[p] ?? 0) + 1;
+      // Team workload = open issues only, bucketed by assignee (null → Unassigned).
+      if (i.category !== "done") {
+        const a = i.assignee?.displayName ?? "Unassigned";
+        assigneeLoad[a] = (assigneeLoad[a] ?? 0) + 1;
+      }
     }
+
+    // Priority in the fixed Highest→Lowest order, "None" last; drop empty buckets.
+    const priorityRows = [...PRIORITY_ORDER, "None"]
+      .map((label) => ({ label, value: priorityLoad[label] ?? 0 }))
+      .filter((r) => r.value > 0);
+
+    const now = Date.now();
+    const within = (iso: string | null, days: number, forward = false) => {
+      if (!iso) return false;
+      const t = new Date(iso).getTime();
+      if (Number.isNaN(t)) return false;
+      const delta = forward ? t - now : now - t;
+      return delta >= 0 && delta <= days * 86_400_000;
+    };
+    const completed7d = done.filter((i) => within(i.updatedAt, 7)).length;
+    const created7d = all.filter((i) => within(i.createdAt, 7)).length;
+    const dueSoon7d = all.filter((i) => i.category !== "done" && within(i.dueDate, 7, true)).length;
 
     return {
       issues: all,
@@ -277,8 +318,13 @@ export function JiraClient({
         done,
         bugs,
         stale,
+        completed7d,
+        created7d,
+        dueSoon7d,
         projectRows: Object.entries(projectLoad).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value),
         typeRows: Object.entries(typeLoad).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value),
+        priorityRows,
+        assigneeRows: Object.entries(assigneeLoad).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value),
       },
     };
   }, [tasks]);
@@ -469,6 +515,14 @@ export function JiraClient({
             {/* Hero KPI row */}
             <KpiRow provider="jira" windowDays={28} />
 
+            {/* 7-day movement — completed / created / due soon / open */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <StatTile label="Completed" value={insights.completed7d} tone="good" icon={<CheckCircle2 size={12} />} hint="last 7 days" />
+              <StatTile label="Created" value={insights.created7d} tone="accent" icon={<Plus size={12} />} hint="last 7 days" />
+              <StatTile label="Due soon" value={insights.dueSoon7d} tone="warn" icon={<Clock size={12} />} hint="next 7 days" />
+              <StatTile label="Open" value={open} tone="neutral" icon={<CircleDot size={12} />} hint="not done" />
+            </div>
+
             {/* Attention strip */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
               {tiles.map((t) => (
@@ -486,6 +540,16 @@ export function JiraClient({
 
             {/* Active sprint burndown */}
             <JiraActiveSprints onDrill={setDrill} />
+
+            {/* Priority + type breakdowns */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <SectionCard title="Priority" icon={<Flag size={13} className="text-white/40" />}>
+                <BreakdownList rows={insights.priorityRows} color={INDIGO} emptyLabel="No prioritised issues yet" />
+              </SectionCard>
+              <SectionCard title="Types of work" icon={<Shapes size={13} className="text-white/40" />}>
+                <BreakdownList rows={insights.typeRows} color={INDIGO} emptyLabel="No issues yet" />
+              </SectionCard>
+            </div>
 
             {/* Issues by status category */}
             <SectionCard title="Status mix" icon={<CircleDot size={13} className="text-white/40" />}>
@@ -522,6 +586,11 @@ export function JiraClient({
               <JiraReleasesSection onDrill={setDrill} />
             </div>
 
+            {/* Team workload — open issues by assignee (Unassigned included) */}
+            <SectionCard title="Team workload" icon={<Users size={13} className="text-white/40" />} action={<span className="text-[11px] text-white/30">open issues</span>}>
+              <BreakdownList rows={insights.assigneeRows} color={INDIGO} emptyLabel="No open issues assigned yet" max={10} />
+            </SectionCard>
+
             {/* Cross-tool delivery gaps (Jira status vs merged code) */}
             <JiraCrossToolSection />
           </div>
@@ -530,6 +599,25 @@ export function JiraClient({
         {/* ── Activity ─────────────────────────────────────────────────── */}
         {tab === "activity" && (
           <div className="space-y-6">
+            {/* Status distribution + breakdowns — surfaced above the issue list */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <SectionCard title="Status" icon={<CircleDot size={13} className="text-white/40" />}>
+                <DistributionBar
+                  segments={[
+                    { label: "To Do", value: insights.todo.length, color: CAT.todo.color },
+                    { label: "In Progress", value: insights.inProgress.length, color: CAT.in_progress.color },
+                    { label: "Done", value: insights.done.length, color: CAT.done.color },
+                  ]}
+                />
+              </SectionCard>
+              <SectionCard title="By project" icon={<FolderKanban size={13} className="text-white/40" />}>
+                <BreakdownList rows={insights.projectRows} color={INDIGO} emptyLabel="No projects synced yet" />
+              </SectionCard>
+              <SectionCard title="By type" icon={<Shapes size={13} className="text-white/40" />}>
+                <BreakdownList rows={insights.typeRows} color={INDIGO} emptyLabel="No issues yet" />
+              </SectionCard>
+            </div>
+
             {/* Issue list */}
             <SectionCard
               title="Issues"
@@ -569,25 +657,6 @@ export function JiraClient({
                 </div>
               )}
             </SectionCard>
-
-            {/* Status distribution + breakdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <SectionCard title="Status" icon={<CircleDot size={13} className="text-white/40" />}>
-                <DistributionBar
-                  segments={[
-                    { label: "To Do", value: insights.todo.length, color: CAT.todo.color },
-                    { label: "In Progress", value: insights.inProgress.length, color: CAT.in_progress.color },
-                    { label: "Done", value: insights.done.length, color: CAT.done.color },
-                  ]}
-                />
-              </SectionCard>
-              <SectionCard title="By project" icon={<FolderKanban size={13} className="text-white/40" />}>
-                <BreakdownList rows={insights.projectRows} color={INDIGO} emptyLabel="No projects synced yet" />
-              </SectionCard>
-              <SectionCard title="By type" icon={<Shapes size={13} className="text-white/40" />}>
-                <BreakdownList rows={insights.typeRows} color={INDIGO} emptyLabel="No issues yet" />
-              </SectionCard>
-            </div>
           </div>
         )}
       </div>
@@ -771,6 +840,25 @@ function ProgressBar({ pct, color = "bg-indigo-400" }: { pct: number; color?: st
   );
 }
 
+// 3-segment progress bar: Done / In-progress / To-do — used for epic breakdowns.
+function TriBar({ done, inProgress, todo }: { done: number; inProgress: number; todo: number }) {
+  const total = done + inProgress + todo || 1;
+  const seg = [
+    { value: done, color: CAT.done.color, label: "Done" },
+    { value: inProgress, color: CAT.in_progress.color, label: "In progress" },
+    { value: todo, color: CAT.todo.color, label: "To do" },
+  ];
+  return (
+    <div className="flex h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+      {seg.map((s) =>
+        s.value > 0 ? (
+          <div key={s.label} style={{ width: `${(s.value / total) * 100}%`, backgroundColor: s.color }} title={`${s.label}: ${s.value}`} />
+        ) : null,
+      )}
+    </div>
+  );
+}
+
 function SprintCard({ s, onDrill }: { s: { id?: number; name: string; state?: string; goal?: string; daysRemaining: number | null; totalIssues: number; doneIssues: number; committedPoints: number; donePoints: number; hasPoints: boolean }; onDrill: (t: DrillTarget) => void }) {
   const bd = trpc.metrics.sprintBurndown.useQuery({ sprintName: s.name }, { enabled: s.state === "active" });
   const issuePct = s.totalIssues ? Math.round((s.doneIssues / s.totalIssues) * 100) : 0;
@@ -877,7 +965,7 @@ function JiraEpicsSection({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
       ) : (
         <div className="space-y-2.5">
           {epics.map((e) => {
-            const pct = e.total ? Math.round((e.done / e.total) * 100) : 0;
+            const todo = Math.max(0, e.total - e.done - e.inProgress);
             return (
               <button key={e.key} onClick={() => onDrill({ kind: "EPIC", key: e.key, title: e.name })} className="w-full text-left group">
                 <div className="flex items-center justify-between mb-1">
@@ -890,7 +978,7 @@ function JiraEpicsSection({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
                     {e.hasPoints ? ` · ${e.donePoints}/${e.committedPoints}pt` : ""}
                   </span>
                 </div>
-                <ProgressBar pct={pct} />
+                <TriBar done={e.done} inProgress={e.inProgress} todo={todo} />
               </button>
             );
           })}

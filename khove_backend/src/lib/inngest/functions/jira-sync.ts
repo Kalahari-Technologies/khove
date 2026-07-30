@@ -22,7 +22,8 @@ import { recordEntities, type EntityInput } from "@backend/lib/entities/record";
 import { jiraEntitiesFromIssue } from "@backend/lib/entities/jira";
 
 // ---------------------------------------------------------------------------
-// Shared upsert — maps Jira issues to workspace-scoped Tasks (no personal data)
+// Shared upsert — maps Jira issues to workspace-scoped Tasks (assignee display
+// name + avatar ARE stored, to power the Team Workload view — see jiraAssignee)
 // ---------------------------------------------------------------------------
 
 type StatusCategory = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
@@ -62,7 +63,7 @@ async function upsertIssueTask(
   const createdRaw = (f as Record<string, unknown>).created as string | null | undefined;
   const jiraPriority = jiraPriorityToKhove(f.priority?.name);
 
-  // Rich, content-only context (no assignee/reporter → still no personal data).
+  // Rich issue context, including the assignee (display name + avatar) for workload.
   const storyPoints = fieldMap.storyPoints ? (f[fieldMap.storyPoints] as number | null) ?? null : null;
   const sprint = fieldMap.sprint ? parseSprintField(f[fieldMap.sprint]) : null;
   const parent = f.parent?.key
@@ -85,6 +86,7 @@ async function upsertIssueTask(
       url: externalUrl,
       priority: f.priority?.name ?? null,
       created: createdRaw ?? null,
+      assignee: jiraAssignee(f),
       labels: Array.isArray(f.labels) ? f.labels : [],
       components: Array.isArray(f.components) ? f.components.map((c) => c.name).filter(Boolean) : [],
       fixVersions: Array.isArray(f.fixVersions) ? f.fixVersions.map((v) => v.name).filter(Boolean) : [],
@@ -123,6 +125,13 @@ async function upsertIssueTask(
     },
   });
   return "created";
+}
+
+/** Extract the assignee (display name + avatar) for the Team Workload view. */
+function jiraAssignee(f: Record<string, unknown>): { displayName: string; avatarUrl: string | null } | null {
+  const a = f.assignee as { displayName?: string; avatarUrls?: Record<string, string> } | null | undefined;
+  if (!a?.displayName) return null;
+  return { displayName: a.displayName, avatarUrl: a.avatarUrls?.["24x24"] ?? a.avatarUrls?.["48x48"] ?? null };
 }
 
 /** Map a Jira priority name to the Khove Priority enum. */

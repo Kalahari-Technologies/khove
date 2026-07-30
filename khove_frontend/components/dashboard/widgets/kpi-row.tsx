@@ -4,6 +4,8 @@ import { ArrowDownRight, ArrowUpRight, Gauge, Minus } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Sparkline, fmtHours } from "@/components/integrations/metric-charts";
 import { EmptyState } from "@/components/integrations/insight-ui";
+import { ProviderIcon } from "@/components/provider-icon";
+import { HelpTip } from "@/components/help-tip";
 
 type Provider = "github" | "jira" | "all";
 
@@ -17,6 +19,7 @@ interface KpiCard {
   trend: "up" | "down" | "flat";
   goodDirection: "up" | "down";
   sparkline: { x: string; value: number | null }[];
+  description?: string;
 }
 
 function fmtValue(v: number | null, unit: KpiCard["unit"]): string {
@@ -27,31 +30,47 @@ function fmtValue(v: number | null, unit: KpiCard["unit"]): string {
 }
 
 /** A single hero KPI card: big value, period-over-period delta, sparkline. */
-export function KpiCardView({ card, windowDays }: { card: KpiCard; windowDays: number }) {
+export function KpiCardView({ card, windowDays, provider }: { card: KpiCard; windowDays: number; provider?: Provider }) {
   const improved = card.trend !== "flat" && card.trend === card.goodDirection;
   const worsened = card.trend !== "flat" && card.trend !== card.goodDirection;
   const deltaColor = improved ? "text-emerald-300" : worsened ? "text-red-300" : "text-white/35";
   const sparkColor = improved ? "rgb(52,211,153)" : worsened ? "rgb(248,113,113)" : "rgba(255,255,255,0.4)";
   const DeltaIcon = card.trend === "up" ? ArrowUpRight : card.trend === "down" ? ArrowDownRight : Minus;
+  const brand = provider === "github" || provider === "jira" ? provider : null;
+  const hasTrend = card.delta != null || card.sparkline.some((p) => p.value != null);
 
   return (
-    <div className="relative flex min-w-0 flex-col gap-1 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3">
-      <span className="truncate text-[11px] font-medium tracking-tight text-white/45">{card.label}</span>
+    <div className="group/kpi relative flex min-w-0 flex-col gap-1 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3">
+      <div className="flex items-center gap-1.5">
+        {brand && <ProviderIcon provider={brand} size={12} className="shrink-0 opacity-70" />}
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-tight text-white/45">{card.label}</span>
+        {card.description && (
+          <span className="opacity-0 transition-opacity group-hover/kpi:opacity-100">
+            <HelpTip text={card.description} />
+          </span>
+        )}
+      </div>
       <div className="flex items-end justify-between gap-2">
         <span className="text-[22px] font-semibold leading-none tabular-nums text-white/90">
           {fmtValue(card.value, card.unit)}
         </span>
-        <div className="mb-0.5 h-7 w-16 shrink-0">
-          <Sparkline points={card.sparkline} color={sparkColor} height={28} />
+        {hasTrend && (
+          <div className="mb-0.5 h-7 w-16 shrink-0">
+            <Sparkline points={card.sparkline} color={sparkColor} height={28} />
+          </div>
+        )}
+      </div>
+      {hasTrend ? (
+        <div className="flex items-center gap-1 text-[10.5px]">
+          <DeltaIcon size={12} className={deltaColor} />
+          <span className={`tabular-nums ${deltaColor}`}>
+            {card.deltaPct != null ? `${card.deltaPct > 0 ? "+" : ""}${card.deltaPct}%` : card.delta != null ? `${card.delta > 0 ? "+" : ""}${card.delta}` : "—"}
+          </span>
+          <span className="text-white/25">vs prev {windowDays}d</span>
         </div>
-      </div>
-      <div className="flex items-center gap-1 text-[10.5px]">
-        <DeltaIcon size={12} className={deltaColor} />
-        <span className={`tabular-nums ${deltaColor}`}>
-          {card.deltaPct != null ? `${card.deltaPct > 0 ? "+" : ""}${card.deltaPct}%` : card.delta != null ? `${card.delta > 0 ? "+" : ""}${card.delta}` : "—"}
-        </span>
-        <span className="text-white/25">vs prev {windowDays}d</span>
-      </div>
+      ) : (
+        <span className="text-[10.5px] text-white/25">right now</span>
+      )}
     </div>
   );
 }
@@ -85,11 +104,11 @@ export function KpiRow({ provider = "all", windowDays = 28 }: { provider?: Provi
     );
   }
 
-  const cols = cards.length <= 4 ? "lg:grid-cols-4" : "lg:grid-cols-6";
+  const cols = cards.length <= 4 ? "lg:grid-cols-4" : "lg:grid-cols-4 xl:grid-cols-6";
   return (
     <div className={`grid grid-cols-2 gap-2.5 sm:grid-cols-3 ${cols}`}>
       {cards.map((c) => (
-        <KpiCardView key={c.key} card={c} windowDays={data?.windowDays ?? windowDays} />
+        <KpiCardView key={c.key} card={c} windowDays={data?.windowDays ?? windowDays} provider={provider} />
       ))}
     </div>
   );

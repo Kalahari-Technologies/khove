@@ -6,6 +6,8 @@ import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { trpc } from "@/lib/trpc/client";
 import { SectionCard, StatTile, Chip, EmptyState, ago } from "@/components/integrations/insight-ui";
 import { RichText } from "@/components/rich-text";
+import { ProviderIcon } from "@/components/provider-icon";
+import { entityLabelText, splitKeyTitle } from "@/lib/activity-format";
 import { ThreadsPanel } from "./thread-panel";
 import {
   Activity,
@@ -202,7 +204,17 @@ function ActivityTimeline({ items, loading }: { items: ActivityItem[]; loading: 
           {items.map((it) => {
             const p = PROVIDER[it.provider] ?? { label: it.provider, color: "#71717A" };
             const k = KIND[it.kind] ?? { verb: it.kind.toLowerCase().replace(/_/g, " "), icon: <CircleDot size={12} />, tone: "text-white/50" };
-            const label = it.title ?? shortEntity(it.entityKey);
+            const kt = it.title ? splitKeyTitle(it.title) : null;
+            const label =
+              kt && kt.key ? (
+                <>
+                  <span className="font-semibold text-white/90">{kt.key}</span> {kt.rest}
+                </>
+              ) : it.title ? (
+                it.title
+              ) : (
+                entityLabelText(it.entityKey)
+              );
             return (
               <div key={it.id} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/[0.03] transition-colors">
                 <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md" style={{ backgroundColor: `${p.color}1a`, color: p.color }}>
@@ -217,7 +229,7 @@ function ActivityTimeline({ items, loading }: { items: ActivityItem[]; loading: 
                   <span className="flex-1 min-w-0 truncate text-[13px] text-white/70">{label}</span>
                 )}
                 {it.source && (
-                  <span className="hidden md:inline text-[10.5px] font-mono text-white/30 flex-shrink-0 max-w-[140px] truncate">{it.source}</span>
+                  <span className="hidden md:inline text-[10.5px] text-white/30 flex-shrink-0 max-w-[140px] truncate">{it.source.split("/").pop()}</span>
                 )}
                 <span className="flex-shrink-0 text-[10.5px] text-white/30 tabular-nums">{ago(it.occurredAt)}</span>
               </div>
@@ -301,16 +313,20 @@ function UnplannedWork() {
     >
       <p className="mb-2 text-[11.5px] text-white/40">Merged code with no linked ticket or thread — {d.unplanned} of {d.merged}.</p>
       <div className="space-y-0.5">
-        {d.unplannedItems.slice(0, 6).map((it) => (
-          <div key={it.entityKey} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
-            {it.url ? (
-              <a href={it.url} target="_blank" rel="noreferrer" className="flex-1 min-w-0 truncate text-[12.5px] text-white/80 hover:text-white">{it.title}</a>
-            ) : (
-              <span className="flex-1 min-w-0 truncate text-[12.5px] text-white/70">{it.title}</span>
-            )}
-            <span className="flex-shrink-0 text-[10.5px] text-white/30 tabular-nums">{ago(it.mergedAt)}</span>
-          </div>
-        ))}
+        {d.unplannedItems.slice(0, 6).map((it) => {
+          const label = it.title && !/^(github-|jira-)/.test(it.title) ? it.title : entityLabelText(it.entityKey);
+          return (
+            <div key={it.entityKey} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+              <ProviderIcon provider="github" size={13} className="shrink-0 opacity-70" />
+              {it.url ? (
+                <a href={it.url} target="_blank" rel="noreferrer" className="flex-1 min-w-0 truncate text-[12.5px] text-white/80 hover:text-white">{label}</a>
+              ) : (
+                <span className="flex-1 min-w-0 truncate text-[12.5px] text-white/70">{label}</span>
+              )}
+              <span className="flex-shrink-0 text-[10.5px] text-white/30 tabular-nums">{ago(it.mergedAt)}</span>
+            </div>
+          );
+        })}
       </div>
     </SectionCard>
   );

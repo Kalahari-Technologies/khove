@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
@@ -399,11 +399,23 @@ function DetailPanel({
     setEditingId(null);
   };
 
-  // Dashboards drawer is built from the user's live dashboard list.
+  // Dashboards drawer is built from the user's live dashboard list. Fetch on mount
+  // (not gated on the section) and render from a localStorage-cached copy so the
+  // list appears instantly instead of flashing empty then fetching every visit.
+  const [cachedDashboards, setCachedDashboards] = useLocalPref<{ id: string; name: string; isDefault: boolean }[]>(
+    workspace.id ? `nav:dashboards:${workspace.id}` : null,
+    [],
+  );
   const dashboardsQuery = trpc.dashboard.list.useQuery(undefined, {
-    staleTime: 30_000,
-    enabled: activeSection === "dashboards",
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
   });
+  useEffect(() => {
+    if (dashboardsQuery.data) {
+      setCachedDashboards(dashboardsQuery.data.map((d) => ({ id: d.id, name: d.name, isDefault: d.isDefault })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboardsQuery.data]);
   const createDashboard = trpc.dashboard.create.useMutation({
     onSuccess: (r) => {
       dashboardsQuery.refetch();
@@ -414,7 +426,9 @@ function DetailPanel({
   const base = getSections(activeSection, slug);
   const title = base.title;
   const sections =
-    activeSection === "dashboards" ? buildDashboardsSections(dashboardsQuery.data ?? [], slug) : base.sections;
+    activeSection === "dashboards"
+      ? buildDashboardsSections(dashboardsQuery.data ?? cachedDashboards, slug)
+      : base.sections;
 
   // Persisted accordion open/closed state, keyed per workspace.
   const [accordion, setAccordion] = useLocalPref<Record<string, boolean>>(
