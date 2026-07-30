@@ -1,6 +1,6 @@
 import { google, calendar_v3 } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
-import type { Task } from "@prisma/client";
+import type { Task, Prisma } from "@prisma/client";
 import { db } from "@backend/lib/db";
 import { encrypt, decrypt } from "@backend/lib/encryption";
 import { classifyEvent, shouldBecomeTask } from "@backend/lib/calendar/classify";
@@ -130,7 +130,7 @@ export async function listUpcomingEvents(
 export async function listAllCalendarEvents(
   workspaceId: string,
   opts?: { timeMin?: string; timeMax?: string; maxResults?: number },
-): Promise<Array<calendar_v3.Schema$Event & { _calendarId: string; _calendarSummary: string; _isHolidayOrBirthday: boolean }>> {
+): Promise<Array<calendar_v3.Schema$Event & { _calendarId: string; _calendarSummary: string; _isHolidayOrBirthday: boolean; _calendarColor: string | null }>> {
   const { calendar } = await getCalendarClient(workspaceId);
 
   const now = new Date().toISOString();
@@ -142,7 +142,7 @@ export async function listAllCalendarEvents(
   const calListRes = await calendar.calendarList.list();
   const calendars = calListRes.data.items ?? [];
 
-  const allEvents: Array<calendar_v3.Schema$Event & { _calendarId: string; _calendarSummary: string; _isHolidayOrBirthday: boolean }> = [];
+  const allEvents: Array<calendar_v3.Schema$Event & { _calendarId: string; _calendarSummary: string; _isHolidayOrBirthday: boolean; _calendarColor: string | null }> = [];
 
   for (const cal of calendars) {
     if (!cal.id) continue;
@@ -166,6 +166,7 @@ export async function listAllCalendarEvents(
           _calendarId: cal.id,
           _calendarSummary: cal.summary ?? cal.id,
           _isHolidayOrBirthday: isHolidayOrBirthday,
+          _calendarColor: cal.backgroundColor ?? null,
         });
       }
     } catch {
@@ -460,6 +461,7 @@ function buildEventMetadata(
 function buildEntryMetadata(event: calendar_v3.Schema$Event) {
   const c = classifyEvent(event);
   const meetLink = extractMeetLink(event);
+  const tagged = event as calendar_v3.Schema$Event & { _calendarId?: string; _calendarColor?: string | null };
   return {
     eventType: event.eventType ?? "default",
     location: event.location ?? null,
@@ -470,7 +472,52 @@ function buildEntryMetadata(event: calendar_v3.Schema$Event) {
     attendeeCount: c.attendeeCount,
     isAllDay: !event.start?.dateTime,
     attendees: (event.attendees ?? []).map((a) => a.email).filter((e): e is string => !!e),
+    // The source calendar — powers the calendar picker + per-calendar colors.
+    calendarId: tagged._calendarId ?? null,
+    calendarColor: tagged._calendarColor ?? null,
   };
+}
+
+export interface UserCalendar {
+  id: string;
+  summary: string;
+  color: string | null;
+}
+
+/** List the user's Google calendars with their display colors (for the picker). */
+export async function listUserCalendars(workspaceId: string): Promise<UserCalendar[]> {
+  const { calendar } = await getCalendarClient(workspaceId);
+  const res = await calendar.calendarList.list();
+  return (res.data.items ?? [])
+    .filter((c) => c.id)
+    .map((c) => ({
+      id: c.id!,
+      summary: c.summaryOverride ?? c.summary ?? c.id!,
+      color: c.backgroundColor ?? null,
+    }));
+}
+
+/** Persist the user's calendar list + colors into Integration.metadata, preserving
+ *  any prior per-calendar `selected` choice (new calendars default to selected). */
+async function persistCalendars(workspaceId: string): Promise<void> {
+  try {
+    const cals = await listUserCalendars(workspaceId);
+    const integ = await db.integration.findFirst({
+      where: { workspaceId, provider: "GOOGLE_CALENDAR", isActive: true },
+      select: { id: true, metadata: true },
+    });
+    if (!integ) return;
+    const meta = (integ.metadata ?? {}) as Record<string, unknown>;
+    const prev = (meta.calendars as { id: string; selected?: boolean }[] | undefined) ?? [];
+    const prevSel = new Map(prev.map((c) => [c.id, c.selected !== false]));
+    const calendars = cals.map((c) => ({ ...c, selected: prevSel.get(c.id) ?? true }));
+    await db.integration.update({
+      where: { id: integ.id },
+      data: { metadata: { ...meta, calendars } as unknown as Prisma.InputJsonObject },
+    });
+  } catch {
+    /* best-effort — picker just won't populate until the next sync */
+  }
 }
 
 /**
@@ -644,6 +691,7 @@ export async function syncGoogleCalendar(
   const timeMax = opts?.timeMax ?? new Date(now.getFullYear(), now.getMonth() + 3, 0).toISOString();
 
   const events = await listAllCalendarEvents(workspaceId, { timeMin, timeMax, maxResults: 100 });
+  await persistCalendars(workspaceId);
 
   let tasksCreated = 0;
   let tasksUpdated = 0;

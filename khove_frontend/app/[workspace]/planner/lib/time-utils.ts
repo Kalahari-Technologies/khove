@@ -99,7 +99,7 @@ export function entryToTimeSlot(entry: CalendarDisplayEntry): TimeSlotItem {
     end,
     isAllDay: entry.isAllDay,
     type: "entry",
-    color: ENTRY_COLOR,
+    color: entry.calendarColor ?? ENTRY_COLOR,
   };
 }
 

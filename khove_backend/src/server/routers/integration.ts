@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { router, workspaceProcedure } from "@backend/server/trpc";
 import { db } from "@backend/lib/db";
 import { redis } from "@backend/lib/redis";
@@ -42,4 +43,24 @@ export const integrationRouter = router({
       return { status: raw };
     }
   }),
+
+  /** Toggle which Google calendars show on the planner (Integration.metadata.calendars). */
+  setCalendarSelection: workspaceProcedure
+    .input(z.object({ calendarId: z.string(), selected: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const integ = await db.integration.findFirst({
+        where: { workspaceId: ctx.workspace.id, provider: "GOOGLE_CALENDAR", isActive: true },
+        select: { id: true, metadata: true },
+      });
+      if (!integ) return { ok: false };
+      const meta = (integ.metadata ?? {}) as Record<string, unknown>;
+      const calendars = ((meta.calendars as { id: string; selected?: boolean }[] | undefined) ?? []).map((c) =>
+        c.id === input.calendarId ? { ...c, selected: input.selected } : c,
+      );
+      await db.integration.update({
+        where: { id: integ.id },
+        data: { metadata: { ...meta, calendars } as unknown as Prisma.InputJsonObject },
+      });
+      return { ok: true };
+    }),
 });

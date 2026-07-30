@@ -6,11 +6,16 @@ import {
   ChevronRight,
   GitBranch,
   Home,
+  Calendar as CalendarIcon,
+  Check,
+  RefreshCw,
 } from "lucide-react";
 import type { PlannerTask, CalendarDisplayEntry } from "@/lib/types";
+import { useRouter } from "next/navigation";
 import { sourceKindOf } from "./lib/time-utils";
 import { COLOR_BY_OPTIONS, type ColorBy } from "./lib/calendar-colors";
-import { useConnectIntegration } from "@/lib/trpc/api";
+import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
+import { trpc } from "@/lib/trpc/client";
 import { UpgradeDialog } from "@/components/upgrade-dialog";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { MonthView } from "./components/month-view";
@@ -81,6 +86,13 @@ function MeetIcon({ size = 14 }: { size?: number }) {
 // Types
 // ---------------------------------------------------------------------------
 
+export interface CalendarInfo {
+  id: string;
+  summary: string;
+  color: string | null;
+  selected?: boolean;
+}
+
 interface PlannerClientProps {
   isFirstTime: boolean;
   isGoogleConnected: boolean;
@@ -90,6 +102,7 @@ interface PlannerClientProps {
   planTier: string;
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
+  calendars?: CalendarInfo[];
   insights?: PlannerInsight[];
   agentActions?: AgentActionView[];
   view?: "month" | "week" | "day";
@@ -294,6 +307,7 @@ function taskLayer(sources: string[]): Layer | null {
 function PlannerCalendar({
   tasks,
   calendarEntries,
+  calendars = [],
   insights = [],
   agentActions = [],
   isGoogleConnected,
@@ -303,6 +317,7 @@ function PlannerCalendar({
 }: {
   tasks: PlannerTask[];
   calendarEntries: CalendarDisplayEntry[];
+  calendars?: CalendarInfo[];
   insights?: PlannerInsight[];
   agentActions?: AgentActionView[];
   isGoogleConnected: boolean;
@@ -314,11 +329,45 @@ function PlannerCalendar({
   // View + layer state live here (shared across all three views) and persist to
   // localStorage, so switching views keeps your layers — and the view switcher is
   // a top-right dropdown rather than a full navigation.
+  const router = useRouter();
+  const backendFetch = useBackendFetch();
+  const setCalendarSel = trpc.integration.setCalendarSelection.useMutation();
   const [view, setView] = useState<"month" | "week" | "day">("month");
   const [hidden, setHidden] = useState<Set<Layer>>(new Set());
   const [colorBy, setColorBy] = useState<ColorBy>("source");
   const [viewOpen, setViewOpen] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
+  const [calOpen, setCalOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [calSel, setCalSel] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const init: Record<string, boolean> = {};
+    for (const c of calendars) init[c.id] = c.selected !== false;
+    setCalSel(init);
+  }, [calendars]);
+
+  const toggleCalendar = (id: string) => {
+    const next = !(calSel[id] ?? true);
+    setCalSel((p) => ({ ...p, [id]: next }));
+    setCalendarSel.mutate({ calendarId: id, selected: next });
+  };
+  const refreshCalendars = async () => {
+    setRefreshing(true);
+    try {
+      await backendFetch(
+        "/api/integrations/google/resync",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId }) },
+        workspaceId,
+      );
+      router.refresh();
+    } catch {
+      /* ignore */
+    }
+    setRefreshing(false);
+  };
+  // null when calendars aren't synced yet → don't filter by calendar.
+  const selectedIds = calendars.length ? new Set(calendars.filter((c) => calSel[c.id] !== false).map((c) => c.id)) : null;
 
   useEffect(() => {
     try {
@@ -378,11 +427,21 @@ function PlannerCalendar({
     () =>
       tasks.filter((t) => {
         const l = taskLayer(t.source);
-        return !l || !hidden.has(l);
+        if (l && hidden.has(l)) return false;
+        if (selectedIds && t.calendarId && !selectedIds.has(t.calendarId)) return false;
+        return true;
       }),
-    [tasks, hidden],
+    [tasks, hidden, selectedIds],
   );
-  const visibleEntries = hidden.has("events") ? [] : calendarEntries;
+  const visibleEntries = useMemo(
+    () =>
+      calendarEntries.filter((e) => {
+        if (hidden.has("events")) return false;
+        if (selectedIds && e.calendarId && !selectedIds.has(e.calendarId)) return false;
+        return true;
+      }),
+    [calendarEntries, hidden, selectedIds],
+  );
 
   return (
     <PlannerInteractionsProvider
@@ -415,6 +474,58 @@ function PlannerCalendar({
             })}
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
+            {/* Calendars */}
+            {isGoogleConnected && (
+              <div className="relative">
+                <button
+                  onClick={() => setCalOpen((o) => !o)}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 py-1.5 text-[12.5px] text-white/70 hover:bg-white/[0.07]"
+                >
+                  <CalendarIcon size={13} className="text-white/45" /> Calendars <ChevronDown size={13} className="text-white/45" />
+                </button>
+                {calOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setCalOpen(false)} />
+                    <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-white/[0.10] bg-[#0d0d0f] p-1.5 shadow-xl">
+                      {calendars.length === 0 ? (
+                        <div className="px-2 py-3 text-center text-[12px] text-white/40">
+                          No calendars synced yet — hit Refresh.
+                        </div>
+                      ) : (
+                        <div className="max-h-[300px] space-y-0.5 overflow-y-auto">
+                          {calendars.map((c) => {
+                            const on = calSel[c.id] !== false;
+                            const color = c.color ?? "#8B5CF6";
+                            return (
+                              <button
+                                key={c.id}
+                                onClick={() => toggleCalendar(c.id)}
+                                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-white/[0.04]"
+                              >
+                                <span
+                                  className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[5px]"
+                                  style={on ? { backgroundColor: color } : { border: `1.5px solid ${color}` }}
+                                >
+                                  {on && <Check size={11} className="text-white" />}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-[12.5px] text-white/80">{c.summary}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <button
+                        onClick={refreshCalendars}
+                        disabled={refreshing}
+                        className="mt-1 flex w-full items-center justify-center gap-1.5 border-t border-white/[0.06] px-2 py-1.5 text-[11.5px] text-white/50 hover:text-white/80 disabled:opacity-50"
+                      >
+                        <RefreshCw size={11} className={refreshing ? "animate-spin" : ""} /> {refreshing ? "Syncing…" : "Refresh calendars"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {/* Color-by */}
             <div className="relative">
               <button
@@ -494,10 +605,10 @@ function PlannerCalendar({
 // Export
 // ---------------------------------------------------------------------------
 
-export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, insights = [], agentActions = [] }: PlannerClientProps) {
+export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, canAdmin, workspaceId, planTier, tasks, calendarEntries, calendars = [], insights = [], agentActions = [] }: PlannerClientProps) {
   if (isSyncing) return <PlannerSyncingState />;
   if (isFirstTime) return <PlannerEmptyState planTier={planTier} canAdmin={canAdmin} workspaceId={workspaceId} />;
-  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} insights={insights} agentActions={agentActions} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} />;
+  return <PlannerCalendar tasks={tasks} calendarEntries={calendarEntries} calendars={calendars} insights={insights} agentActions={agentActions} isGoogleConnected={isGoogleConnected} canAdmin={canAdmin} workspaceId={workspaceId} planTier={planTier} />;
 }
 
 // ---------------------------------------------------------------------------

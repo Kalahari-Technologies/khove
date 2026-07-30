@@ -31,6 +31,8 @@ export interface PlannerTask {
   dueDate: string;
   source: string[];
   priority?: string;
+  /** Google source calendar id (metadata.googleCalendar.calendarId) — for the picker. */
+  calendarId?: string | null;
   hasMeetLink?: boolean;
   /** Full Google Meet / conference URL (from metadata.googleCalendar.meetLink). */
   meetLink?: string | null;
@@ -57,4 +59,7 @@ export interface CalendarDisplayEntry {
   startDate: string;
   endDate?: string;
   isAllDay: boolean;
+  /** Source Google calendar id + its display color (for the picker + per-calendar colors). */
+  calendarId?: string | null;
+  calendarColor?: string | null;
 }

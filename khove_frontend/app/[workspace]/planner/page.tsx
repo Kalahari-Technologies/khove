@@ -66,6 +66,11 @@ export default async function PlannerPage({
   const isFirstTime =
     tasks.length === 0 && calendarEntries.length === 0 && !isSyncing && !anyConnected;
 
+  const calendars =
+    ((googleIntegration?.metadata as Record<string, unknown> | null)?.calendars as
+      | { id: string; summary: string; color: string | null; selected?: boolean }[]
+      | undefined) ?? [];
+
   return (
     <PlannerClient
       isFirstTime={isFirstTime}
@@ -84,6 +89,7 @@ export default async function PlannerPage({
           dueDate: t.dueDate!.toISOString(),
           source: t.source,
           priority: t.priority,
+          calendarId: (gcal?.calendarId as string | null | undefined) ?? null,
           hasMeetLink: !!gcal?.meetLink,
           meetLink: gcal?.meetLink ?? null,
           location: gcal?.location ?? null,
@@ -103,13 +109,19 @@ export default async function PlannerPage({
         };
       })}
       view={view}
-      calendarEntries={calendarEntries.map((e) => ({
-        id: e.id,
-        title: e.title,
-        startDate: e.startDate.toISOString(),
-        endDate: e.endDate?.toISOString(),
-        isAllDay: e.isAllDay,
-      }))}
+      calendars={calendars}
+      calendarEntries={calendarEntries.map((e) => {
+        const em = (e.metadata as Record<string, unknown> | null) ?? {};
+        return {
+          id: e.id,
+          title: e.title,
+          startDate: e.startDate.toISOString(),
+          endDate: e.endDate?.toISOString(),
+          isAllDay: e.isAllDay,
+          calendarId: (em.calendarId as string | null) ?? null,
+          calendarColor: (em.calendarColor as string | null) ?? null,
+        };
+      })}
       insights={insights.map((i) => ({
         id: i.id,
         type: i.type,

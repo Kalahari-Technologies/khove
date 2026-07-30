@@ -193,7 +193,7 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
         taskId: entry.id,
         title: entry.title,
         type: "entry",
-        color: ENTRY_COLOR,
+        color: entry.calendarColor ?? ENTRY_COLOR,
         sourceKind: "google",
         time: idx === 0 ? showTime : undefined,
       });
