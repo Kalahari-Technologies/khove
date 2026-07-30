@@ -10,9 +10,12 @@ export default async function HomeRedirect() {
   const { userId: clerkId } = await auth();
   if (!clerkId) redirect("/login");
 
-  // Clerk user without a username hasn't finished onboarding.
+  // Onboarding is gated on a durable Clerk `publicMetadata.onboarded` flag — NOT on
+  // the username, which OAuth providers (GitHub/Atlassian) pre-fill. Every new
+  // registration finishes onboarding once, regardless of provider.
   const clerkUser = await currentUser();
-  if (clerkUser && !clerkUser.username) redirect("/onboarding");
+  const onboarded = (clerkUser?.publicMetadata as { onboarded?: boolean } | undefined)?.onboarded === true;
+  if (!onboarded) redirect("/onboarding");
 
   let personalWorkspaceSlug: string | null = null;
   try {
