@@ -60,6 +60,7 @@ const DAY_HEADERS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 interface CellItem {
   id: string;
+  taskId: string;
   title: string;
   type: "task" | "entry";
   color: string;
@@ -79,6 +80,25 @@ function shortTime(d: Date): string {
 }
 function isMidnightLocal(d: Date): boolean {
   return d.getHours() === 0 && d.getMinutes() === 0;
+}
+
+/** The day-keys an event covers, start → end. All-day ends are exclusive (Google
+ *  convention), so we drop the trailing day. Single-day events return one key. */
+function coveredDayKeys(start: Date, end: Date | null, allDay: boolean): string[] {
+  const first = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  if (!end) return [toDateKey(first)];
+  let last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  if (allDay) last = new Date(last.getFullYear(), last.getMonth(), last.getDate() - 1);
+  if (last <= first) return [toDateKey(first)];
+  const keys: string[] = [];
+  const cur = new Date(first);
+  let guard = 0;
+  while (cur <= last && guard < 40) {
+    keys.push(toDateKey(cur));
+    cur.setDate(cur.getDate() + 1);
+    guard++;
+  }
+  return keys;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,32 +160,43 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
     const kind = sourceKindOf(task.source);
     // Apply any optimistic reschedule so the chip moves instantly on drop.
     const d = new Date(pendingReschedules[task.id] ?? task.dueDate);
-    const key = toDateKey(d);
-    if (!itemsByDate[key]) itemsByDate[key] = [];
-    itemsByDate[key].push({
-      id: task.id,
-      title: task.title,
-      type: "task",
-      color: colorForTask(task, colorBy),
-      sourceKind: kind,
-      time: task.isAllDay || isMidnightLocal(d) ? undefined : shortTime(d),
-      isGoogleCalendar: kind === "google",
-      hasMeetLink: task.hasMeetLink,
+    if (isNaN(d.getTime())) continue;
+    const end = task.endDateTime ? new Date(task.endDateTime) : null;
+    const keys = coveredDayKeys(d, end, !!task.isAllDay);
+    const showTime = !task.isAllDay && !isMidnightLocal(d) ? shortTime(d) : undefined;
+    keys.forEach((key, idx) => {
+      if (!itemsByDate[key]) itemsByDate[key] = [];
+      itemsByDate[key].push({
+        id: keys.length > 1 ? `${task.id}:${key}` : task.id,
+        taskId: task.id,
+        title: task.title,
+        type: "task",
+        color: colorForTask(task, colorBy),
+        sourceKind: kind,
+        time: idx === 0 ? showTime : undefined,
+        isGoogleCalendar: kind === "google",
+        hasMeetLink: task.hasMeetLink,
+      });
     });
   }
 
   for (const entry of calendarEntries) {
     const d = new Date(entry.startDate);
     if (isNaN(d.getTime())) continue;
-    const key = toDateKey(d);
-    if (!itemsByDate[key]) itemsByDate[key] = [];
-    itemsByDate[key].push({
-      id: entry.id,
-      title: entry.title,
-      type: "entry",
-      color: ENTRY_COLOR,
-      sourceKind: "google",
-      time: entry.isAllDay || isMidnightLocal(d) ? undefined : shortTime(d),
+    const end = entry.endDate ? new Date(entry.endDate) : null;
+    const keys = coveredDayKeys(d, end, entry.isAllDay);
+    const showTime = !entry.isAllDay && !isMidnightLocal(d) ? shortTime(d) : undefined;
+    keys.forEach((key, idx) => {
+      if (!itemsByDate[key]) itemsByDate[key] = [];
+      itemsByDate[key].push({
+        id: keys.length > 1 ? `${entry.id}:${key}` : entry.id,
+        taskId: entry.id,
+        title: entry.title,
+        type: "entry",
+        color: ENTRY_COLOR,
+        sourceKind: "google",
+        time: idx === 0 ? showTime : undefined,
+      });
     });
   }
 
@@ -313,13 +344,13 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
               </div>
 
               {visible.map((item) => {
-                const task = item.type === "task" ? taskById.get(item.id) : undefined;
+                const task = item.type === "task" ? taskById.get(item.taskId) : undefined;
                 return (
                   <button
                     key={item.id}
                     draggable={item.type === "task"}
                     onDragStart={(e) => {
-                      if (item.type === "task") e.dataTransfer.setData("text/taskId", item.id);
+                      if (item.type === "task") e.dataTransfer.setData("text/taskId", item.taskId);
                     }}
                     onClick={() => {
                       if (task) openItem(taskToDetail(task));
