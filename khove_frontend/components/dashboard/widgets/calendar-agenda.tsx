@@ -4,7 +4,7 @@ import { CalendarDays } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { ProviderIcon } from "@/components/provider-icon";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
-import { WLoading, WEmpty, WFill, metaKey } from "./_kit";
+import { WLoading, WEmpty, metaKey } from "./_kit";
 
 function whenLabel(d: Date): string {
   const day = d.toLocaleDateString(undefined, { weekday: "short" });
@@ -32,9 +32,8 @@ export function CalendarAgendaWidget(_props: WidgetProps) {
   if (rows.length === 0) return <WEmpty icon={<CalendarDays size={18} />}>No upcoming meetings</WEmpty>;
 
   return (
-    <WFill provider="google_calendar">
-      <ul className="space-y-1.5">
-        {rows.map((t) => {
+    <ul className="space-y-1.5">
+      {rows.map((t) => {
         const cal = metaKey(t.metadata, "googleCalendar");
         const meetLink = cal.meetLink as string | undefined;
         const when = new Date(t.dueDate!);
@@ -53,8 +52,7 @@ export function CalendarAgendaWidget(_props: WidgetProps) {
             <span className="min-w-0 flex-1 truncate text-[12px] text-white/80">{t.title}</span>
           </li>
         );
-        })}
-      </ul>
-    </WFill>
+      })}
+    </ul>
   );
 }

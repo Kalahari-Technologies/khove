@@ -29,6 +29,7 @@ export function WidgetShell({
   editing,
   workspaceId,
   slug,
+  maxHeightPx,
   onRemove,
   onOpenSettings,
   dragHandle,
@@ -38,6 +39,7 @@ export function WidgetShell({
   editing: boolean;
   workspaceId: string;
   slug: string;
+  maxHeightPx: number;
   onRemove: (id: string) => void;
   onOpenSettings: (id: string) => void;
   dragHandle: { draggable: boolean; onDragStart: DragEventHandler; onDragEnd: DragEventHandler };
@@ -61,9 +63,13 @@ export function WidgetShell({
 
   return (
     <div
+      // In EDIT mode the card fills its grid cell so the layout stays visible and
+      // resizable. In VIEW mode it hugs its content (capped to the cell height, then
+      // the body scrolls) so a short widget has no dead space below it.
+      style={editing ? undefined : { maxHeight: maxHeightPx }}
       className={[
-        "group/widget relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white/[0.015] transition-colors",
-        editing ? "border-white/[0.12]" : "border-white/[0.07]",
+        "group/widget relative flex flex-col overflow-hidden rounded-2xl border bg-white/[0.015] transition-colors",
+        editing ? "h-full border-white/[0.12]" : "border-white/[0.07]",
       ].join(" ")}
     >
       <div className="flex items-center justify-between gap-2 px-3.5 pt-3 pb-2">
