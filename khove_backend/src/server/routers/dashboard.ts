@@ -2,13 +2,31 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { Prisma } from "@prisma/client";
-import { MAX_DASHBOARDS_PER_USER, clampWidget, type WidgetConfig } from "@khove/shared";
+// NOTE: `WidgetConfig` is a TYPE-ONLY import (erased at runtime). We deliberately
+// do NOT import runtime values from "@khove/shared" here: Render caches the
+// workspace's node_modules and skips reinstalling `@khove/shared` when only its
+// source changes (the lockfile is unchanged), so a freshly-added shared export
+// isn't visible at runtime there. Inlining the two trivial constants keeps this
+// router deployable regardless of that cache. Kept in sync with packages/shared.
+import type { WidgetConfig } from "@khove/shared";
 import { router, workspaceProcedure, workspaceWriteProcedure } from "@backend/server/trpc";
 import { db } from "@backend/lib/db";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 
 // User-built dashboards: an ordered grid of widgets, per-user AND per-workspace.
 // Capped at MAX_DASHBOARDS_PER_USER, with ≤1 default per (workspace, user).
+const MAX_DASHBOARDS_PER_USER = 4; // mirrors @khove/shared
+const GRID_MIN = 1;
+const GRID_MAX_W = 12;
+const GRID_MAX_H = 8;
+
+/** Clamp a widget's span into the allowed grid range (mirrors @khove/shared). */
+function clampWidget(w: number, h: number): { w: number; h: number } {
+  return {
+    w: Math.min(GRID_MAX_W, Math.max(GRID_MIN, Math.round(w))),
+    h: Math.min(GRID_MAX_H, Math.max(GRID_MIN, Math.round(h))),
+  };
+}
 
 const widgetSchema = z.object({
   id: z.string().min(1),
