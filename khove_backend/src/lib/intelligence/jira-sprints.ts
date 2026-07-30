@@ -27,12 +27,26 @@ interface Group {
   anyPts: boolean;
 }
 
-export async function computeSprints(workspaceId: string): Promise<SprintSummary[]> {
-  const tasks = await db.task.findMany({
-    where: { workspaceId, source: { has: "JIRA" } },
-    select: { metadata: true },
-  });
+interface EntMeta {
+  name: string;
+  state?: string;
+  startDate?: string;
+  endDate?: string;
+  goal?: string;
+}
 
+export async function computeSprints(workspaceId: string): Promise<SprintSummary[]> {
+  const [tasks, sprintEntities] = await Promise.all([
+    db.task.findMany({ where: { workspaceId, source: { has: "JIRA" } }, select: { metadata: true } }),
+    // Authoritative sprint metadata (state/dates/goal) from the Agile API — incl.
+    // empty/future sprints that have no issues yet.
+    db.entity.findMany({
+      where: { workspaceId, provider: "JIRA", kind: "SPRINT" },
+      select: { externalId: true, key: true, name: true, status: true, metadata: true },
+    }),
+  ]);
+
+  // Issue-derived membership/points, keyed by sprint id (fallback name).
   const groups = new Map<string, Group>();
   for (const t of tasks) {
     const j = (t.metadata as Record<string, unknown> | null)?.jira as Record<string, unknown> | undefined;
@@ -53,23 +67,49 @@ export async function computeSprints(workspaceId: string): Promise<SprintSummary
     if (isDone) g.donePts += pts;
   }
 
-  const now = Date.now();
-  const out: SprintSummary[] = [...groups.values()].map((g) => ({
-    id: g.sprint.id,
-    name: g.sprint.name ?? "Sprint",
-    state: g.sprint.state,
-    startDate: g.sprint.startDate,
-    endDate: g.sprint.endDate,
-    goal: g.sprint.goal,
-    daysRemaining: g.sprint.endDate ? Math.ceil((new Date(g.sprint.endDate).getTime() - now) / 86_400_000) : null,
-    totalIssues: g.total,
-    doneIssues: g.done,
-    committedPoints: Math.round(g.committedPts * 10) / 10,
-    donePoints: Math.round(g.donePts * 10) / 10,
-    hasPoints: g.anyPts,
-  }));
+  // Authoritative sprint metadata, keyed the same way (externalId `jira-sprint-{id}`).
+  const ents = new Map<string, EntMeta>();
+  for (const e of sprintEntities) {
+    const id = e.externalId.startsWith("jira-sprint-") ? e.externalId.slice("jira-sprint-".length) : (e.key ?? e.name);
+    const m = (e.metadata ?? {}) as Record<string, unknown>;
+    ents.set(id, {
+      name: e.name,
+      state: e.status ?? undefined,
+      startDate: (m.startDate as string) ?? undefined,
+      endDate: (m.endDate as string) ?? undefined,
+      goal: (m.goal as string) ?? undefined,
+    });
+  }
 
-  // Active sprints first, then most recent by end date.
+  const now = Date.now();
+  const keys = new Set<string>([...groups.keys(), ...ents.keys()]);
+  const out: SprintSummary[] = [];
+  for (const key of keys) {
+    const g = groups.get(key);
+    const e = ents.get(key);
+    // Prefer the authoritative Agile entity for state/dates/goal; fall back to issue-derived.
+    const name = e?.name ?? g?.sprint.name ?? "Sprint";
+    const state = e?.state ?? g?.sprint.state;
+    const startDate = e?.startDate ?? g?.sprint.startDate;
+    const endDate = e?.endDate ?? g?.sprint.endDate;
+    const goal = e?.goal ?? g?.sprint.goal;
+    out.push({
+      id: g?.sprint.id ?? (/^\d+$/.test(key) ? Number(key) : undefined),
+      name,
+      state,
+      startDate,
+      endDate,
+      goal,
+      daysRemaining: endDate ? Math.ceil((new Date(endDate).getTime() - now) / 86_400_000) : null,
+      totalIssues: g?.total ?? 0,
+      doneIssues: g?.done ?? 0,
+      committedPoints: Math.round((g?.committedPts ?? 0) * 10) / 10,
+      donePoints: Math.round((g?.donePts ?? 0) * 10) / 10,
+      hasPoints: g?.anyPts ?? false,
+    });
+  }
+
+  // Active sprints first, then future, then most recent by end date.
   const rank = (s: SprintSummary) => (s.state === "active" ? 0 : s.state === "future" ? 1 : 2);
   out.sort((a, b) => rank(a) - rank(b) || (b.endDate ?? "").localeCompare(a.endDate ?? ""));
   return out;
@@ -97,13 +137,21 @@ export async function computeSprintBurndown(
   workspaceId: string,
   sprintName: string,
 ): Promise<{ committed: number; unit: "points" | "issues"; series: BurndownPoint[] } | null> {
-  const tasks = await db.task.findMany({
-    where: { workspaceId, source: { has: "JIRA" } },
-    select: { externalId: true, metadata: true },
-  });
+  const [tasks, ent] = await Promise.all([
+    db.task.findMany({
+      where: { workspaceId, source: { has: "JIRA" } },
+      select: { externalId: true, metadata: true },
+    }),
+    // Authoritative sprint dates from the Agile entity (preferred over issue metadata).
+    db.entity.findFirst({
+      where: { workspaceId, provider: "JIRA", kind: "SPRINT", OR: [{ key: sprintName }, { name: sprintName }] },
+      select: { metadata: true },
+    }),
+  ]);
 
-  let startMs: number | null = null;
-  let endMs: number | null = null;
+  const em = (ent?.metadata ?? {}) as Record<string, unknown>;
+  let startMs: number | null = em.startDate ? new Date(em.startDate as string).getTime() : null;
+  let endMs: number | null = em.endDate ? new Date(em.endDate as string).getTime() : null;
   const points = new Map<string, number>(); // entityKey → story points (0 if unestimated)
   const doneKeys = new Set<string>(); // issues currently in a DONE status
   let anyPoints = false;
@@ -111,8 +159,9 @@ export async function computeSprintBurndown(
     const j = (t.metadata as Record<string, unknown> | null)?.jira as Record<string, unknown> | undefined;
     const sp = j?.sprint as { name?: string; startDate?: string; endDate?: string } | undefined;
     if (sp?.name !== sprintName || !t.externalId) continue;
-    if (sp.startDate) startMs = new Date(sp.startDate).getTime();
-    if (sp.endDate) endMs = new Date(sp.endDate).getTime();
+    // Fall back to issue-derived dates only when the entity didn't supply them.
+    if (!startMs && sp.startDate) startMs = new Date(sp.startDate).getTime();
+    if (!endMs && sp.endDate) endMs = new Date(sp.endDate).getTime();
     const pts = typeof j?.storyPoints === "number" ? (j.storyPoints as number) : 0;
     if (typeof j?.storyPoints === "number" && pts > 0) anyPoints = true;
     points.set(t.externalId, pts);

@@ -271,8 +271,11 @@ state-based signals inline).
 `installationId`; rich PR review/CI state)
 
 **Jira** (`jira-sync.ts`): `jira-initial-sync` (JQL last-30d + registers a project-scoped dynamic
-webhook), `jira-poll-sync` (daily incremental), `jira-active-sprint-poll` (*/20 — re-syncs only
-`sprint in openSprints()` issues, since Jira has no OAuth sprint webhook), `jira-webhook-handler`, `jira-refresh-tokens`
+webhook), `jira-poll-sync` (daily incremental), `jira-active-sprint-poll` (*/5 — Agile-API sprint
+sync (authoritative state/dates incl. empty/future, via `syncJiraSprints` → Entity SPRINT/BOARD)
++ `sprint in openSprints()` issue re-sync, since Jira has no OAuth sprint webhook; a customer can
+add a Jira Automation → webhook `{khoveSprintEvent:true}` for instant push), `jira-webhook-handler`
+(issue events + the sprint-event branch), `jira-refresh-tokens`
 (*/30 — rotating refresh tokens), `jira-renew-webhooks` (daily — extend 30-day expiry),
 `jira-disconnect-cleanup`
 
