@@ -252,7 +252,7 @@ Monetisation is via AI **actions**, not integration access.
 
 ---
 
-## Background Jobs — 21 Inngest functions
+## Background Jobs — 22 Inngest functions
 
 Registered in `khove_backend/src/app.ts` (`inngestServe` functions array).
 
@@ -271,7 +271,8 @@ state-based signals inline).
 `installationId`; rich PR review/CI state)
 
 **Jira** (`jira-sync.ts`): `jira-initial-sync` (JQL last-30d + registers a project-scoped dynamic
-webhook), `jira-poll-sync` (daily incremental), `jira-webhook-handler`, `jira-refresh-tokens`
+webhook), `jira-poll-sync` (daily incremental), `jira-active-sprint-poll` (*/20 — re-syncs only
+`sprint in openSprints()` issues, since Jira has no OAuth sprint webhook), `jira-webhook-handler`, `jira-refresh-tokens`
 (*/30 — rotating refresh tokens), `jira-renew-webhooks` (daily — extend 30-day expiry),
 `jira-disconnect-cleanup`
 
