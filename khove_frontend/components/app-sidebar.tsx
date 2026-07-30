@@ -12,20 +12,25 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Plus,
   Search,
   Clock,
+  LayoutDashboard,
   LayoutGrid,
   List,
   SquareKanban,
   GitPullRequest,
   CircleDot,
+  Star,
   Users,
   CalendarDays,
   Pencil,
 } from "lucide-react";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog";
+import { trpc } from "@/lib/trpc/client";
+import { useLocalPref } from "@/lib/dashboard/use-local-pref";
 
 // ─── Easing ───────────────────────────────────────────────────────────────────
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
@@ -74,6 +79,8 @@ interface DetailItem {
   icon?: React.ElementType;
   action?: boolean;
   sub?: string;
+  children?: DetailItem[]; // presence makes it a collapsible accordion group
+  defaultOpen?: boolean;
 }
 
 interface DetailSection {
@@ -84,6 +91,7 @@ interface DetailSection {
 // ─── Nav Definition ───────────────────────────────────────────────────────────
 
 const NAV_ITEMS: NavItem[] = [
+  { id: "dashboards", path: "/dashboards", icon: LayoutDashboard, label: "Dashboards", locked: false, glowColor: "#A78BFA" }, // violet-light
   { id: "chat",     path: "/chat",     assets: ["/assets/chat.svg", "/assets/chat-outlined.svg"],         label: "Chat",     locked: false, glowColor: "#8B5CF6" },       // violet
   { id: "connections", path: "/connections", icon: Waypoints, label: "Connections", locked: false, glowColor: "#D946EF" }, // fuchsia
   { id: "tasks",    path: "/tasks",    assets: ["/assets/tasks.svg", "/assets/tasks-outlined.svg"],       label: "Tasks",    locked: false, glowColor: "#0EA5E9" },       // ocean blue
@@ -119,6 +127,10 @@ function getActiveSection(pathname: string, slug: string): string {
 
 function getSections(section: string, slug: string): { title: string; sections: DetailSection[] } {
   const map: Record<string, { title: string; sections: DetailSection[] }> = {
+    dashboards: {
+      title: "Dashboards",
+      sections: [], // populated dynamically from trpc.dashboard.list in DetailPanel
+    },
     chat: {
       title: "Ask Khove",
       sections: [
@@ -209,6 +221,26 @@ function getSections(section: string, slug: string): { title: string; sections: 
   };
 
   return map[section] ?? map.tasks;
+}
+
+/** Build the Dashboards drawer from the user's live dashboard list. */
+function buildDashboardsSections(
+  list: { id: string; name: string; isDefault: boolean }[],
+  slug: string,
+): DetailSection[] {
+  const children: DetailItem[] = list.map((d) => ({
+    label: d.name,
+    href: wsHref(slug, `/dashboards/${d.id}`),
+    icon: d.isDefault ? Star : LayoutGrid,
+  }));
+  return [
+    {
+      items: [
+        { label: "All dashboards", icon: LayoutDashboard, defaultOpen: true, children },
+        { label: "New dashboard", icon: Plus, action: true },
+      ],
+    },
+  ];
 }
 
 // ─── Icon Rail ────────────────────────────────────────────────────────────────
@@ -366,7 +398,123 @@ function DetailPanel({
     if (editingId && editValue.trim()) rename(editingId, editValue);
     setEditingId(null);
   };
-  const { title, sections } = getSections(activeSection, slug);
+
+  // Dashboards drawer is built from the user's live dashboard list.
+  const dashboardsQuery = trpc.dashboard.list.useQuery(undefined, {
+    staleTime: 30_000,
+    enabled: activeSection === "dashboards",
+  });
+  const createDashboard = trpc.dashboard.create.useMutation({
+    onSuccess: (r) => {
+      dashboardsQuery.refetch();
+      router.push(wsHref(slug, `/dashboards/${r.id}`));
+    },
+  });
+
+  const base = getSections(activeSection, slug);
+  const title = base.title;
+  const sections =
+    activeSection === "dashboards" ? buildDashboardsSections(dashboardsQuery.data ?? [], slug) : base.sections;
+
+  // Persisted accordion open/closed state, keyed per workspace.
+  const [accordion, setAccordion] = useLocalPref<Record<string, boolean>>(
+    workspace.id ? `nav:accordion:${workspace.id}` : null,
+    {},
+  );
+  const groupOpen = (item: DetailItem) => accordion[item.label] ?? item.defaultOpen ?? false;
+  const toggleGroup = (item: DetailItem) =>
+    setAccordion((a) => ({ ...a, [item.label]: !(a[item.label] ?? item.defaultOpen ?? false) }));
+
+  const handleAction = (label: string) => {
+    if (label === "New conversation") router.push(wsHref(slug, "/chat"));
+    else if (label === "New dashboard") createDashboard.mutate({ name: "New dashboard" });
+  };
+
+  // Recursive renderer: leaf items are links/actions; items with `children`
+  // render as collapsible accordion groups.
+  const renderItem = (item: DetailItem, depth: number): React.ReactNode => {
+    const Icon = item.icon;
+    if (item.sub === "placeholder") {
+      return (
+        <p key={item.label} className="px-2 py-2 text-[12px] text-white/30 font-sans leading-relaxed">
+          {item.label}
+        </p>
+      );
+    }
+
+    if (item.children) {
+      const open = groupOpen(item);
+      return (
+        <div key={item.label}>
+          <button
+            type="button"
+            onClick={() => toggleGroup(item)}
+            className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-[13px] font-sans text-white/70 hover:text-white hover:bg-white/[0.045] transition-colors duration-[120ms] group"
+          >
+            {Icon && <Icon size={15} strokeWidth={1.75} className="text-white/45 group-hover:text-white/70" />}
+            <span className="truncate flex-1 text-left leading-snug">{item.label}</span>
+            <ChevronDown
+              size={13}
+              className={`text-white/35 transition-transform duration-150 ${open ? "" : "-rotate-90"}`}
+            />
+          </button>
+          {open && (
+            <div className="mt-0.5 ml-3.5 space-y-0.5 border-l border-white/[0.06] pl-1.5">
+              {item.children.length === 0 ? (
+                <p className="px-2 py-1.5 text-[11.5px] text-white/25">No dashboards yet</p>
+              ) : (
+                item.children.map((c) => renderItem(c, depth + 1))
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const active = !!item.href && pathname === item.href;
+    const inner = (
+      <span
+        className={[
+          "flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-[13px] font-sans transition-colors duration-[120ms] group",
+          active
+            ? "bg-white/[0.07] text-white"
+            : item.action
+              ? "text-white/85 hover:bg-white/[0.06] cursor-pointer"
+              : "text-white/65 hover:text-white hover:bg-white/[0.045] cursor-pointer",
+        ].join(" ")}
+      >
+        {Icon && (
+          <Icon
+            size={15}
+            strokeWidth={1.75}
+            className={
+              active
+                ? "text-white"
+                : item.action
+                  ? "text-white/70 group-hover:text-white"
+                  : "text-white/45 group-hover:text-white/70"
+            }
+          />
+        )}
+        <span className="truncate flex-1 leading-snug">{item.label}</span>
+        {item.sub && item.sub !== "placeholder" && (
+          <span className="text-[10px] text-white/30 flex-shrink-0 font-medium">{item.sub}</span>
+        )}
+      </span>
+    );
+
+    return (
+      <div key={item.label}>
+        {item.href ? (
+          <Link href={item.href}>{inner}</Link>
+        ) : (
+          <button type="button" className="w-full text-left" onClick={() => handleAction(item.label)}>
+            {inner}
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <aside
@@ -488,68 +636,7 @@ function DetailPanel({
                         })
                       )
                     ) : (
-                      section.items.map((item) => {
-                        const Icon = item.icon;
-                        const isPlaceholder = item.sub === "placeholder";
-
-                        if (isPlaceholder) {
-                          return (
-                            <p key={item.label} className="px-2 py-2 text-[12px] text-white/30 font-sans leading-relaxed">
-                              {item.label}
-                            </p>
-                          );
-                        }
-
-                        const active = !!item.href && pathname === item.href;
-                        const inner = (
-                          <span
-                            className={[
-                              "flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-[13px] font-sans transition-colors duration-[120ms] group",
-                              active
-                                ? "bg-white/[0.07] text-white"
-                                : item.action
-                                  ? "text-white/85 hover:bg-white/[0.06] cursor-pointer"
-                                  : "text-white/65 hover:text-white hover:bg-white/[0.045] cursor-pointer",
-                            ].join(" ")}
-                          >
-                            {Icon && (
-                              <Icon
-                                size={15}
-                                strokeWidth={1.75}
-                                className={
-                                  active
-                                    ? "text-white"
-                                    : item.action
-                                      ? "text-white/70 group-hover:text-white"
-                                      : "text-white/45 group-hover:text-white/70"
-                                }
-                              />
-                            )}
-                            <span className="truncate flex-1 leading-snug">{item.label}</span>
-                            {item.sub && item.sub !== "placeholder" && (
-                              <span className="text-[10px] text-white/30 flex-shrink-0 font-medium">{item.sub}</span>
-                            )}
-                          </span>
-                        );
-
-                        return (
-                          <div key={item.label}>
-                            {item.href ? (
-                              <Link href={item.href}>{inner}</Link>
-                            ) : (
-                              <button
-                                type="button"
-                                className="w-full text-left"
-                                onClick={() => {
-                                  if (item.label === "New conversation") router.push(wsHref(slug, "/chat"));
-                                }}
-                              >
-                                {inner}
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })
+                      section.items.map((item) => renderItem(item, 0))
                     )}
                   </div>
                 )}

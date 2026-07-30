@@ -23,8 +23,21 @@ export default async function HomeRedirect() {
     redirect("/login");
   }
 
-  if (personalWorkspaceSlug) redirect(`/${personalWorkspaceSlug}/chat`);
-
   // Fallback — should not happen once ensurePersonalWorkspace has run.
-  redirect("/onboarding");
+  if (!personalWorkspaceSlug) redirect("/onboarding");
+
+  // Land on the user's default dashboard (the home), falling back to chat when
+  // they have none yet. Guarded so any lookup failure still lands on chat.
+  let target = `/${personalWorkspaceSlug}/chat`;
+  try {
+    const base = await serverTRPC();
+    const ws = await base.workspace.getBySlug.query({ slug: personalWorkspaceSlug });
+    const wsTrpc = await serverTRPC(ws.id);
+    const list = await wsTrpc.dashboard.list.query();
+    const def = list.find((d) => d.isDefault) ?? list[0];
+    if (def) target = `/${personalWorkspaceSlug}/dashboards/${def.id}`;
+  } catch {
+    // fall back to chat
+  }
+  redirect(target);
 }
