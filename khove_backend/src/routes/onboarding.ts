@@ -1,10 +1,18 @@
 import { Router } from "express";
+import { createClerkClient } from "@clerk/backend";
 import { requireUser } from "@backend/lib/auth";
 import { db } from "@backend/lib/db";
+import { ensurePersonalWorkspace } from "@backend/lib/workspace/create-personal";
 
 const router = Router();
 
-// POST /api/onboarding — set personal-workspace slug + gradient
+const clerkBackend = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+
+// POST /api/onboarding — set personal-workspace slug + gradient, and mark the user
+// as onboarded (a durable Clerk `publicMetadata.onboarded` flag — the single source
+// of truth for "has finished onboarding", independent of whether the OAuth provider
+// supplied a username). Ensures the personal workspace exists so onboarding never
+// dead-ends waiting on the async user.created webhook.
 router.post("/", async (req, res) => {
   try {
     const user = await requireUser(req);
@@ -21,17 +29,23 @@ router.post("/", async (req, res) => {
       return res.status(409).json({ error: "Username is already taken" });
     }
 
-    const personalWorkspace = await db.workspace.findFirst({
-      where: { ownerId: user.id, isPersonal: true },
+    // Idempotent — creates the personal workspace if the webhook hasn't yet.
+    const personalWorkspace = await ensurePersonalWorkspace({
+      id: user.id,
+      name: user.name,
+      email: user.email,
     });
-    if (!personalWorkspace) {
-      return res.status(404).json({ error: "Personal workspace not found" });
-    }
 
     await db.workspace.update({
       where: { id: personalWorkspace.id },
       data: { slug, ...(gradient && { gradient }) },
     });
+
+    // Mark onboarding complete (durable flag the /home gate reads). Best-effort —
+    // the workspace is already set up, so don't fail the request on a Clerk hiccup.
+    await clerkBackend.users
+      .updateUserMetadata(user.clerkId, { publicMetadata: { onboarded: true } })
+      .catch((e) => console.error("[/api/onboarding] set onboarded flag failed:", e));
 
     return res.json({ success: true, slug });
   } catch (error) {

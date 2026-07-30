@@ -34,24 +34,23 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const initialized = useRef(false);
 
-  // Auto-generate username from Clerk user's name
+  // Pre-fill the username. OAuth providers (GitHub/Atlassian) often supply one — use
+  // it as the starting value, but STILL show onboarding (it's editable). Falls back
+  // to the display name, then the email prefix. We do NOT auto-redirect on an existing
+  // username — that caused a /home ↔ /onboarding loop for social sign-ups.
   useEffect(() => {
     if (!isLoaded || !user || initialized.current) return;
     initialized.current = true;
 
-    // If user already has a username, they've completed onboarding — redirect
-    if (user.username) {
-      router.push("/home");
-      return;
-    }
-
     const name = [user.firstName, user.lastName].filter(Boolean).join(" ");
-    if (name) {
+    if (user.username) {
+      setUsername(sanitizeSlug(user.username));
+    } else if (name) {
       setUsername(sanitizeSlug(name));
     } else if (user.primaryEmailAddress?.emailAddress) {
       setUsername(sanitizeSlug(user.primaryEmailAddress.emailAddress.split("@")[0]));
     }
-  }, [isLoaded, user, router]);
+  }, [isLoaded, user]);
 
   async function handleSubmit() {
     if (!isLoaded || !user || !username.trim()) return;
@@ -66,28 +65,33 @@ export default function OnboardingPage() {
     setError("");
 
     try {
-      // 1. Set Clerk username
-      await user.update({ username: slug });
+      // 1. Best-effort: keep the Clerk username in sync with the chosen slug. Not
+      //    critical — onboarding completion is tracked server-side (publicMetadata),
+      //    and some providers lock the username — so never block on this.
+      if (user.username !== slug) {
+        try {
+          await user.update({ username: slug });
+        } catch {
+          /* provider may lock the username, or it's taken — the workspace slug is what matters */
+        }
+      }
 
-      // 2. Update personal workspace slug + name + gradient
+      // 2. Set up the personal workspace (slug + gradient) and mark onboarding complete.
       const res = await backendFetch("/api/onboarding", {
         method: "POST",
         body: JSON.stringify({ username: slug, gradient }),
       });
 
       if (!res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setError(data?.error ?? "Failed to set up workspace");
-        // Revert Clerk username on failure
-        try { await user.update({ username: "" }); } catch {}
         setSubmitting(false);
         return;
       }
 
       router.push(`/${slug}/chat`);
-    } catch (err: unknown) {
-      const clerkError = err as { errors?: { message: string }[] };
-      setError(clerkError.errors?.[0]?.message ?? "Username may already be taken");
+    } catch {
+      setError("Something went wrong. Please try again.");
       setSubmitting(false);
     }
   }
