@@ -82,23 +82,75 @@ function isMidnightLocal(d: Date): boolean {
   return d.getHours() === 0 && d.getMinutes() === 0;
 }
 
-/** The day-keys an event covers, start → end. All-day ends are exclusive (Google
- *  convention), so we drop the trailing day. Single-day events return one key. */
-function coveredDayKeys(start: Date, end: Date | null, allDay: boolean): string[] {
-  const first = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  if (!end) return [toDateKey(first)];
-  let last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  if (allDay) last = new Date(last.getFullYear(), last.getMonth(), last.getDate() - 1);
-  if (last <= first) return [toDateKey(first)];
-  const keys: string[] = [];
-  const cur = new Date(first);
-  let guard = 0;
-  while (cur <= last && guard < 40) {
-    keys.push(toDateKey(cur));
-    cur.setDate(cur.getDate() + 1);
-    guard++;
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function dayDiff(a: Date, b: Date): number {
+  return Math.round((startOfDay(a).getTime() - startOfDay(b).getTime()) / 86400000);
+}
+/** First → last inclusive day an event covers. All-day ends are exclusive (Google
+ *  convention) so the trailing day is dropped. Single-day → first === last. */
+function spanRange(start: Date, end: Date | null, allDay: boolean): { first: Date; last: Date } {
+  const first = startOfDay(start);
+  let last = first;
+  if (end) {
+    let l = startOfDay(end);
+    if (allDay) l = new Date(l.getFullYear(), l.getMonth(), l.getDate() - 1);
+    if (l.getTime() > first.getTime()) last = l;
   }
-  return keys;
+  return { first, last };
+}
+
+interface MultiEvent {
+  id: string;
+  taskId: string;
+  title: string;
+  color: string;
+  sourceKind: SourceKind;
+  type: "task" | "entry";
+  hasMeetLink?: boolean;
+  time?: string;
+  first: Date;
+  last: Date;
+}
+
+interface WeekBar {
+  m: MultiEvent;
+  startCol: number;
+  span: number;
+  lane: number;
+  isStart: boolean;
+  isEnd: boolean;
+}
+
+/** Lay out the multi-day events intersecting a week into non-overlapping lanes. */
+function computeWeekBars(weekDays: Date[], events: MultiEvent[]): { bars: WeekBar[]; laneCount: number } {
+  const d0 = startOfDay(weekDays[0]);
+  const d6 = startOfDay(weekDays[6]);
+  const inWeek = events
+    .filter((m) => m.first.getTime() <= d6.getTime() && m.last.getTime() >= d0.getTime())
+    .sort(
+      (a, b) =>
+        a.first.getTime() - b.first.getTime() ||
+        b.last.getTime() - b.first.getTime() - (a.last.getTime() - a.first.getTime()),
+    );
+  const laneEnd: number[] = [];
+  const bars = inWeek.map((m) => {
+    const startCol = Math.max(0, Math.min(6, dayDiff(m.first, d0)));
+    const endCol = Math.max(0, Math.min(6, dayDiff(m.last, d0)));
+    let lane = 0;
+    while (laneEnd[lane] !== undefined && laneEnd[lane] >= startCol) lane++;
+    laneEnd[lane] = endCol;
+    return {
+      m,
+      startCol,
+      span: endCol - startCol + 1,
+      lane,
+      isStart: m.first.getTime() >= d0.getTime(),
+      isEnd: m.last.getTime() <= d6.getTime(),
+    };
+  });
+  return { bars, laneCount: laneEnd.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -153,54 +205,59 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
     void rescheduleTask(taskId, newStart);
   }
 
-  // Group tasks by date key
-  const itemsByDate: Record<string, CellItem[]> = {};
+  // Single-day items render as in-cell chips; multi-day render as spanning bars.
+  const singleByDate: Record<string, CellItem[]> = {};
+  const multiEvents: MultiEvent[] = [];
 
   for (const task of tasks) {
     const kind = sourceKindOf(task.source);
     // Apply any optimistic reschedule so the chip moves instantly on drop.
     const d = new Date(pendingReschedules[task.id] ?? task.dueDate);
     if (isNaN(d.getTime())) continue;
-    const end = task.endDateTime ? new Date(task.endDateTime) : null;
-    const keys = coveredDayKeys(d, end, !!task.isAllDay);
-    const showTime = !task.isAllDay && !isMidnightLocal(d) ? shortTime(d) : undefined;
-    keys.forEach((key, idx) => {
-      if (!itemsByDate[key]) itemsByDate[key] = [];
-      itemsByDate[key].push({
-        id: keys.length > 1 ? `${task.id}:${key}` : task.id,
+    const { first, last } = spanRange(d, task.endDateTime ? new Date(task.endDateTime) : null, !!task.isAllDay);
+    const time = !task.isAllDay && !isMidnightLocal(d) ? shortTime(d) : undefined;
+    const color = colorForTask(task, colorBy);
+    if (first.getTime() === last.getTime()) {
+      (singleByDate[toDateKey(first)] ??= []).push({
+        id: task.id,
         taskId: task.id,
         title: task.title,
         type: "task",
-        color: colorForTask(task, colorBy),
+        color,
         sourceKind: kind,
-        time: idx === 0 ? showTime : undefined,
+        time,
         isGoogleCalendar: kind === "google",
         hasMeetLink: task.hasMeetLink,
       });
-    });
+    } else {
+      multiEvents.push({ id: task.id, taskId: task.id, title: task.title, color, sourceKind: kind, type: "task", hasMeetLink: task.hasMeetLink, time, first, last });
+    }
   }
 
   for (const entry of calendarEntries) {
     const d = new Date(entry.startDate);
     if (isNaN(d.getTime())) continue;
-    const end = entry.endDate ? new Date(entry.endDate) : null;
-    const keys = coveredDayKeys(d, end, entry.isAllDay);
-    const showTime = !entry.isAllDay && !isMidnightLocal(d) ? shortTime(d) : undefined;
-    keys.forEach((key, idx) => {
-      if (!itemsByDate[key]) itemsByDate[key] = [];
-      itemsByDate[key].push({
-        id: keys.length > 1 ? `${entry.id}:${key}` : entry.id,
+    const { first, last } = spanRange(d, entry.endDate ? new Date(entry.endDate) : null, entry.isAllDay);
+    const time = !entry.isAllDay && !isMidnightLocal(d) ? shortTime(d) : undefined;
+    const color = entry.calendarColor ?? ENTRY_COLOR;
+    if (first.getTime() === last.getTime()) {
+      (singleByDate[toDateKey(first)] ??= []).push({
+        id: entry.id,
         taskId: entry.id,
         title: entry.title,
         type: "entry",
-        color: entry.calendarColor ?? ENTRY_COLOR,
+        color,
         sourceKind: "google",
-        time: idx === 0 ? showTime : undefined,
+        time,
       });
-    });
+    } else {
+      multiEvents.push({ id: entry.id, taskId: entry.id, title: entry.title, color, sourceKind: "google", type: "entry", time, first, last });
+    }
   }
 
   const grid = buildCalendarGrid(currentYear, currentMonth);
+  const weeks: Date[][] = [];
+  for (let w = 0; w < grid.length; w += 7) weeks.push(grid.slice(w, w + 7));
 
   function prevMonth() {
     if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear((y) => y - 1); }
@@ -310,80 +367,118 @@ export function MonthView({ tasks, calendarEntries, isGoogleConnected, canAdmin,
         ))}
       </div>
 
-      {/* Calendar grid */}
-      <div className="flex-1 grid grid-cols-7 grid-rows-6 overflow-hidden">
-        {grid.map((day, i) => {
-          const isCurrentMonth = day.getMonth() === currentMonth;
-          const todayCell = isToday(day);
-          const key = toDateKey(day);
-          const cellItems = itemsByDate[key] ?? [];
-          const limit = todayCell ? 2 : 3;
-          const overflow = cellItems.length > limit ? cellItems.length - limit : 0;
-          const visible = cellItems.slice(0, limit);
-
+      {/* Calendar grid — week rows, each with a spanning-bar overlay for multi-day events */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {weeks.map((weekDays, wi) => {
+          const { bars, laneCount } = computeWeekBars(weekDays, multiEvents);
+          const DAY_NUM_H = 30;
+          const LANE_H = 19;
+          const barsAreaH = laneCount * LANE_H;
           return (
-            <div
-              key={i}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                const id = e.dataTransfer.getData("text/taskId");
-                if (id) handleDrop(id, day);
-              }}
-              className={`border-r border-b border-white/[0.05] p-2 flex flex-col gap-1 min-w-0 overflow-hidden ${!isCurrentMonth ? "bg-white/[0.035]" : ""}`}
-            >
-              <div className="flex items-center justify-start">
-                {todayCell ? (
-                  <span className="w-7 h-7 flex items-center justify-center rounded-full bg-white text-black text-[13px] font-semibold">
-                    {day.getDate()}
-                  </span>
-                ) : (
-                  <span className={`text-[13px] font-medium ${isCurrentMonth ? "text-white/50" : "text-white/20"}`}>
-                    {day.getDate()}
-                  </span>
-                )}
-              </div>
-
-              {visible.map((item) => {
-                const task = item.type === "task" ? taskById.get(item.taskId) : undefined;
+            <div key={wi} className="relative grid flex-1 grid-cols-7 border-b border-white/[0.05]">
+              {weekDays.map((day, ci) => {
+                const isCurrentMonth = day.getMonth() === currentMonth;
+                const todayCell = isToday(day);
+                const key = toDateKey(day);
+                const cellItems = singleByDate[key] ?? [];
+                const limit = Math.max(1, 4 - laneCount);
+                const overflow = cellItems.length > limit ? cellItems.length - limit : 0;
+                const visible = cellItems.slice(0, limit);
+                return (
+                  <div
+                    key={ci}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      const id = e.dataTransfer.getData("text/taskId");
+                      if (id) handleDrop(id, day);
+                    }}
+                    className={`relative flex min-w-0 flex-col overflow-hidden border-r border-white/[0.05] px-1.5 pb-1 ${!isCurrentMonth ? "bg-white/[0.035]" : ""}`}
+                  >
+                    <div className="flex h-6 items-center pt-1.5">
+                      {todayCell ? (
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-[12px] font-semibold text-black">
+                          {day.getDate()}
+                        </span>
+                      ) : (
+                        <span className={`text-[12.5px] font-medium ${isCurrentMonth ? "text-white/50" : "text-white/20"}`}>
+                          {day.getDate()}
+                        </span>
+                      )}
+                    </div>
+                    {/* reserve vertical space for the spanning-bar lanes above the single-day chips */}
+                    <div style={{ height: barsAreaH }} aria-hidden />
+                    <div className="mt-0.5 flex flex-col gap-0.5">
+                      {visible.map((item) => {
+                        const task = item.type === "task" ? taskById.get(item.taskId) : undefined;
+                        return (
+                          <button
+                            key={item.id}
+                            draggable={item.type === "task"}
+                            onDragStart={(e) => {
+                              if (item.type === "task") e.dataTransfer.setData("text/taskId", item.taskId);
+                            }}
+                            onClick={() => {
+                              if (task) openItem(taskToDetail(task));
+                            }}
+                            className={`group flex w-full items-center gap-1 rounded-md py-[3px] pl-1 pr-1.5 text-left transition-colors ${
+                              item.type === "entry" ? "cursor-default hover:bg-white/[0.04]" : "cursor-grab hover:bg-white/[0.06] active:cursor-grabbing"
+                            }`}
+                          >
+                            <span className="h-3 w-[3px] flex-shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                            {item.hasMeetLink && <img src="/assets/google-meet.svg" alt="" width={9} height={9} className="flex-shrink-0" />}
+                            <SourceBadge kind={item.sourceKind} size={9} />
+                            {item.time && <span className="flex-shrink-0 text-[10px] tabular-nums text-white/40">{item.time}</span>}
+                            <span className={`truncate text-[10.5px] ${item.type === "entry" ? "text-white/45" : "text-white/85 group-hover:text-white"}`}>
+                              {item.title}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {overflow > 0 && <span className="pl-1 text-[10px] text-white/30">+{overflow} more</span>}
+                    </div>
+                    <button
+                      aria-label="Add event"
+                      onClick={() => openCreate(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0))}
+                      className="group/add mt-auto flex min-h-[8px] w-full flex-1 items-start justify-end rounded-md pt-0.5 transition-colors hover:bg-white/[0.03]"
+                    >
+                      <Plus size={11} className="text-white/0 transition-colors group-hover/add:text-white/25" />
+                    </button>
+                  </div>
+                );
+              })}
+              {/* Spanning bars for multi-day events */}
+              {bars.map((b) => {
+                const task = b.m.type === "task" ? taskById.get(b.m.taskId) : undefined;
                 return (
                   <button
-                    key={item.id}
-                    draggable={item.type === "task"}
-                    onDragStart={(e) => {
-                      if (item.type === "task") e.dataTransfer.setData("text/taskId", item.taskId);
-                    }}
+                    key={`${b.m.id}-${wi}`}
                     onClick={() => {
                       if (task) openItem(taskToDetail(task));
                     }}
-                    className={`flex items-center gap-1 w-full text-left rounded-md pl-1 pr-1.5 py-[3px] transition-colors group ${
-                      item.type === "entry" ? "cursor-default hover:bg-white/[0.04]" : "hover:bg-white/[0.06] cursor-grab active:cursor-grabbing"
-                    }`}
+                    className="absolute flex items-center gap-1 overflow-hidden text-left"
+                    style={{
+                      left: `calc(${(b.startCol / 7) * 100}% + 3px)`,
+                      width: `calc(${(b.span / 7) * 100}% - 6px)`,
+                      top: DAY_NUM_H + b.lane * LANE_H,
+                      height: LANE_H - 2,
+                      backgroundColor: `${b.m.color}2e`,
+                      borderLeft: b.isStart ? `2px solid ${b.m.color}` : undefined,
+                      borderTopLeftRadius: b.isStart ? 4 : 0,
+                      borderBottomLeftRadius: b.isStart ? 4 : 0,
+                      borderTopRightRadius: b.isEnd ? 4 : 0,
+                      borderBottomRightRadius: b.isEnd ? 4 : 0,
+                      paddingLeft: b.isStart ? 5 : 6,
+                      paddingRight: 5,
+                      cursor: task ? "pointer" : "default",
+                    }}
                   >
-                    <span className="h-3 w-[3px] flex-shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-                    {item.hasMeetLink && <img src="/assets/google-meet.svg" alt="" width={9} height={9} className="flex-shrink-0" />}
-                    <SourceBadge kind={item.sourceKind} size={9} />
-                    {item.time && <span className="flex-shrink-0 text-[10px] tabular-nums text-white/40">{item.time}</span>}
-                    <span className={`truncate text-[10.5px] ${
-                      item.type === "entry" ? "text-white/45" : "text-white/85 group-hover:text-white"
-                    }`}>
-                      {item.title}
-                    </span>
+                    {b.isStart && b.m.hasMeetLink && <img src="/assets/google-meet.svg" alt="" width={9} height={9} className="flex-shrink-0" />}
+                    {b.isStart && <SourceBadge kind={b.m.sourceKind} size={9} />}
+                    {b.isStart && b.m.time && <span className="flex-shrink-0 text-[10px] tabular-nums text-white/50">{b.m.time}</span>}
+                    <span className="truncate text-[10.5px] text-white/85">{b.isStart ? b.m.title : " "}</span>
                   </button>
                 );
               })}
-
-              {overflow > 0 && (
-                <span className="text-[10px] text-white/30 pl-1">+{overflow} more</span>
-              )}
-
-              {/* Empty space → click to create an event on this day (9am default). */}
-              <button
-                aria-label="Add event"
-                onClick={() => openCreate(new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0))}
-                className="flex-1 min-h-[8px] w-full rounded-md hover:bg-white/[0.03] transition-colors group/add flex items-start justify-end pt-0.5"
-              >
-                <Plus size={11} className="text-white/0 group-hover/add:text-white/25 transition-colors" />
-              </button>
             </div>
           );
         })}
