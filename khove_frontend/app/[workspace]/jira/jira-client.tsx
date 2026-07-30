@@ -902,7 +902,9 @@ function SprintCard({ s, onDrill }: { s: { id?: number; name: string; state?: st
 
       {s.state === "active" && bd.data && (
         <div>
-          <div className="text-[10.5px] text-white/40 mb-1">Burndown — remaining vs ideal</div>
+          <div className="text-[10.5px] text-white/40 mb-1">
+            Burndown — remaining {bd.data.unit === "points" ? "story points" : "issues"} vs ideal
+          </div>
           <Burndown committed={bd.data.committed} series={bd.data.series} />
         </div>
       )}
