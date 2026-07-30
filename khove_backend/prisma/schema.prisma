@@ -156,6 +156,7 @@ model User {
   aiUsageLogs      AiUsageLog[]
   subscriptions    Subscription[]
   calendarEntries  CalendarEntry[]
+  dashboards       Dashboard[]
 }
 
 model Workspace {
@@ -186,6 +187,7 @@ model Workspace {
   auditLogs         AuditLog[]
   signals           Signal[]
   entities          Entity[]
+  dashboards        Dashboard[]
 }
 
 model WorkspaceMember {
@@ -575,4 +577,27 @@ model Entity {
 
   @@unique([workspaceId, provider, externalId])
   @@index([workspaceId, kind])
+}
+
+// A user-built dashboard: an ordered grid of widgets. Per-user AND per-workspace
+// (like WorkspaceMember pairing). Capped at 4 per (workspace, user) in app code.
+// Widgets are embedded as a JSON array (`WidgetConfig[]` from @khove/shared) — never
+// queried independently, so no separate Widget row.
+model Dashboard {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  name        String
+  icon        String? // optional lucide icon key
+  order       Int      @default(0)
+  isDefault   Boolean  @default(false) // the landing dashboard; app-code keeps ≤1 true per (workspace,user)
+  widgets     Json     @default("[]") // WidgetConfig[]
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId])
 }

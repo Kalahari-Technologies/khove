@@ -1,4 +1,5 @@
 export * from "./realtime-event";
+export * from "./dashboard";
 export * from "./plans";
 export * from "./gradients";
 export * from "./design-tokens";

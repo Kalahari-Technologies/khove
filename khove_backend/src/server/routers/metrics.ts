@@ -13,6 +13,7 @@ import {
   githubEntityIssues,
 } from "@backend/lib/intelligence/github-entities";
 import { computeEpicChain, computeCrossToolIntegrity } from "@backend/lib/intelligence/cross-links";
+import { computeKpis } from "@backend/lib/intelligence/kpis";
 import { getShepherdClient, listPullRequests, listIssues } from "@backend/lib/integrations/github";
 
 export const metricsRouter = router({
@@ -45,6 +46,20 @@ export const metricsRouter = router({
         providers: [provider],
         sources,
       });
+    }),
+
+  /** Hero KPI cards — current-vs-previous-window deltas + sparklines from the Signal store. */
+  kpis: workspaceProcedure
+    .input(
+      z
+        .object({
+          provider: z.enum(["github", "jira", "all"]).optional(),
+          windowDays: z.number().min(14).max(180).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      return computeKpis(ctx.workspace.id, { provider: input?.provider, windowDays: input?.windowDays });
     }),
 
   /** Scope integrity — merged PRs not linked to any Connectivity Thread. */

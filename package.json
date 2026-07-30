@@ -17,6 +17,7 @@
     "db:generate": "npm run db:generate -w khove_backend",
     "db:migrate": "npm run db:migrate -w khove_backend",
     "db:push": "npm run db:push -w khove_backend",
+    "db:clear": "npm run db:clear -w khove_backend",
     "db:seed": "npm run db:seed -w khove_backend",
     "db:studio": "npm run db:studio -w khove_backend"
   },

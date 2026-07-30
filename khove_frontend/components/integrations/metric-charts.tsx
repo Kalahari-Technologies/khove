@@ -6,6 +6,11 @@ import {
   Bar,
   LineChart,
   Line,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -132,6 +137,168 @@ export function Burndown({ committed, series, height = 150 }: { committed: numbe
         <ReferenceLine y={0} stroke="rgba(255,255,255,0.10)" />
         <Line name="Ideal" type="linear" dataKey="ideal" stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
         <Line name="Remaining" type="monotone" dataKey="remaining" stroke="rgb(99,102,241)" strokeWidth={2} dot={false} activeDot={{ r: 3, fill: "rgb(99,102,241)" }} connectNulls={false} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ─── Area trend (e.g. opened vs merged over time) ───────────────────────────
+
+export function AreaTrend({ points, color = "rgb(56,189,248)", height = 120 }: { points: Point[]; color?: string; height?: number }) {
+  const vals = points.map((p) => p.value).filter((v): v is number => v != null);
+  if (vals.length < 2) return <Empty height={height} />;
+  const gid = `area-${color.replace(/[^a-z0-9]/gi, "")}`;
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.32} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} stroke={GRID} />
+        <XAxis dataKey="week" {...AXIS} interval="preserveStartEnd" minTickGap={16} />
+        <YAxis {...AXIS} width={30} allowDecimals={false} />
+        <Tooltip cursor={{ stroke: "rgba(255,255,255,0.12)" }} content={<DarkTooltip />} />
+        <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#${gid})`} connectNulls={false} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ─── Stacked bar (e.g. sprint velocity: committed vs completed) ──────────────
+
+export interface StackSeries {
+  key: string;
+  name: string;
+  color: string;
+}
+
+export function StackedBar({
+  data,
+  keys,
+  xKey,
+  height = 140,
+}: {
+  data: Record<string, string | number>[];
+  keys: StackSeries[];
+  xKey: string;
+  height?: number;
+}) {
+  if (data.length === 0) return <Empty height={height} />;
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: -18 }} barCategoryGap="22%">
+        <CartesianGrid vertical={false} stroke={GRID} />
+        <XAxis dataKey={xKey} {...AXIS} interval="preserveStartEnd" minTickGap={12} />
+        <YAxis {...AXIS} width={30} allowDecimals={false} />
+        <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} content={<DarkTooltip />} />
+        {keys.map((k, i) => (
+          <Bar
+            key={k.key}
+            dataKey={k.key}
+            name={k.name}
+            stackId="a"
+            fill={k.color}
+            radius={i === keys.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
+            maxBarSize={34}
+            isAnimationActive={false}
+          />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ─── Donut (e.g. PR pipeline / status distribution) ─────────────────────────
+
+export interface DonutDatum {
+  name: string;
+  value: number;
+}
+
+// White-opacity ramp — strict B&W system; a single accent slice is allowed via `colors`.
+const DONUT_RAMP = [
+  "rgba(255,255,255,0.85)",
+  "rgba(255,255,255,0.55)",
+  "rgba(255,255,255,0.38)",
+  "rgba(255,255,255,0.26)",
+  "rgba(255,255,255,0.16)",
+  "rgba(255,255,255,0.10)",
+];
+
+export function Donut({
+  data,
+  colors,
+  height = 150,
+  centerLabel,
+}: {
+  data: DonutDatum[];
+  colors?: string[];
+  height?: number;
+  centerLabel?: string;
+}) {
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total <= 0) return <Empty height={height} />;
+  const palette = colors ?? DONUT_RAMP;
+  return (
+    <div className="flex items-center gap-3">
+      <div className="relative" style={{ width: height, height }}>
+        <ResponsiveContainer width="100%" height={height}>
+          <PieChart>
+            <Tooltip content={<DarkTooltip />} />
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="name"
+              innerRadius="62%"
+              outerRadius="92%"
+              paddingAngle={2}
+              stroke="none"
+              isAnimationActive={false}
+            >
+              {data.map((_, i) => (
+                <Cell key={i} fill={palette[i % palette.length]} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-lg font-semibold tabular-nums text-white/90">{total}</span>
+          {centerLabel ? <span className="text-[10px] uppercase tracking-wide text-white/40">{centerLabel}</span> : null}
+        </div>
+      </div>
+      <ul className="flex min-w-0 flex-1 flex-col gap-1">
+        {data.map((d, i) => (
+          <li key={d.name} className="flex items-center gap-1.5 text-[11.5px]">
+            <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ backgroundColor: palette[i % palette.length] }} />
+            <span className="min-w-0 flex-1 truncate text-white/55">{d.name}</span>
+            <span className="tabular-nums font-medium text-white/85">{d.value}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ─── Sparkline — tiny, axis-less line for inline KPI cards ───────────────────
+
+export function Sparkline({
+  points,
+  color = "rgb(56,189,248)",
+  height = 28,
+}: {
+  points: { value: number | null }[];
+  color?: string;
+  height?: number;
+}) {
+  const vals = points.map((p) => p.value).filter((v): v is number => v != null);
+  if (vals.length < 2) return <div style={{ height }} />;
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={points} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+        <Line type="monotone" dataKey="value" stroke={color} strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   );
