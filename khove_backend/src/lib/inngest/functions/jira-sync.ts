@@ -438,6 +438,48 @@ export const jiraPollSync = inngest.createFunction(
 );
 
 // ---------------------------------------------------------------------------
+// Active-sprint poll — tight cadence for the current sprint only
+// ---------------------------------------------------------------------------
+//
+// Jira Cloud has NO sprint webhook for OAuth (3LO) apps — sprint lifecycle
+// (started/updated/closed) never pushes to us, so a started sprint would
+// otherwise only refresh on the daily poll or a manual resync. This runs every
+// 20 min but re-fetches ONLY issues in an open sprint (`sprint in openSprints()`),
+// keeping sprint state/dates and the burndown fresh at a fraction of a full poll.
+
+export const jiraActiveSprintPoll = inngest.createFunction(
+  { id: "jira-active-sprint-poll", triggers: [{ cron: "*/20 * * * *" }] },
+  async ({ step }) => {
+    const integrations = await step.run("find-jira-workspaces", async () =>
+      db.integration.findMany({
+        where: { provider: "JIRA", isActive: true },
+        select: { workspaceId: true, userId: true },
+      }),
+    );
+
+    let updated = 0;
+    for (const { workspaceId, userId } of integrations) {
+      const res = await step.run(`sprint-poll-${workspaceId}`, async () => {
+        try {
+          // `openSprints()` matches issues in any active sprint within scope. If the
+          // site has no Jira Software / sprints, the JQL errors — treated as a no-op.
+          const jql = await scopedJql(workspaceId, "sprint in openSprints()");
+          return await syncJiraIssues(workspaceId, userId, jql, 3);
+        } catch (err) {
+          console.error(`[jira-active-sprint-poll] ${workspaceId} skipped`, err instanceof Error ? err.message : err);
+          return { created: 0, updated: 0, projectKeys: [], found: 0, jql: "", site: "" };
+        }
+      });
+      updated += res.created + res.updated;
+      if (res.created + res.updated > 0) {
+        await publishWorkspaceEvent(workspaceId, { type: "task.updated", taskId: "jira-sprint-sync" });
+      }
+    }
+    return { workspaces: integrations.length, updated };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Webhook handler — incremental single-issue upsert/delete
 // ---------------------------------------------------------------------------
 
