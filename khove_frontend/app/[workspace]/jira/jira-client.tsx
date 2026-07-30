@@ -30,6 +30,9 @@ import {
   Tag,
   Flag,
   Users,
+  Zap,
+  Copy,
+  Check,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { BarTrend, LineTrend, Burndown, Donut, StackedBar, fmtHours } from "@/components/integrations/metric-charts";
@@ -506,6 +509,9 @@ export function JiraClient({
           </div>
         )}
 
+        {/* Optional: instant sprint updates via a customer-configured Jira Automation webhook */}
+        <JiraInstantUpdates />
+
         {/* Tabs */}
         <DashboardTabs tabs={tabs} active={tab} onChange={setTab} />
 
@@ -856,6 +862,57 @@ function TriBar({ done, inProgress, todo }: { done: number; inProgress: number; 
         ) : null,
       )}
     </div>
+  );
+}
+
+/**
+ * Optional setup for INSTANT sprint updates. Sprints already refresh within ~5 min
+ * via polling; a customer who wants them instant can point a Jira Automation rule at
+ * this workspace's webhook URL. Collapsed by default so it never nags.
+ */
+function JiraInstantUpdates() {
+  const info = trpc.jira.webhookInfo.useQuery(undefined, { staleTime: 300_000 });
+  const [copied, setCopied] = useState(false);
+  const url = info.data?.url;
+  if (!url) return null;
+
+  const copy = () => {
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <details className="group/inst rounded-lg border border-white/[0.08] bg-white/[0.015] px-4 py-2.5 text-[12px]">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-white/60 hover:text-white/85">
+        <Zap size={13} className="text-indigo-300/70" />
+        <span className="font-medium">Instant sprint updates</span>
+        <span className="text-white/30">— optional. Sprints already refresh every ~5 min.</span>
+        <ChevronRight size={13} className="ml-auto text-white/30 transition-transform group-open/inst:rotate-90" />
+      </summary>
+      <div className="mt-3 space-y-2.5 text-white/55">
+        <p>
+          Jira Cloud can&apos;t push sprint events to apps directly, so for real-time updates add a one-time{" "}
+          <span className="text-white/75">Automation</span> rule in Jira (per board):
+        </p>
+        <ol className="list-decimal space-y-1 pl-4 text-white/55">
+          <li>Project settings → <span className="text-white/75">Automation</span> → Create rule.</li>
+          <li>Trigger: <span className="text-white/75">Sprint started</span> (add another rule for <span className="text-white/75">Sprint completed</span>).</li>
+          <li>Action: <span className="text-white/75">Send web request</span> → method POST → URL below → web request body <span className="text-white/75">Custom data</span>: <code className="rounded bg-white/[0.06] px-1 font-mono text-[11px] text-white/75">{`{ "khoveSprintEvent": true }`}</code></li>
+        </ol>
+        <div className="flex items-center gap-2 rounded-md border border-white/[0.08] bg-black/30 px-2.5 py-1.5">
+          <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-white/70">{url}</code>
+          <button
+            onClick={copy}
+            className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-white/50 hover:bg-white/[0.06] hover:text-white/90"
+          >
+            {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+      </div>
+    </details>
   );
 }
 

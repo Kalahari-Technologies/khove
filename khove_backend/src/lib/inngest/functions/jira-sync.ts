@@ -12,6 +12,8 @@ import {
   refreshAccessToken,
   discoverJiraFields,
   parseSprintField,
+  listBoards,
+  listActiveFutureSprints,
   type JiraIssue,
   type JiraFieldMap,
 } from "@backend/lib/integrations/jira";
@@ -254,6 +256,86 @@ async function syncJiraIssues(
   return { created, updated, projectKeys: [...projectKeys], found: issues.length, jql, site };
 }
 
+/**
+ * Sync authoritative sprints from the Jira Agile API into Entity rows (kind SPRINT
+ * + BOARD). Unlike issue-derived sprints, this surfaces empty/future sprints and
+ * the true state/dates, and doesn't depend on an issue being synced. Idempotent —
+ * upserts on [workspace, provider, externalId]; the externalId scheme
+ * (`jira-sprint-{id}`) matches jiraEntitiesFromIssue, so the Agile row becomes the
+ * source of truth. Returns how many sprint rows actually changed (for realtime).
+ */
+async function syncJiraSprints(workspaceId: string): Promise<{ sprints: number; boards: number; changed: number }> {
+  const integration = await db.integration.findFirst({
+    where: { workspaceId, provider: "JIRA", isActive: true },
+    select: { metadata: true },
+  });
+  const meta = (integration?.metadata ?? {}) as Record<string, unknown>;
+  const siteUrl = (meta.siteUrl as string) ?? "";
+  const projectKeys = ((meta.scope as { projects?: string[] } | undefined)?.projects ?? []).filter(Boolean);
+
+  // Resolve boards within the product scope (or all boards if no scope set). A hard
+  // error here (e.g. 403 = the OAuth scope doesn't cover the Agile API) propagates to
+  // the caller's try/catch, which logs it — that's the Phase-0 "do we need reconnect?"
+  // signal. Per-board sprint fetches below stay best-effort.
+  const boards = new Map<number, { id: number; name: string; type?: string }>();
+  if (projectKeys.length) {
+    for (const pk of projectKeys) {
+      for (const b of await listBoards(workspaceId, pk)) boards.set(b.id, b);
+    }
+  } else {
+    for (const b of await listBoards(workspaceId)) boards.set(b.id, b);
+  }
+
+  const entities: EntityInput[] = [];
+  for (const b of boards.values()) {
+    entities.push({
+      provider: "JIRA",
+      kind: "BOARD",
+      externalId: `jira-board-${b.id}`,
+      key: String(b.id),
+      name: b.name,
+      metadata: { type: b.type ?? null },
+    });
+    for (const s of await listActiveFutureSprints(workspaceId, b.id).catch(() => [])) {
+      entities.push({
+        provider: "JIRA",
+        kind: "SPRINT",
+        externalId: `jira-sprint-${s.id}`,
+        key: s.name,
+        name: s.name,
+        status: s.state ?? null,
+        url: siteUrl ? `${siteUrl}/secure/RapidBoard.jspa?rapidView=${b.id}&sprint=${s.id}` : null,
+        parentExternalId: `jira-board-${b.id}`,
+        metadata: {
+          startDate: s.startDate ?? null,
+          endDate: s.endDate ?? null,
+          completeDate: s.completeDate ?? null,
+          goal: s.goal ?? null,
+          boardId: b.id,
+        },
+      });
+    }
+  }
+
+  // Detect real changes so the poll only fires a realtime refresh when something moved.
+  const existing = await db.entity.findMany({
+    where: { workspaceId, provider: "JIRA", kind: { in: ["SPRINT", "BOARD"] } },
+    select: { externalId: true, status: true, metadata: true },
+  });
+  const prev = new Map(existing.map((e) => [e.externalId, e]));
+  let changed = 0;
+  for (const e of entities) {
+    const p = prev.get(e.externalId);
+    if (!p || (p.status ?? null) !== (e.status ?? null) || JSON.stringify(p.metadata ?? {}) !== JSON.stringify(e.metadata ?? {})) {
+      changed++;
+    }
+  }
+
+  if (entities.length) await recordEntities(workspaceId, entities).catch(() => {});
+  const sprints = entities.filter((e) => e.kind === "SPRINT").length;
+  return { sprints, boards: boards.size, changed };
+}
+
 export interface JiraSyncOutcome {
   created: number;
   updated: number;
@@ -391,6 +473,16 @@ export const jiraInitialSync = inngest.createFunction(
       return { pruned: stale.length };
     });
 
+    // Authoritative sprints (incl. empty/future) from the Agile API.
+    await step.run("sync-sprints", async () => {
+      try {
+        return await syncJiraSprints(workspaceId);
+      } catch (err) {
+        console.error(`[jira-initial-sync] sprint sync skipped for ${workspaceId}`, err instanceof Error ? err.message : err);
+        return { sprints: 0, boards: 0, changed: 0 };
+      }
+    });
+
     await step.run("mark-done", async () => {
       await redis
         .set(`jira-sync:${workspaceId}`, JSON.stringify({ status: "done", at: new Date().toISOString(), ...result }), { ex: 300 })
@@ -444,11 +536,14 @@ export const jiraPollSync = inngest.createFunction(
 // Jira Cloud has NO sprint webhook for OAuth (3LO) apps — sprint lifecycle
 // (started/updated/closed) never pushes to us, so a started sprint would
 // otherwise only refresh on the daily poll or a manual resync. This runs every
-// 20 min but re-fetches ONLY issues in an open sprint (`sprint in openSprints()`),
-// keeping sprint state/dates and the burndown fresh at a fraction of a full poll.
+// 5 min: it re-syncs authoritative sprints from the Agile API (state/dates, incl.
+// empty/future sprints) AND re-fetches issues in an open sprint
+// (`sprint in openSprints()`) for membership/points — a fraction of a full poll.
+// A realtime refresh fires only when something actually changed. (Customers who
+// want instant updates can add a Jira Automation → webhook; see handleJiraWebhook.)
 
 export const jiraActiveSprintPoll = inngest.createFunction(
-  { id: "jira-active-sprint-poll", triggers: [{ cron: "*/20 * * * *" }] },
+  { id: "jira-active-sprint-poll", triggers: [{ cron: "*/5 * * * *" }] },
   async ({ step }) => {
     const integrations = await step.run("find-jira-workspaces", async () =>
       db.integration.findMany({
@@ -460,18 +555,27 @@ export const jiraActiveSprintPoll = inngest.createFunction(
     let updated = 0;
     for (const { workspaceId, userId } of integrations) {
       const res = await step.run(`sprint-poll-${workspaceId}`, async () => {
+        let issueChanges = 0;
+        let sprintChanges = 0;
+        // Authoritative sprint state/dates from the Agile API.
         try {
-          // `openSprints()` matches issues in any active sprint within scope. If the
-          // site has no Jira Software / sprints, the JQL errors — treated as a no-op.
-          const jql = await scopedJql(workspaceId, "sprint in openSprints()");
-          return await syncJiraIssues(workspaceId, userId, jql, 3);
+          sprintChanges = (await syncJiraSprints(workspaceId)).changed;
         } catch (err) {
-          console.error(`[jira-active-sprint-poll] ${workspaceId} skipped`, err instanceof Error ? err.message : err);
-          return { created: 0, updated: 0, projectKeys: [], found: 0, jql: "", site: "" };
+          console.error(`[jira-active-sprint-poll] sprint sync skipped for ${workspaceId}`, err instanceof Error ? err.message : err);
         }
+        // Issue membership/points for the open sprint.
+        try {
+          const jql = await scopedJql(workspaceId, "sprint in openSprints()");
+          const r = await syncJiraIssues(workspaceId, userId, jql, 3);
+          issueChanges = r.created + r.updated;
+        } catch (err) {
+          console.error(`[jira-active-sprint-poll] issue sync skipped for ${workspaceId}`, err instanceof Error ? err.message : err);
+        }
+        return { issueChanges, sprintChanges };
       });
-      updated += res.created + res.updated;
-      if (res.created + res.updated > 0) {
+      const changed = res.issueChanges + res.sprintChanges;
+      updated += changed;
+      if (changed > 0) {
         await publishWorkspaceEvent(workspaceId, { type: "task.updated", taskId: "jira-sprint-sync" });
       }
     }
@@ -489,10 +593,26 @@ export const handleJiraWebhook = inngest.createFunction(
     const { workspaceId, userId, payload } = event.data as {
       workspaceId: string;
       userId: string;
-      payload: { webhookEvent?: string; issue?: JiraIssue };
+      payload: { webhookEvent?: string; issue?: JiraIssue; khoveSprintEvent?: boolean };
     };
 
     await step.run("process", async () => {
+      // Sprint lifecycle push — Jira has no native sprint webhook for 3LO apps, but a
+      // customer can point a Jira Automation "send web request" at this endpoint with a
+      // `{ khoveSprintEvent: true }` body (or Atlassian's `sprint_*` event). Re-sync the
+      // authoritative sprints + open-sprint issues and push a refresh instantly.
+      const isSprintEvent = payload.khoveSprintEvent === true || (payload.webhookEvent ?? "").startsWith("sprint");
+      if (isSprintEvent) {
+        await syncJiraSprints(workspaceId).catch(() => {});
+        try {
+          await syncJiraIssues(workspaceId, userId, await scopedJql(workspaceId, "sprint in openSprints()"), 3);
+        } catch {
+          // non-Software site or no open sprint — sprint entities still refreshed above
+        }
+        await publishWorkspaceEvent(workspaceId, { type: "task.updated", taskId: "jira-sprint-sync" });
+        return;
+      }
+
       const issue = payload.issue;
       if (!issue?.key) return;
       const externalId = `jira-${issue.key}`;

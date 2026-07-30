@@ -1,12 +1,28 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { Prisma } from "@prisma/client";
-import { router, workspaceWriteProcedure } from "@backend/server/trpc";
+import { router, workspaceProcedure, workspaceWriteProcedure } from "@backend/server/trpc";
 import { db } from "@backend/lib/db";
 import { transitionJiraIssue } from "@backend/lib/integrations/jira";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 
 export const jiraRouter = router({
+  /**
+   * The workspace's inbound webhook URL (secret-in-path) for optional instant sprint
+   * updates via a customer-configured Jira Automation → "send web request" rule.
+   * Returns { url: null } when Jira isn't connected / no secret is provisioned yet.
+   */
+  webhookInfo: workspaceProcedure.query(async ({ ctx }) => {
+    const integ = await db.integration.findFirst({
+      where: { workspaceId: ctx.workspace.id, provider: "JIRA", isActive: true },
+      select: { metadata: true },
+    });
+    const secret = ((integ?.metadata ?? {}) as Record<string, unknown>).webhookSecret as string | undefined;
+    if (!secret) return { url: null as string | null };
+    const base = process.env.BACKEND_URL ?? "http://localhost:4000";
+    return { url: `${base}/api/webhooks/jira/${secret}` as string | null };
+  }),
+
   /**
    * Move a Jira issue to a new status category via the transitions API (the kanban
    * drag). Also caches the new category on the local Jira Task so the board survives
