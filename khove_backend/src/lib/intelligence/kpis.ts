@@ -1,4 +1,4 @@
-import type { IntegrationProvider } from "@prisma/client";
+import type { IntegrationProvider, TaskSource } from "@prisma/client";
 import { db } from "@backend/lib/db";
 import { DAY, HOUR, percentile, weekKey, weekSpine } from "@backend/lib/intelligence/flow";
 
@@ -19,6 +19,7 @@ export interface KpiCard {
   trend: "up" | "down" | "flat";
   goodDirection: "up" | "down"; // lets the UI color "improvement" green regardless of metric
   sparkline: { x: string; value: number | null }[];
+  description: string; // plain-English "what is this" for the help tooltip
 }
 
 export interface KpiResult {
@@ -107,6 +108,7 @@ function makeCard(
   value: number | null,
   previous: number | null,
   sparkline: { x: string; value: number | null }[],
+  description = "",
 ): KpiCard {
   let delta: number | null = null;
   let deltaPct: number | null = null;
@@ -117,7 +119,7 @@ function makeCard(
     const eps = 0.05;
     trend = delta! > eps ? "up" : delta! < -eps ? "down" : "flat";
   }
-  return { key, label, value, unit, delta, deltaPct, trend, goodDirection, sparkline };
+  return { key, label, value, unit, delta, deltaPct, trend, goodDirection, sparkline, description };
 }
 
 export async function computeKpis(
@@ -225,23 +227,52 @@ export async function computeKpis(
 
   const perWeek = (n: number) => round1(n / weeksCount);
 
+  // Current-state cards: counts of work that's open RIGHT NOW (no historical
+  // snapshot → no trend/sparkline). Read from the Task store.
+  const stateTasks = await db.task.findMany({
+    where: { workspaceId, source: { hasSome: providers as unknown as TaskSource[] } },
+    select: { status: { select: { category: true } }, metadata: true },
+  });
+  const isOpenCat = (c?: string | null) => c !== "DONE" && c !== "CANCELLED";
+  let openCount = 0;
+  let wip = 0;
+  let bugs = 0;
+  let awaitingReview = 0;
+  for (const t of stateTasks) {
+    const cat = t.status?.category as string | undefined;
+    const meta = (t.metadata ?? {}) as Record<string, unknown>;
+    const gh = meta.github as Record<string, unknown> | undefined;
+    const j = meta.jira as Record<string, unknown> | undefined;
+    if (isOpenCat(cat)) openCount++;
+    if (cat === "IN_PROGRESS") wip++;
+    if (isOpenCat(cat) && typeof j?.issueType === "string" && (j.issueType as string).toLowerCase() === "bug") bugs++;
+    if (gh?.type === "pull_request" && gh?.reviewDecision === "pending") awaitingReview++;
+  }
+  const stateCard = (key: string, label: string, value: number, goodDirection: "up" | "down", description: string): KpiCard =>
+    makeCard(key, label, "count", goodDirection, value, null, [], description);
+
   let cards: KpiCard[];
   if (provider === "jira") {
     cards = [
-      makeCard("done", "Completed", "count", "up", cur.merged, prev.merged, mergedByWeek),
-      makeCard("throughput", "Throughput / wk", "per_week", "up", perWeek(cur.merged), perWeek(prev.merged), mergedByWeek),
-      makeCard("cycle", "Cycle time", "hours", "down", cur.cycleP50, prev.cycleP50, cycleByWeek),
-      makeCard("points", "Points done", "points", "up", cur.points, prev.points, pointsByWeekArr),
+      makeCard("done", "Completed", "count", "up", cur.merged, prev.merged, mergedByWeek, "Jira issues moved to Done in the window."),
+      makeCard("throughput", "Throughput / wk", "per_week", "up", perWeek(cur.merged), perWeek(prev.merged), mergedByWeek, "Average issues completed per week."),
+      makeCard("cycle", "Cycle time", "hours", "down", cur.cycleP50, prev.cycleP50, cycleByWeek, "Median time from an issue opening to Done."),
+      makeCard("points", "Points done", "points", "up", cur.points, prev.points, pointsByWeekArr, "Story points completed in the window."),
+      stateCard("open", "Open", openCount, "down", "Issues currently open (not Done/Cancelled)."),
+      stateCard("wip", "In progress", wip, "down", "Issues currently in progress."),
+      stateCard("bugs", "Open bugs", bugs, "down", "Open issues of type Bug."),
     ];
   } else {
     // github + all
     cards = [
-      makeCard("merged", "Merged", "count", "up", cur.merged, prev.merged, mergedByWeek),
-      makeCard("throughput", "Throughput / wk", "per_week", "up", perWeek(cur.merged), perWeek(prev.merged), mergedByWeek),
-      makeCard("cycle", "Cycle time", "hours", "down", cur.cycleP50, prev.cycleP50, cycleByWeek),
-      makeCard("review", "Review latency", "hours", "down", cur.reviewP50, prev.reviewP50, reviewByWeek),
-      makeCard("opened", "Opened", "count", "up", cur.opened, prev.opened, openedByWeek),
-      makeCard("deploy", "Deploys / wk", "per_week", "up", perWeek(cur.deploys), perWeek(prev.deploys), deployByWeek),
+      makeCard("merged", "Merged", "count", "up", cur.merged, prev.merged, mergedByWeek, "Pull requests merged in the window."),
+      makeCard("throughput", "Throughput / wk", "per_week", "up", perWeek(cur.merged), perWeek(prev.merged), mergedByWeek, "Average items completed per week."),
+      makeCard("cycle", "Cycle time", "hours", "down", cur.cycleP50, prev.cycleP50, cycleByWeek, "Median time from an item opening to done."),
+      makeCard("review", "Review latency", "hours", "down", cur.reviewP50, prev.reviewP50, reviewByWeek, "Median time from a PR opening to its first review."),
+      makeCard("opened", "Opened", "count", "up", cur.opened, prev.opened, openedByWeek, "Work items opened in the window."),
+      makeCard("deploy", "Deploys / wk", "per_week", "up", perWeek(cur.deploys), perWeek(prev.deploys), deployByWeek, "Deployments per week (DORA deploy frequency)."),
+      stateCard("open", "Open", openCount, "down", "Work items currently open."),
+      stateCard("awaiting", "Awaiting review", awaitingReview, "down", "Open PRs still waiting on a first review."),
     ];
   }
 

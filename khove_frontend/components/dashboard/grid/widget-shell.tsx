@@ -4,6 +4,20 @@ import { useState, type DragEventHandler, type PointerEventHandler } from "react
 import { GripVertical, RefreshCw, Settings2, X } from "lucide-react";
 import type { WidgetConfig } from "@khove/shared";
 import { WIDGET_REGISTRY } from "@/components/dashboard/widget-registry";
+import { ProviderIcon } from "@/components/provider-icon";
+import { HelpTip } from "@/components/help-tip";
+
+/** The source platform a widget draws from — for the header brand icon. */
+function providerForWidget(type: string, settings: Record<string, unknown>): string | null {
+  if (type.startsWith("github.")) return "github";
+  if (type.startsWith("jira.")) return "jira";
+  if (type.startsWith("calendar.") || type.startsWith("planner.")) return "google_calendar";
+  if (type.startsWith("kpi.")) {
+    const p = settings.provider;
+    return p === "github" ? "github" : p === "jira" ? "jira" : null;
+  }
+  return null; // cross-tool / agent / ai widgets are multi-source
+}
 
 /**
  * The frame around a single widget: card + header (icon/title) + body (the widget
@@ -43,6 +57,7 @@ export function WidgetShell({
   const Icon = def.icon;
   const Body = def.component;
   const hasSettings = !!def.settingsSchema?.length;
+  const provider = providerForWidget(widget.type, widget.settings);
 
   return (
     <div
@@ -64,11 +79,19 @@ export function WidgetShell({
               <GripVertical size={14} />
             </button>
           )}
-          <Icon size={13} className="shrink-0 text-white/40" />
+          {provider ? (
+            <ProviderIcon provider={provider} size={13} className="shrink-0 opacity-80" />
+          ) : (
+            <Icon size={13} className="shrink-0 text-white/40" />
+          )}
           <h3 className="truncate text-[12px] font-semibold uppercase tracking-wide text-white/60">{def.title}</h3>
         </div>
 
-        {editing && (
+        <div className="flex items-center gap-0.5">
+          <span className="opacity-60 transition-opacity group-hover/widget:opacity-100">
+            <HelpTip text={def.description} />
+          </span>
+          {editing && (
           <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/widget:opacity-100">
             <button
               type="button"
@@ -97,7 +120,8 @@ export function WidgetShell({
               <X size={12.5} />
             </button>
           </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-3.5 pb-3.5">

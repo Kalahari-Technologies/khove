@@ -2,7 +2,7 @@
 
 import { CalendarDays } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import { Chip } from "@/components/integrations/insight-ui";
+import { ProviderIcon } from "@/components/provider-icon";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
 import { WLoading, WEmpty, metaKey } from "./_kit";
 
@@ -53,10 +53,19 @@ export function CalendarTodayWidget(_props: WidgetProps) {
           <span className="w-14 shrink-0 text-[11px] tabular-nums text-white/45">{r.allDay ? "All day" : timeOf(new Date(r.at))}</span>
           <span className="min-w-0 flex-1 truncate text-[12px] text-white/80">{r.title}</span>
           {r.meetLink ? (
-            <a href={r.meetLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-              <Chip tone="accent">Meet</Chip>
+            <a
+              href={r.meetLink}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="Join Google Meet"
+              className="shrink-0"
+            >
+              <ProviderIcon provider="google_meet" size={15} />
             </a>
-          ) : null}
+          ) : (
+            <ProviderIcon provider="google_calendar" size={13} className="shrink-0 opacity-60" title="Calendar" />
+          )}
         </li>
       ))}
     </ul>
