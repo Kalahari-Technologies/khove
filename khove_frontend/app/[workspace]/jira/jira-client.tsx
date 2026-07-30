@@ -28,7 +28,9 @@ import {
   Link2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import { BarTrend, LineTrend, Burndown, fmtHours } from "@/components/integrations/metric-charts";
+import { BarTrend, LineTrend, Burndown, Donut, StackedBar, fmtHours } from "@/components/integrations/metric-charts";
+import { DashboardTabs, useDashboardTabs } from "@/components/integrations/dashboard-tabs";
+import { KpiRow } from "@/components/dashboard/widgets/kpi-row";
 import { JiraScopeDialog } from "@/components/integrations/jira-scope-dialog";
 import {
   StatTile,
@@ -131,6 +133,13 @@ export function JiraClient({
   const [filter, setFilter] = useState<Filter>(null);
   const [drill, setDrill] = useState<DrillTarget | null>(null);
   const [pollNonce, setPollNonce] = useState(0);
+  // Tabbed dashboard layout — active tab persisted per-workspace. Declared with the
+  // other hooks (before the sync/disconnect early-returns) so hook order stays stable.
+  const [tab, setTab] = useDashboardTabs(
+    workspaceId ? `jira:tab:${workspaceId}` : null,
+    ["overview", "flow", "delivery", "activity"],
+    "overview",
+  );
 
   // Persistent sync status (server truth via Redis) — full-screen loader survives
   // reloads until the sync finishes.
@@ -339,6 +348,20 @@ export function JiraClient({
     .map((cat) => ({ cat, items: filtered.filter((i) => i.category === cat) }))
     .filter((g) => g.items.length > 0);
 
+  // Clicking an attention tile filters the Issues list — which now lives on the
+  // Activity tab, so jump there too (filter state is lifted, so it survives the switch).
+  const onTileClick = (key: Filter) => {
+    setFilter(filter === key ? null : key);
+    setTab("activity");
+  };
+
+  const tabs = [
+    { key: "overview", label: "Overview", icon: <Gauge size={13} /> },
+    { key: "flow", label: "Flow", icon: <Activity size={13} /> },
+    { key: "delivery", label: "Delivery", icon: <Rocket size={13} /> },
+    { key: "activity", label: "Activity", icon: <CircleDot size={13} />, count: issues.length },
+  ];
+
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <div className="w-full px-6 py-7 xl:px-10 space-y-6">
@@ -421,93 +444,135 @@ export function JiraClient({
           </div>
         )}
 
-        {/* Attention strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-          {tiles.map((t) => (
-            <StatTile
-              key={t.label}
-              label={t.label}
-              value={t.value}
-              tone={t.tone}
-              icon={<t.icon size={12} />}
-              active={filter === t.key}
-              onClick={t.value > 0 ? () => setFilter(filter === t.key ? null : t.key) : undefined}
-            />
-          ))}
-        </div>
+        {/* Tabs */}
+        <DashboardTabs tabs={tabs} active={tab} onChange={setTab} />
 
-        {/* Sprint intelligence */}
-        <JiraSprintSection onDrill={setDrill} />
+        {/* ── Overview ─────────────────────────────────────────────────── */}
+        {tab === "overview" && (
+          <div className="space-y-6">
+            {/* Hero KPI row */}
+            <KpiRow provider="jira" windowDays={28} />
 
-        {/* Epics + releases (click to drill in) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <JiraEpicsSection onDrill={setDrill} />
-          <JiraReleasesSection onDrill={setDrill} />
-        </div>
-
-        {/* Cross-tool delivery gaps (Jira status vs merged code) */}
-        <JiraCrossToolSection />
-
-        {/* Status distribution + breakdowns */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <SectionCard title="Status" icon={<CircleDot size={13} className="text-white/40" />}>
-            <DistributionBar
-              segments={[
-                { label: "To Do", value: insights.todo.length, color: CAT.todo.color },
-                { label: "In Progress", value: insights.inProgress.length, color: CAT.in_progress.color },
-                { label: "Done", value: insights.done.length, color: CAT.done.color },
-              ]}
-            />
-          </SectionCard>
-          <SectionCard title="By project" icon={<FolderKanban size={13} className="text-white/40" />}>
-            <BreakdownList rows={insights.projectRows} color={INDIGO} emptyLabel="No projects synced yet" />
-          </SectionCard>
-          <SectionCard title="By type" icon={<Shapes size={13} className="text-white/40" />}>
-            <BreakdownList rows={insights.typeRows} color={INDIGO} emptyLabel="No issues yet" />
-          </SectionCard>
-        </div>
-
-        {/* Flow & delivery (same Signal-store metrics as GitHub — cross-platform) */}
-        <JiraFlowSection />
-
-        {/* Issue list */}
-        <SectionCard
-          title="Issues"
-          icon={<CircleDot size={13} className="text-white/40" />}
-          count={filtered.length}
-          action={
-            filter ? (
-              <button onClick={() => setFilter(null)} className="text-[11px] text-white/45 hover:text-white/80 transition-colors">
-                Clear filter ✕
-              </button>
-            ) : (
-              <span className="text-[11px] text-white/30">Hiding done · tap a tile to filter</span>
-            )
-          }
-        >
-          {filtered.length === 0 ? (
-            <p className="text-[12px] text-white/30 py-4">
-              {issues.length === 0 ? "No issues synced yet." : "Nothing here — try another filter."}
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {grouped.map((g) => (
-                <div key={g.cat}>
-                  <div className="flex items-center gap-2 mb-1.5 px-1">
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CAT[g.cat].color }} />
-                    <span className="text-[11px] font-semibold text-white/60">{CAT[g.cat].label}</span>
-                    <span className="text-[10px] text-white/30 tabular-nums">{g.items.length}</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    {g.items.map((i) => (
-                      <IssueRow key={i.id} issue={i} workspaceSlug={workspace.slug} />
-                    ))}
-                  </div>
-                </div>
+            {/* Attention strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+              {tiles.map((t) => (
+                <StatTile
+                  key={t.label}
+                  label={t.label}
+                  value={t.value}
+                  tone={t.tone}
+                  icon={<t.icon size={12} />}
+                  active={filter === t.key}
+                  onClick={t.value > 0 ? () => onTileClick(t.key) : undefined}
+                />
               ))}
             </div>
-          )}
-        </SectionCard>
+
+            {/* Active sprint burndown */}
+            <JiraActiveSprints onDrill={setDrill} />
+
+            {/* Issues by status category */}
+            <SectionCard title="Status mix" icon={<CircleDot size={13} className="text-white/40" />}>
+              <Donut
+                data={[
+                  { name: CAT.todo.label, value: insights.todo.length },
+                  { name: CAT.in_progress.label, value: insights.inProgress.length },
+                  { name: CAT.done.label, value: insights.done.length },
+                ]}
+                colors={[CAT.todo.color, CAT.in_progress.color, CAT.done.color]}
+                centerLabel="issues"
+              />
+            </SectionCard>
+          </div>
+        )}
+
+        {/* ── Flow ─────────────────────────────────────────────────────── */}
+        {tab === "flow" && (
+          <div className="space-y-6">
+            {/* Velocity — committed vs completed per closed sprint */}
+            <JiraVelocitySection />
+
+            {/* Flow & delivery (same Signal-store metrics as GitHub — cross-platform) */}
+            <JiraFlowSection />
+          </div>
+        )}
+
+        {/* ── Delivery ─────────────────────────────────────────────────── */}
+        {tab === "delivery" && (
+          <div className="space-y-6">
+            {/* Epics + releases (click to drill in) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <JiraEpicsSection onDrill={setDrill} />
+              <JiraReleasesSection onDrill={setDrill} />
+            </div>
+
+            {/* Cross-tool delivery gaps (Jira status vs merged code) */}
+            <JiraCrossToolSection />
+          </div>
+        )}
+
+        {/* ── Activity ─────────────────────────────────────────────────── */}
+        {tab === "activity" && (
+          <div className="space-y-6">
+            {/* Issue list */}
+            <SectionCard
+              title="Issues"
+              icon={<CircleDot size={13} className="text-white/40" />}
+              count={filtered.length}
+              action={
+                filter ? (
+                  <button onClick={() => setFilter(null)} className="text-[11px] text-white/45 hover:text-white/80 transition-colors">
+                    Clear filter ✕
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-white/30">Hiding done · tap a tile to filter</span>
+                )
+              }
+            >
+              {filtered.length === 0 ? (
+                <p className="text-[12px] text-white/30 py-4">
+                  {issues.length === 0 ? "No issues synced yet." : "Nothing here — try another filter."}
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {grouped.map((g) => (
+                    <div key={g.cat}>
+                      <div className="flex items-center gap-2 mb-1.5 px-1">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CAT[g.cat].color }} />
+                        <span className="text-[11px] font-semibold text-white/60">{CAT[g.cat].label}</span>
+                        <span className="text-[10px] text-white/30 tabular-nums">{g.items.length}</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {g.items.map((i) => (
+                          <IssueRow key={i.id} issue={i} workspaceSlug={workspace.slug} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Status distribution + breakdowns */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <SectionCard title="Status" icon={<CircleDot size={13} className="text-white/40" />}>
+                <DistributionBar
+                  segments={[
+                    { label: "To Do", value: insights.todo.length, color: CAT.todo.color },
+                    { label: "In Progress", value: insights.inProgress.length, color: CAT.in_progress.color },
+                    { label: "Done", value: insights.done.length, color: CAT.done.color },
+                  ]}
+                />
+              </SectionCard>
+              <SectionCard title="By project" icon={<FolderKanban size={13} className="text-white/40" />}>
+                <BreakdownList rows={insights.projectRows} color={INDIGO} emptyLabel="No projects synced yet" />
+              </SectionCard>
+              <SectionCard title="By type" icon={<Shapes size={13} className="text-white/40" />}>
+                <BreakdownList rows={insights.typeRows} color={INDIGO} emptyLabel="No issues yet" />
+              </SectionCard>
+            </div>
+          </div>
+        )}
       </div>
 
       {scopeOpen && <JiraScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
@@ -731,28 +796,46 @@ function SprintCard({ s, onDrill }: { s: { id?: number; name: string; state?: st
   );
 }
 
-function JiraSprintSection({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
+// Active + upcoming sprint cards (Overview tab).
+function JiraActiveSprints({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
   const q = trpc.metrics.sprints.useQuery();
   const all = q.data ?? [];
   const active = all.filter((s) => s.state === "active" || s.state === "future").slice(0, 2);
-  const closed = all.filter((s) => s.state === "closed").slice(0, 8).reverse();
-  if (all.length === 0) return null;
+  if (active.length === 0) return null;
 
   return (
-    <>
-      {active.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {active.map((s) => (
-            <SprintCard key={s.id ?? s.name} s={s} onDrill={onDrill} />
-          ))}
-        </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {active.map((s) => (
+        <SprintCard key={s.id ?? s.name} s={s} onDrill={onDrill} />
+      ))}
+    </div>
+  );
+}
+
+// Closed-sprint velocity (Flow tab): committed vs completed points where the
+// sprint data carries story points, else a plain completed-points trend.
+function JiraVelocitySection() {
+  const q = trpc.metrics.sprints.useQuery();
+  const all = q.data ?? [];
+  const closed = all.filter((s) => s.state === "closed").slice(0, 8).reverse();
+  if (closed.length < 2) return null;
+  const hasPoints = closed.some((s) => s.hasPoints);
+
+  return (
+    <SectionCard title="Velocity" icon={<Gauge size={13} className="text-white/40" />} action={<span className="text-[11px] text-white/30">{hasPoints ? "committed vs completed / sprint" : "points completed / sprint"}</span>}>
+      {hasPoints ? (
+        <StackedBar
+          data={closed.map((s) => ({ name: s.name, committedPoints: s.committedPoints, donePoints: s.donePoints }))}
+          keys={[
+            { key: "committedPoints", name: "Committed", color: "rgba(255,255,255,0.25)" },
+            { key: "donePoints", name: "Completed", color: "rgb(99,102,241)" },
+          ]}
+          xKey="name"
+        />
+      ) : (
+        <BarTrend points={closed.map((s) => ({ week: s.name, value: s.donePoints }))} color="rgb(99,102,241)" />
       )}
-      {closed.length >= 2 && (
-        <SectionCard title="Velocity" icon={<Gauge size={13} className="text-white/40" />} action={<span className="text-[11px] text-white/30">points completed / sprint</span>}>
-          <BarTrend points={closed.map((s) => ({ week: s.name, value: s.donePoints }))} color="rgb(99,102,241)" />
-        </SectionCard>
-      )}
-    </>
+    </SectionCard>
   );
 }
 

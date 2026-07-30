@@ -33,9 +33,11 @@ import {
 import { Loader2 } from "lucide-react";
 import { AgentActionCard, type AgentActionView } from "@/components/agent/agent-action-card";
 import { GitHubScopeDialog } from "@/components/integrations/github-scope-dialog";
-import { BarTrend, LineTrend, fmtHours } from "@/components/integrations/metric-charts";
+import { BarTrend, LineTrend, Donut, fmtHours } from "@/components/integrations/metric-charts";
+import { DashboardTabs, useDashboardTabs, type TabDef } from "@/components/integrations/dashboard-tabs";
+import { KpiRow } from "@/components/dashboard/widgets/kpi-row";
 import { trpc } from "@/lib/trpc/client";
-import { SlidersHorizontal, Activity, Gauge, X, ChevronRight, Rocket, Flag } from "lucide-react";
+import { SlidersHorizontal, Activity, Gauge, X, ChevronRight, Rocket, Flag, LayoutDashboard, PieChart } from "lucide-react";
 
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 const EMERALD = "rgba(16,185,129,0.55)";
@@ -146,6 +148,15 @@ export function GitHubClient({
   const [filter, setFilter] = useState<Bucket | null>(null);
   const [drill, setDrill] = useState<GhDrillTarget | null>(null);
   const [pollNonce, setPollNonce] = useState(0);
+
+  // Tabbed dashboard state — persisted per-workspace, mirrored to ?tab=. Declared up
+  // here with the other hooks (never after the sync/disconnect early-returns) so the
+  // hook order stays stable across the loading/connected transitions.
+  const [tab, setTab] = useDashboardTabs(
+    workspaceId ? `gh:tab:${workspaceId}` : null,
+    ["overview", "flow", "delivery", "activity"],
+    "overview",
+  );
 
   // Persistent sync status (server truth via Redis) — the full-screen loader
   // survives reloads and shows until the sync actually finishes.
@@ -319,6 +330,22 @@ export function GitHubClient({
 
   const visibleBuckets = BUCKET_ORDER.filter((k) => b[k].length > 0 && (!filter || filter === k));
 
+  // Open-PR distribution for the Overview donut (reuses the already-computed buckets).
+  const bucketSummary = [
+    { name: "Awaiting review", value: b.awaiting.length, color: "rgba(251,191,36,0.75)" },
+    { name: "No reviewer", value: b.no_reviewer.length, color: "rgba(251,191,36,0.5)" },
+    { name: "Changes requested", value: b.changes.length, color: "rgba(248,113,113,0.8)" },
+    { name: "CI failing", value: b.ci.length, color: "rgba(248,113,113,0.55)" },
+    { name: "Ready to merge", value: b.ready.length, color: "rgba(52,211,153,0.75)" },
+  ].filter((d) => d.value > 0);
+
+  const dashTabs: TabDef[] = [
+    { key: "overview", label: "Overview", icon: <LayoutDashboard size={13} /> },
+    { key: "flow", label: "Flow", icon: <Activity size={13} /> },
+    { key: "delivery", label: "Delivery", icon: <Rocket size={13} /> },
+    { key: "activity", label: "Activity", icon: <GitPullRequest size={13} />, count: openPrs.length },
+  ];
+
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       <div className="w-full px-6 py-7 xl:px-10 space-y-6">
@@ -368,22 +395,7 @@ export function GitHubClient({
           </div>
         </div>
 
-        {/* Attention strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-          {tiles.map((t) => (
-            <StatTile
-              key={t.key}
-              label={t.label}
-              value={t.value}
-              tone={t.tone}
-              icon={<t.icon size={12} />}
-              active={filter === t.key}
-              onClick={t.value > 0 ? () => setFilter(filter === t.key ? null : t.key) : undefined}
-            />
-          ))}
-        </div>
-
-        {/* Shepherd proposals */}
+        {/* Shepherd proposals — cross-cutting, kept above the tabs so it's always reachable */}
         {shepherdActions.length > 0 && (
           <SectionCard
             title="Khove suggests"
@@ -398,92 +410,180 @@ export function GitHubClient({
           </SectionCard>
         )}
 
-        {/* Flow & delivery metrics (DORA-lite, folded from the Signal store) */}
-        <FlowSection />
+        {/* Tab bar */}
+        <DashboardTabs tabs={dashTabs} active={tab} onChange={setTab} />
 
-        {/* Milestones + releases (context graph, click to drill in) */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <GhMilestonesSection onDrill={setDrill} />
-          <GhReleasesSection />
-        </div>
+        {/* ─── Overview ─────────────────────────────────────────────────────── */}
+        {tab === "overview" && (
+          <div className="space-y-6">
+            {/* Hero KPI strip */}
+            <KpiRow provider="github" windowDays={28} />
 
-        {/* Repositories — the product map */}
-        <GhReposSection onDrill={setDrill} />
-
-        {/* Scope integrity — merged work not tied to a plan */}
-        <ScopeIntegritySection />
-
-        {/* PR pipeline */}
-        <SectionCard
-          title="Pull request pipeline"
-          icon={<GitPullRequest size={13} className="text-white/40" />}
-          count={openPrs.length}
-          action={
-            filter ? (
-              <button
-                onClick={() => setFilter(null)}
-                className="text-[11px] text-white/45 hover:text-white/80 transition-colors"
-              >
-                Clear filter ✕
-              </button>
-            ) : insights.stale > 0 ? (
-              <Chip tone="warn" icon={<Clock size={10} />}>{insights.stale} stale &gt;3d</Chip>
-            ) : null
-          }
-        >
-          {openPrs.length === 0 ? (
-            <p className="text-[12px] text-white/30 py-4">No open pull requests. Everything&apos;s merged. 🎉</p>
-          ) : visibleBuckets.length === 0 ? (
-            <p className="text-[12px] text-white/30 py-4">No PRs in this state.</p>
-          ) : (
-            <div className="space-y-4">
-              {visibleBuckets.map((key) => (
-                <BucketGroup
-                  key={key}
-                  bucket={key}
-                  prs={[...b[key]].sort((x, y) => new Date(x.updatedAt).getTime() - new Date(y.updatedAt).getTime())}
-                  workspaceSlug={workspace.slug}
+            {/* Attention strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+              {tiles.map((t) => (
+                <StatTile
+                  key={t.key}
+                  label={t.label}
+                  value={t.value}
+                  tone={t.tone}
+                  icon={<t.icon size={12} />}
+                  active={filter === t.key}
+                  onClick={t.value > 0 ? () => setFilter(filter === t.key ? null : t.key) : undefined}
                 />
               ))}
             </div>
-          )}
-        </SectionCard>
 
-        {/* Breakdowns */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <SectionCard title="Reviewer load" icon={<Users size={13} className="text-white/40" />}>
-            <BreakdownList rows={insights.reviewerRows} color={EMERALD} emptyLabel="No reviewers requested yet" />
-          </SectionCard>
-          <SectionCard title="By repository" icon={<FolderGit2 size={13} className="text-white/40" />}>
-            <BreakdownList
-              rows={insights.repoRows}
-              color={EMERALD}
-              emptyLabel={
-                displayRepoCount > 0
-                  ? `Scanned ${displayRepoCount} repositor${displayRepoCount === 1 ? "y" : "ies"} — no open PRs or issues yet.`
-                  : "No repositories synced yet"
-              }
-            />
-          </SectionCard>
-        </div>
-
-        {/* Issues */}
-        <SectionCard title="Open issues" icon={<CircleDot size={13} className="text-white/40" />} count={issues.length}>
-          {issues.length === 0 ? (
-            <p className="text-[12px] text-white/30 py-2">No open issues synced.</p>
-          ) : (
-            <div className="space-y-0.5">
-              {issues.map((task) => (
-                <IssueRow key={task.id} task={task} workspaceSlug={workspace.slug} />
-              ))}
+            {/* Compact summary: open-PR distribution + throughput */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <SectionCard title="Open PR distribution" icon={<PieChart size={13} className="text-white/40" />} count={openPrs.length}>
+                {bucketSummary.length === 0 ? (
+                  <p className="text-[12px] text-white/30 py-4">No open pull requests. Everything&apos;s merged. 🎉</p>
+                ) : (
+                  <Donut
+                    data={bucketSummary.map((d) => ({ name: d.name, value: d.value }))}
+                    colors={bucketSummary.map((d) => d.color)}
+                    centerLabel="open"
+                  />
+                )}
+              </SectionCard>
+              <OverviewThroughput />
             </div>
-          )}
-        </SectionCard>
+
+            {/* Top milestones */}
+            <GhMilestonesSection onDrill={setDrill} />
+          </div>
+        )}
+
+        {/* ─── Flow ─────────────────────────────────────────────────────────── */}
+        {tab === "flow" && (
+          <div className="space-y-6">
+            {/* Flow & delivery metrics (DORA-lite, folded from the Signal store) */}
+            <FlowSection />
+          </div>
+        )}
+
+        {/* ─── Delivery ─────────────────────────────────────────────────────── */}
+        {tab === "delivery" && (
+          <div className="space-y-6">
+            {/* Milestones + releases (context graph, click to drill in) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <GhMilestonesSection onDrill={setDrill} />
+              <GhReleasesSection />
+            </div>
+
+            {/* Repositories — the product map */}
+            <GhReposSection onDrill={setDrill} />
+
+            {/* Scope integrity — merged work not tied to a plan */}
+            <ScopeIntegritySection />
+          </div>
+        )}
+
+        {/* ─── Activity ─────────────────────────────────────────────────────── */}
+        {tab === "activity" && (
+          <div className="space-y-6">
+            {/* PR pipeline */}
+            <SectionCard
+              title="Pull request pipeline"
+              icon={<GitPullRequest size={13} className="text-white/40" />}
+              count={openPrs.length}
+              action={
+                filter ? (
+                  <button
+                    onClick={() => setFilter(null)}
+                    className="text-[11px] text-white/45 hover:text-white/80 transition-colors"
+                  >
+                    Clear filter ✕
+                  </button>
+                ) : insights.stale > 0 ? (
+                  <Chip tone="warn" icon={<Clock size={10} />}>{insights.stale} stale &gt;3d</Chip>
+                ) : null
+              }
+            >
+              {openPrs.length === 0 ? (
+                <p className="text-[12px] text-white/30 py-4">No open pull requests. Everything&apos;s merged. 🎉</p>
+              ) : visibleBuckets.length === 0 ? (
+                <p className="text-[12px] text-white/30 py-4">No PRs in this state.</p>
+              ) : (
+                <div className="space-y-4">
+                  {visibleBuckets.map((key) => (
+                    <BucketGroup
+                      key={key}
+                      bucket={key}
+                      prs={[...b[key]].sort((x, y) => new Date(x.updatedAt).getTime() - new Date(y.updatedAt).getTime())}
+                      workspaceSlug={workspace.slug}
+                    />
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Breakdowns */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <SectionCard title="Reviewer load" icon={<Users size={13} className="text-white/40" />}>
+                <BreakdownList rows={insights.reviewerRows} color={EMERALD} emptyLabel="No reviewers requested yet" />
+              </SectionCard>
+              <SectionCard title="By repository" icon={<FolderGit2 size={13} className="text-white/40" />}>
+                <BreakdownList
+                  rows={insights.repoRows}
+                  color={EMERALD}
+                  emptyLabel={
+                    displayRepoCount > 0
+                      ? `Scanned ${displayRepoCount} repositor${displayRepoCount === 1 ? "y" : "ies"} — no open PRs or issues yet.`
+                      : "No repositories synced yet"
+                  }
+                />
+              </SectionCard>
+            </div>
+
+            {/* Issues */}
+            <SectionCard title="Open issues" icon={<CircleDot size={13} className="text-white/40" />} count={issues.length}>
+              {issues.length === 0 ? (
+                <p className="text-[12px] text-white/30 py-2">No open issues synced.</p>
+              ) : (
+                <div className="space-y-0.5">
+                  {issues.map((task) => (
+                    <IssueRow key={task.id} task={task} workspaceSlug={workspace.slug} />
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+          </div>
+        )}
       </div>
 
       {scopeOpen && <GitHubScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
       {drill && <GhDrilldown workspaceSlug={workspace.slug} target={drill} onClose={() => setDrill(null)} />}
     </div>
+  );
+}
+
+// Overview-only compact throughput card — reuses the Flow signal-store query
+// (react-query dedupes with FlowSection) and renders just the throughput trend.
+function OverviewThroughput() {
+  const q = trpc.metrics.flow.useQuery({ provider: "GITHUB" });
+  const m = q.data;
+  const weeks = m ? Math.round(m.windowDays / 7) : 12;
+  return (
+    <SectionCard
+      title="Throughput"
+      icon={<Gauge size={13} className="text-white/40" />}
+      action={<span className="text-[11px] text-white/30">last {weeks} weeks</span>}
+    >
+      {q.isLoading ? (
+        <div className="py-8 flex justify-center">
+          <Loader2 size={16} className="animate-spin text-white/40" />
+        </div>
+      ) : !m || m.merged === 0 ? (
+        <p className="text-[12px] text-white/30 py-3">No merges in the last {weeks} weeks yet — throughput fills in as PRs merge.</p>
+      ) : (
+        <>
+          <div className="text-[11px] text-white/45 mb-1.5">Merges per week</div>
+          <BarTrend points={m.throughputSeries} />
+        </>
+      )}
+    </SectionCard>
   );
 }
 
