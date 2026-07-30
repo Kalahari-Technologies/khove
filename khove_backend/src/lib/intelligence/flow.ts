@@ -4,8 +4,8 @@ import { db } from "@backend/lib/db";
 // Flow metrics folded from the Signal event store — provider-agnostic, so GitHub
 // and (Phase 5) Jira feed the same charts. See Connectivity Intelligence design.
 
-const DAY = 86_400_000;
-const HOUR = 3_600_000;
+export const DAY = 86_400_000;
+export const HOUR = 3_600_000;
 
 export interface WeekPoint {
   week: string; // Monday, YYYY-MM-DD
@@ -25,21 +25,21 @@ export interface FlowMetrics {
   cycleTimeSeries: WeekPoint[]; // p50 cycle-time (hrs) per merge week
 }
 
-function percentile(sorted: number[], p: number): number | null {
+export function percentile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1));
   return sorted[idx];
 }
 
 /** The Monday (UTC) of the week a date falls in, as YYYY-MM-DD. */
-function weekKey(d: Date): string {
+export function weekKey(d: Date): string {
   const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const day = (dt.getUTCDay() + 6) % 7; // 0 = Monday
   dt.setUTCDate(dt.getUTCDate() - day);
   return dt.toISOString().slice(0, 10);
 }
 
-function weekSpine(fromMs: number, toMs: number): string[] {
+export function weekSpine(fromMs: number, toMs: number): string[] {
   const weeks: string[] = [];
   const start = new Date(weekKey(new Date(fromMs)) + "T00:00:00Z").getTime();
   for (let t = start; t <= toMs; t += 7 * DAY) weeks.push(weekKey(new Date(t)));

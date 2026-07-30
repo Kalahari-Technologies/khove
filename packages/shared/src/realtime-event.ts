@@ -10,4 +10,7 @@ export type RealtimeEvent =
   | { type: "calendar.disconnected" }
   | { type: "thread.updated"; threadId: string }
   | { type: "agent-action.created"; actionId: string }
+  | { type: "dashboard.created"; dashboardId: string; userId: string }
+  | { type: "dashboard.updated"; dashboardId: string; userId: string }
+  | { type: "dashboard.deleted"; dashboardId: string; userId: string }
   | { type: "refresh" };
