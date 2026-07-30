@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
 import {
@@ -26,6 +26,8 @@ import {
   GitMerge,
   GitPullRequest,
   Link2,
+  Inbox,
+  Tag,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { BarTrend, LineTrend, Burndown, Donut, StackedBar, fmtHours } from "@/components/integrations/metric-charts";
@@ -38,6 +40,7 @@ import {
   DistributionBar,
   BreakdownList,
   Chip,
+  EmptyState,
   IntegrationSyncScreen,
   ago,
   daysSince,
@@ -132,6 +135,19 @@ export function JiraClient({
   const [scopeOpen, setScopeOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>(null);
   const [drill, setDrill] = useState<DrillTarget | null>(null);
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  // Scope-first onboarding: right after connecting, the callback lands with
+  // ?setup=scope — open the project picker immediately (its "save" runs the first
+  // scoped sync). Strip the param so a background refresh doesn't reopen it.
+  useEffect(() => {
+    if (searchParams.get("setup") === "scope") {
+      setScopeOpen(true);
+      router.replace(pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [pollNonce, setPollNonce] = useState(0);
   // Tabbed dashboard layout — active tab persisted per-workspace. Declared with the
   // other hooks (before the sync/disconnect early-returns) so hook order stays stable.
@@ -530,9 +546,10 @@ export function JiraClient({
               }
             >
               {filtered.length === 0 ? (
-                <p className="text-[12px] text-white/30 py-4">
-                  {issues.length === 0 ? "No issues synced yet." : "Nothing here — try another filter."}
-                </p>
+                <EmptyState
+                  icon={<Inbox size={18} />}
+                  message={issues.length === 0 ? "No issues synced yet." : "Nothing here — try another filter."}
+                />
               ) : (
                 <div className="space-y-4">
                   {grouped.map((g) => (
@@ -575,7 +592,16 @@ export function JiraClient({
         )}
       </div>
 
-      {scopeOpen && <JiraScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
+      {scopeOpen && (
+        <JiraScopeDialog
+          workspaceId={workspaceId}
+          onClose={() => setScopeOpen(false)}
+          onSaved={() => {
+            setSyncing(true);
+            setPollNonce((n) => n + 1);
+          }}
+        />
+      )}
       {drill &&
         (drill.kind === "EPIC" ? (
           <EpicChainModal workspaceSlug={workspace.slug} epicKey={drill.key} title={drill.title} onClose={() => setDrill(null)} />
@@ -847,7 +873,7 @@ function JiraEpicsSection({ onDrill }: { onDrill: (t: DrillTarget) => void }) {
       {q.isLoading ? (
         <div className="py-6 flex justify-center"><Loader2 size={16} className="animate-spin text-white/40" /></div>
       ) : epics.length === 0 ? (
-        <p className="text-[12px] text-white/30 py-2">No epics found in the synced issues.</p>
+        <EmptyState icon={<Layers size={18} />} message="No epics found in the synced issues." />
       ) : (
         <div className="space-y-2.5">
           {epics.map((e) => {
@@ -882,7 +908,7 @@ function JiraReleasesSection({ onDrill }: { onDrill: (t: DrillTarget) => void })
       {q.isLoading ? (
         <div className="py-6 flex justify-center"><Loader2 size={16} className="animate-spin text-white/40" /></div>
       ) : releases.length === 0 ? (
-        <p className="text-[12px] text-white/30 py-2">No fix versions on the synced issues.</p>
+        <EmptyState icon={<Tag size={18} />} message="No fix versions on the synced issues." />
       ) : (
         <div className="space-y-2.5">
           {releases.map((r) => {

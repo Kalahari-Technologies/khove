@@ -1,5 +1,6 @@
 "use client";
 
+import { GitPullRequest } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Donut } from "@/components/integrations/metric-charts";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -15,7 +16,7 @@ export function GithubPrPipelineWidget(_props: WidgetProps) {
   if (isLoading) return <WLoading height={150} />;
 
   const prs = (data?.items ?? []).filter((t) => metaKey(t.metadata, "github").type === "pull_request");
-  if (prs.length === 0) return <WEmpty>No open pull requests.</WEmpty>;
+  if (prs.length === 0) return <WEmpty icon={<GitPullRequest size={18} />}>No open pull requests.</WEmpty>;
 
   const buckets = { draft: 0, ci: 0, changes: 0, ready: 0, noReviewer: 0, review: 0 };
   for (const t of prs) {

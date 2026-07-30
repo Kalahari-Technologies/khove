@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Gauge, Minus } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Sparkline, fmtHours } from "@/components/integrations/metric-charts";
+import { EmptyState } from "@/components/integrations/insight-ui";
 
 type Provider = "github" | "jira" | "all";
 
@@ -78,8 +79,8 @@ export function KpiRow({ provider = "all", windowDays = 28 }: { provider?: Provi
   const cards = (data?.cards ?? []) as KpiCard[];
   if (cards.length === 0) {
     return (
-      <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-6 text-center text-[12px] text-white/30">
-        Not enough activity yet to compute trends.
+      <div className="rounded-xl border border-white/[0.07] bg-white/[0.02]">
+        <EmptyState icon={<Gauge size={18} />} message="Not enough activity yet to compute trends." />
       </div>
     );
   }

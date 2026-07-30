@@ -1,5 +1,6 @@
 "use client";
 
+import { Gauge } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { KpiCardView } from "@/components/dashboard/widgets/kpi-row";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -21,7 +22,7 @@ export function KpiSingleWidget({ settings }: WidgetProps) {
   if (isLoading) return <WLoading height={86} />;
 
   const cards = data?.cards ?? [];
-  if (cards.length === 0) return <WEmpty>Not enough activity yet.</WEmpty>;
+  if (cards.length === 0) return <WEmpty icon={<Gauge size={18} />}>Not enough activity yet.</WEmpty>;
 
   const card = cards.find((c) => c.key === metricKey) ?? cards[0];
   return <KpiCardView card={card} windowDays={data?.windowDays ?? windowDays} />;

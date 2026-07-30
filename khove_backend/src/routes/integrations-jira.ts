@@ -71,7 +71,14 @@ router.get("/callback", async (req, res) => {
     const accessTokenEnc = encrypt(tokens.access_token);
     const refreshTokenEnc = tokens.refresh_token ? encrypt(tokens.refresh_token) : undefined;
     const tokenExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-    const metadata = { cloudId: site.id, siteUrl: site.url, siteName: site.name };
+
+    // Preserve any existing scope/config on re-connect (don't wipe the product boundary).
+    const existing = await db.integration.findUnique({
+      where: { provider_workspaceId: { provider: "JIRA", workspaceId } },
+      select: { metadata: true },
+    });
+    const existingMeta = (existing?.metadata ?? {}) as Record<string, unknown>;
+    const metadata = { ...existingMeta, cloudId: site.id, siteUrl: site.url, siteName: site.name };
 
     await db.integration.upsert({
       where: { provider_workspaceId: { provider: "JIRA", workspaceId } },
@@ -95,16 +102,20 @@ router.get("/callback", async (req, res) => {
       },
     });
 
-    await inngest.send({ name: "jira/initial-sync", data: { userId, workspaceId } }).catch(() => {});
-    // Also sync inline so issues are present the moment the browser lands, even
-    // if the Inngest runtime isn't processing events. Best-effort (don't block
-    // the redirect on a failure — the sync-status banner will report it).
-    await performJiraSync(workspaceId, userId).catch((e) =>
-      console.error("[Jira connect] inline sync failed:", e instanceof Error ? e.message : e),
-    );
-    await publishEvent(userId, { type: "refresh" }).catch(() => {});
-
-    return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?connected=jira`);
+    // Scope-first: don't sync here. If the workspace already chose projects (a
+    // re-connect), kick a scoped background sync + syncing indicator; if not (first
+    // connect), land on the dashboard and let the client open the project picker,
+    // whose "save" triggers the first scoped sync. (This also guarantees the JQL is
+    // always bounded — a sync never runs before a project scope exists.)
+    const hasScope = existingMeta.scopeConfigured === true || existingMeta.scope !== undefined;
+    if (hasScope) {
+      await redis.set(`jira-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
+      void performJiraSync(workspaceId, userId)
+        .then(() => publishEvent(userId, { type: "refresh" }).catch(() => {}))
+        .catch((e) => console.error("[Jira connect] background sync failed:", e instanceof Error ? e.message : e));
+      return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?connected=jira`);
+    }
+    return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?connected=jira&setup=scope`);
   } catch (err) {
     console.error("[Jira] OAuth callback error:", err);
     return res.redirect(`${env.FRONTEND_ORIGIN}${jiraPath}?error=jira_auth_failed`);
@@ -174,10 +185,7 @@ router.post("/resync", async (req, res) => {
   });
   if (!integration) return res.status(404).json({ error: "Jira is not connected" });
 
-  // Fire the background job (webhook registration + pruning when Inngest is
-  // healthy) AND run the sync inline so data lands + the real outcome is returned
-  // even if the Inngest runtime isn't processing events. This is the reliable path.
-  await inngest.send({ name: "jira/initial-sync", data: { userId: integration.userId, workspaceId } }).catch(() => {});
+  // Run the sync inline (single run — no concurrent Inngest job, which would race).
   try {
     const result = await performJiraSync(workspaceId, integration.userId);
     return res.json({ success: true, ...result });
@@ -259,10 +267,17 @@ router.post("/scope", async (req, res) => {
   const meta = (integration.metadata ?? {}) as Record<string, unknown>;
   await db.integration.update({
     where: { id: integration.id },
-    data: { metadata: { ...meta, scope: { projects: (projects as string[]).filter(Boolean) } } },
+    data: {
+      metadata: { ...meta, scope: { projects: (projects as string[]).filter(Boolean) }, scopeConfigured: true },
+    },
   });
 
-  await inngest.send({ name: "jira/initial-sync", data: { userId: integration.userId, workspaceId } });
+  // Saving scope is the sync trigger: run the scoped sync in the BACKGROUND (Inngest
+  // isn't reliable in prod), with the syncing indicator, and return immediately.
+  await redis.set(`jira-sync:${workspaceId}`, "syncing", { ex: 600 }).catch(() => {});
+  void performJiraSync(workspaceId, integration.userId)
+    .then(() => publishEvent(integration.userId, { type: "refresh" }).catch(() => {}))
+    .catch((e) => console.error("[Jira scope] background sync failed:", e instanceof Error ? e.message : e));
   return res.json({ success: true });
 });
 

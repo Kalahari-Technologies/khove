@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { SectionCard, Chip } from "@/components/integrations/insight-ui";
+import { SectionCard, Chip, EmptyState } from "@/components/integrations/insight-ui";
 import {
   Waypoints,
   Plus,
@@ -52,9 +52,10 @@ export function ThreadsPanel() {
       }
     >
       {threads.length === 0 ? (
-        <div className="py-6 text-center text-[12px] text-white/30">
-          A thread ties a piece of work across tools — a meeting, its PRs, its ticket, the people.
-        </div>
+        <EmptyState
+          icon={<Waypoints size={18} />}
+          message="A thread ties a piece of work across tools — a meeting, its PRs, its ticket, the people."
+        />
       ) : (
         <div className="space-y-0.5">
           {threads.map((t) => (
@@ -244,8 +245,12 @@ function ThreadGraph({ title, links }: { title: string; links: ThreadLink[] }) {
             );
           })}
           {links.length === 0 && (
-            <div className="absolute inset-x-0 bottom-4 text-center text-[11.5px] text-white/30">
-              No links yet — add a PR, ticket, or meeting.
+            <div className="absolute inset-x-0 bottom-4">
+              <EmptyState
+                icon={<Waypoints size={18} />}
+                message="No links yet — add a PR, ticket, or meeting."
+                className="py-0"
+              />
             </div>
           )}
         </>

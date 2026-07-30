@@ -1,5 +1,6 @@
 "use client";
 
+import { CalendarDays } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Chip } from "@/components/integrations/insight-ui";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -26,7 +27,7 @@ export function CalendarAgendaWidget(_props: WidgetProps) {
     .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime())
     .slice(0, 7);
 
-  if (rows.length === 0) return <WEmpty>No upcoming meetings</WEmpty>;
+  if (rows.length === 0) return <WEmpty icon={<CalendarDays size={18} />}>No upcoming meetings</WEmpty>;
 
   return (
     <ul className="space-y-1.5">
