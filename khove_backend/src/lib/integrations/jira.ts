@@ -464,6 +464,7 @@ export async function searchIssues(
     "updated",
     "duedate",
     "priority",
+    "assignee",
     "labels",
     "components",
     "fixVersions",
