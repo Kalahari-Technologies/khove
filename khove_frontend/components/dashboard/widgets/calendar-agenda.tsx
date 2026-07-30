@@ -39,7 +39,7 @@ export function CalendarAgendaWidget(_props: WidgetProps) {
         const when = new Date(t.dueDate!);
         return (
           <li key={t.id} className="flex items-center gap-2">
-            <span className="shrink-0 text-[11px] tabular-nums text-white/45">{whenLabel(when)}</span>
+            <span className="w-16 shrink-0 text-[11px] tabular-nums text-white/45">{whenLabel(when)}</span>
             <span className="flex w-4 shrink-0 items-center justify-center">
               {meetLink ? (
                 <a href={meetLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Join Google Meet">
