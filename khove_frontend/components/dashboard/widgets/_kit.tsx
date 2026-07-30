@@ -9,9 +9,9 @@ export function WLoading({ height = 120 }: { height?: number }) {
   return <div className="animate-pulse rounded-lg bg-white/[0.02]" style={{ height }} />;
 }
 
-/** Centered empty-state for a widget body — icon + message. */
+/** Centered empty-state for a widget body — icon + message, filling the card height. */
 export function WEmpty({ children = "Nothing to show", icon }: { children?: ReactNode; icon?: ReactNode }) {
-  return <EmptyState icon={icon ?? <Inbox size={18} />} message={children} />;
+  return <EmptyState icon={icon ?? <Inbox size={18} />} message={children} className="h-full" />;
 }
 
 /** A compact header stat line above a chart. */

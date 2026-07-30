@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type Priority } from "@prisma/client";
 import { inngest } from "@backend/lib/inngest";
 import { db } from "@backend/lib/db";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
@@ -58,6 +58,9 @@ async function upsertIssueTask(
   // path besides Google Calendar that populates a plottable date).
   const dueRaw = (f as Record<string, unknown>).duedate as string | null | undefined;
   const dueDate = dueRaw ? new Date(dueRaw) : null;
+  // Source-authoritative: created time + priority come from Jira, not Khove.
+  const createdRaw = (f as Record<string, unknown>).created as string | null | undefined;
+  const jiraPriority = jiraPriorityToKhove(f.priority?.name);
 
   // Rich, content-only context (no assignee/reporter → still no personal data).
   const storyPoints = fieldMap.storyPoints ? (f[fieldMap.storyPoints] as number | null) ?? null : null;
@@ -81,6 +84,7 @@ async function upsertIssueTask(
       issueType,
       url: externalUrl,
       priority: f.priority?.name ?? null,
+      created: createdRaw ?? null,
       labels: Array.isArray(f.labels) ? f.labels : [],
       components: Array.isArray(f.components) ? f.components.map((c) => c.name).filter(Boolean) : [],
       fixVersions: Array.isArray(f.fixVersions) ? f.fixVersions.map((v) => v.name).filter(Boolean) : [],
@@ -101,6 +105,8 @@ async function upsertIssueTask(
     return "updated";
   }
 
+  // Source-authoritative import: createdAt + priority come from Jira. Khove owns only
+  // identifiers/links/metadata; the UPDATE branch above never re-writes these.
   await db.task.create({
     data: {
       title: `[${issueKey}] ${summary}`,
@@ -111,11 +117,31 @@ async function upsertIssueTask(
       workspaceId,
       statusId,
       dueDate,
-      priority: "MEDIUM",
+      priority: jiraPriority,
+      ...(createdRaw ? { createdAt: new Date(createdRaw) } : {}),
       metadata: json,
     },
   });
   return "created";
+}
+
+/** Map a Jira priority name to the Khove Priority enum. */
+function jiraPriorityToKhove(name?: string | null): Priority {
+  switch ((name ?? "").trim().toLowerCase()) {
+    case "highest":
+    case "blocker":
+    case "critical":
+      return "URGENT";
+    case "high":
+      return "HIGH";
+    case "low":
+    case "lowest":
+    case "trivial":
+    case "minor":
+      return "LOW";
+    default:
+      return "MEDIUM";
+  }
 }
 
 /**

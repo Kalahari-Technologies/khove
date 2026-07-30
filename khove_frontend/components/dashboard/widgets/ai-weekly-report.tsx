@@ -3,6 +3,7 @@
 import { Loader2, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { EmptyState } from "@/components/integrations/insight-ui";
+import { RichText } from "@/components/rich-text";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
 
 /** On-demand AI weekly status report. */
@@ -23,9 +24,7 @@ export function AiWeeklyReportWidget(_props: WidgetProps) {
   if (report.data?.report) {
     return (
       <div className="space-y-2.5">
-        <pre className="whitespace-pre-wrap font-sans text-[12px] leading-relaxed text-white/75">
-          {report.data.report}
-        </pre>
+        <RichText content={report.data.report} className="text-[12px] leading-relaxed text-white/75" />
         <button
           type="button"
           onClick={generate}
