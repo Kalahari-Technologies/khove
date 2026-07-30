@@ -97,17 +97,12 @@ export function DashboardGrid({
         gap: GAP,
       }}
     >
-      {widgets.map((w) => {
-        const rows = clamp(w.h, WIDGET_MIN_H, WIDGET_MAX_H);
-        const cellPx = rows * ROW + (rows - 1) * GAP;
-        return (
+      {widgets.map((w) => (
         <div
           key={w.id}
           style={{
             gridColumn: `span ${clamp(w.w, WIDGET_MIN_W, WIDGET_MAX_W)}`,
-            gridRow: `span ${rows}`,
-            // View mode: don't stretch to the full cell — let the card hug its content.
-            alignSelf: editing ? "stretch" : "start",
+            gridRow: `span ${clamp(w.h, WIDGET_MIN_H, WIDGET_MAX_H)}`,
           }}
           onDragOver={(e) => {
             if (!editing || !dragId) return;
@@ -132,7 +127,6 @@ export function DashboardGrid({
             editing={editing}
             workspaceId={workspaceId}
             slug={slug}
-            maxHeightPx={cellPx}
             onRemove={(id) => onChange(widgets.filter((x) => x.id !== id))}
             onOpenSettings={onOpenSettings}
             dragHandle={{
@@ -150,8 +144,7 @@ export function DashboardGrid({
             onResizePointerDown={(e) => startResize(w.id, e)}
           />
         </div>
-        );
-      })}
+      ))}
     </div>
   );
 }
