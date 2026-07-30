@@ -20,6 +20,8 @@ import {
   FileText,
   Copy,
   X,
+  Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { SectionCard, StatTile, Chip, ago, type Tone } from "@/components/integrations/insight-ui";
 import { BurnupChart } from "@/components/integrations/burnup-chart";
@@ -71,6 +73,7 @@ export function InitiativesClient({ workspaceId, threads }: { workspaceId: strin
 
   const [selectedId, setSelectedId] = useState<string | null>(initiatives[0]?.id ?? threads[0]?.id ?? null);
   const [reportOpen, setReportOpen] = useState(false);
+  const suggest = trpc.thread.suggestNow.useMutation();
   const selected = threads.find((t) => t.id === selectedId) ?? null;
 
   return (
@@ -91,6 +94,22 @@ export function InitiativesClient({ workspaceId, threads }: { workspaceId: strin
           >
             <FileText size={12} /> Weekly update
           </button>
+          <button
+            onClick={() => suggest.mutate()}
+            disabled={suggest.isPending}
+            title="Cluster related tickets/PRs into proposed threads"
+            className="mt-2 flex items-center gap-1.5 w-full justify-center px-3 py-1.5 rounded-lg text-[12px] text-white/70 border border-white/[0.1] hover:bg-white/[0.06] hover:text-white transition-colors disabled:opacity-50"
+          >
+            {suggest.isPending ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            Suggest threads
+          </button>
+          {suggest.data && (
+            <p className="mt-1.5 text-[11px] text-white/40 leading-relaxed">
+              {suggest.data.created > 0
+                ? `${suggest.data.created} proposal${suggest.data.created > 1 ? "s" : ""} drafted — approve them in the Agent feed.`
+                : "No new thread suggestions right now."}
+            </p>
+          )}
         </div>
 
         {threads.length === 0 ? (
@@ -226,6 +245,38 @@ function ListGroup({
   );
 }
 
+/** AI "What's happening" briefing for a thread — reaches across its tickets + code. */
+function ThreadNarrativeCard({ threadId }: { threadId: string }) {
+  const utils = trpc.useUtils();
+  const q = trpc.thread.narrative.useQuery({ id: threadId }, { staleTime: 5 * 60_000 });
+  return (
+    <SectionCard
+      title="What's happening"
+      icon={<Sparkles size={13} className="text-violet-300/80" />}
+      action={
+        <button
+          onClick={() => utils.thread.narrative.invalidate({ id: threadId })}
+          title="Regenerate"
+          className="rounded-md p-1 text-white/35 transition-colors hover:bg-white/[0.06] hover:text-white/70"
+        >
+          <RefreshCw size={12} className={q.isFetching ? "animate-spin" : ""} />
+        </button>
+      }
+    >
+      {q.isLoading ? (
+        <div className="flex items-center gap-2 py-2 text-[12px] text-white/40">
+          <Loader2 size={13} className="animate-spin" />
+          Reading across the thread…
+        </div>
+      ) : q.data?.text ? (
+        <RichText content={q.data.text} className="text-[12.5px] leading-relaxed text-white/70" />
+      ) : (
+        <p className="py-2 text-[12px] text-white/35">No summary yet.</p>
+      )}
+    </SectionCard>
+  );
+}
+
 function InitiativeDetail({ workspaceId, thread }: { workspaceId: string; thread: ThreadView }) {
   const router = useRouter();
   const utils = trpc.useUtils();
@@ -287,6 +338,9 @@ function InitiativeDetail({ workspaceId, thread }: { workspaceId: string; thread
           </button>
         )}
       </div>
+
+      {/* AI narrative — auto-generated, cached until the thread changes. */}
+      <ThreadNarrativeCard threadId={thread.id} />
 
       {delivery.isLoading ? (
         <div className="flex items-center justify-center py-12 text-white/40">

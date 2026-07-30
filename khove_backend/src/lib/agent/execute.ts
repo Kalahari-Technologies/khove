@@ -76,6 +76,32 @@ export async function executeAgentAction(action: AgentAction): Promise<{ summary
         return { summary: `Thread created for ${prTask?.title ?? "the pull request"}.` };
       }
 
+      // Suggestion engine: link a clustered set of Task ids (tickets/PRs/issues).
+      if (Array.isArray(p.memberTaskIds)) {
+        const members = await db.task.findMany({
+          where: { id: { in: p.memberTaskIds as string[] }, workspaceId: action.workspaceId },
+        });
+        for (const t of members) {
+          const gh = (t.metadata as Record<string, unknown> | null)?.github as Record<string, unknown> | undefined;
+          const src = t.source[0];
+          const kind =
+            src === "JIRA"
+              ? "JIRA_ISSUE"
+              : src === "GITHUB"
+                ? gh?.type === "issue"
+                  ? "GITHUB_ISSUE"
+                  : "GITHUB_PR"
+                : "TASK";
+          await linkToThread(action.workspaceId, thread.id, {
+            kind: kind as "JIRA_ISSUE" | "GITHUB_ISSUE" | "GITHUB_PR" | "TASK",
+            refId: t.id,
+            refUrl: t.externalUrl,
+            title: t.title,
+          });
+        }
+        return { summary: `Thread created with ${members.length} linked item(s).` };
+      }
+
       const linked = await autoLinkMeeting(action.workspaceId, thread.id, p.taskId as string);
       return { summary: `Thread created with ${linked.github} GitHub link(s) and ${linked.people} person(s).` };
     }
