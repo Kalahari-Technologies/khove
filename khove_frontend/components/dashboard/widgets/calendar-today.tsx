@@ -51,21 +51,16 @@ export function CalendarTodayWidget(_props: WidgetProps) {
       {rows.slice(0, 10).map((r) => (
         <li key={r.id} className="flex items-center gap-2.5">
           <span className="w-14 shrink-0 text-[11px] tabular-nums text-white/45">{r.allDay ? "All day" : timeOf(new Date(r.at))}</span>
+          <span className="flex w-4 shrink-0 items-center justify-center">
+            {r.meetLink ? (
+              <a href={r.meetLink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title="Join Google Meet">
+                <ProviderIcon provider="google_meet" size={15} />
+              </a>
+            ) : (
+              <ProviderIcon provider="google_calendar" size={13} className="opacity-60" title="Calendar" />
+            )}
+          </span>
           <span className="min-w-0 flex-1 truncate text-[12px] text-white/80">{r.title}</span>
-          {r.meetLink ? (
-            <a
-              href={r.meetLink}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title="Join Google Meet"
-              className="shrink-0"
-            >
-              <ProviderIcon provider="google_meet" size={15} />
-            </a>
-          ) : (
-            <ProviderIcon provider="google_calendar" size={13} className="shrink-0 opacity-60" title="Calendar" />
-          )}
         </li>
       ))}
     </ul>
