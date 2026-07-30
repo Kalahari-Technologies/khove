@@ -436,6 +436,81 @@ export async function listProjects(workspaceId: string): Promise<{ key: string; 
   return (data.values ?? []).map((p) => ({ key: p.key, name: p.name }));
 }
 
+// ---------------------------------------------------------------------------
+// Jira Agile (Software) REST API — authoritative boards + sprints.
+// `jiraFetch` already prefixes only /ex/jira/{cloudId}, so it calls the Agile
+// API (/rest/agile/1.0/*) as-is. Reads are covered by the classic read:jira-work
+// scope; a Kanban board (no sprints) or a non-Software site returns 400/404, which
+// callers treat as an empty result.
+// ---------------------------------------------------------------------------
+
+export interface JiraBoard {
+  id: number;
+  name: string;
+  type?: string;
+}
+
+export interface JiraAgileSprint {
+  id: number;
+  name: string;
+  state?: string; // active | future | closed
+  startDate?: string;
+  endDate?: string;
+  completeDate?: string;
+  goal?: string;
+  originBoardId?: number;
+}
+
+/** Boards for a project (or all boards when no project key is given), paginated. */
+export async function listBoards(workspaceId: string, projectKeyOrId?: string): Promise<JiraBoard[]> {
+  const out: JiraBoard[] = [];
+  let startAt = 0;
+  for (let page = 0; page < 10; page++) {
+    const q = new URLSearchParams({ maxResults: "50", startAt: String(startAt) });
+    if (projectKeyOrId) q.set("projectKeyOrId", projectKeyOrId);
+    const resp = await jiraFetch<{ values?: JiraBoard[]; isLast?: boolean }>(
+      workspaceId,
+      `/rest/agile/1.0/board?${q.toString()}`,
+    ).catch((e) => {
+      const status = (e as { status?: number }).status;
+      if (status === 400 || status === 404) return { values: [] as JiraBoard[], isLast: true };
+      throw e;
+    });
+    const vals = resp.values ?? [];
+    for (const b of vals) out.push({ id: b.id, name: b.name, type: b.type });
+    if (resp.isLast || vals.length === 0) break;
+    startAt += vals.length;
+  }
+  return out;
+}
+
+/**
+ * Active + future sprints for a board (the authoritative, bounded set we need —
+ * including empty/future sprints that have no issues yet). Closed-sprint history
+ * still comes from issue metadata, so we don't paginate the (potentially large)
+ * closed set here. Kanban boards (no sprint support) return 400 → empty.
+ */
+export async function listActiveFutureSprints(workspaceId: string, boardId: number): Promise<JiraAgileSprint[]> {
+  const out: JiraAgileSprint[] = [];
+  let startAt = 0;
+  for (let page = 0; page < 10; page++) {
+    const q = new URLSearchParams({ maxResults: "50", startAt: String(startAt), state: "active,future" });
+    const resp = await jiraFetch<{ values?: JiraAgileSprint[]; isLast?: boolean }>(
+      workspaceId,
+      `/rest/agile/1.0/board/${boardId}/sprint?${q.toString()}`,
+    ).catch((e) => {
+      const status = (e as { status?: number }).status;
+      if (status === 400 || status === 404) return { values: [] as JiraAgileSprint[], isLast: true };
+      throw e;
+    });
+    const vals = resp.values ?? [];
+    out.push(...vals);
+    if (resp.isLast || vals.length === 0) break;
+    startAt += vals.length;
+  }
+  return out;
+}
+
 /** Map Jira's statusCategory to Khove's StatusCategory. */
 export function mapJiraStatusCategory(key: string | undefined): "NOT_STARTED" | "IN_PROGRESS" | "DONE" {
   if (key === "done") return "DONE";
