@@ -11,6 +11,7 @@ import {
 } from "@backend/lib/integrations/google-calendar";
 import { createOAuthState, consumeOAuthState } from "@backend/lib/integrations/oauth-state";
 import { inngest } from "@backend/lib/inngest";
+import { publishWorkspaceEvent } from "@backend/lib/realtime";
 import { env } from "@backend/env";
 
 const router = Router();
@@ -96,15 +97,23 @@ router.get("/callback", async (req, res) => {
       },
     });
 
-    await inngest.send({
-      name: "google-calendar/initial-sync",
-      data: { userId, workspaceId },
-    }).catch(() => {});
-    // Also sync inline so events + the calendar list/colors populate immediately,
-    // even if the Inngest runtime isn't processing events.
-    await syncGoogleCalendar(workspaceId).catch((e) =>
-      console.error("[Google Calendar connect] inline sync failed:", e instanceof Error ? e.message : e),
-    );
+    // Show the syncing indicator immediately, then sync in the BACKGROUND so the
+    // browser doesn't hang on the OAuth callback. Exactly ONE sync runs — previously
+    // an inline `await` AND the Inngest initial-sync ran together and, with no unique
+    // guard on Task(workspaceId, externalId), raced to double-insert every meeting.
+    await redis.set(`cal-sync:${workspaceId}`, "syncing", { ex: 300 }).catch(() => {});
+    void syncGoogleCalendar(workspaceId)
+      .then(async () => {
+        await redis.set(`cal-sync:${workspaceId}`, JSON.stringify({ status: "done" }), { ex: 60 }).catch(() => {});
+        await publishWorkspaceEvent(workspaceId, { type: "refresh" }).catch(() => {});
+      })
+      .catch(async (e) => {
+        const msg = e instanceof Error ? e.message : "Sync failed";
+        console.error("[Google Calendar connect] background sync failed:", msg);
+        await redis
+          .set(`cal-sync:${workspaceId}`, JSON.stringify({ status: "error", error: msg }), { ex: 120 })
+          .catch(() => {});
+      });
 
     return res.redirect(`${env.FRONTEND_ORIGIN}${plannerPath}?syncing=true`);
   } catch (err) {

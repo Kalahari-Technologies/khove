@@ -17,9 +17,11 @@ interface RepoOption {
 export function GitHubScopeDialog({
   workspaceId,
   onClose,
+  onSaved,
 }: {
   workspaceId: string;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const backendFetch = useBackendFetch();
   const router = useRouter();
@@ -64,6 +66,7 @@ export function GitHubScopeDialog({
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, repos: [...selected] }) },
         workspaceId,
       );
+      onSaved?.();
       onClose();
       setTimeout(() => router.refresh(), 3500);
     } catch {

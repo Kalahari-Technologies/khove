@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { TrendingUp } from "lucide-react";
+import { EmptyState } from "@/components/integrations/insight-ui";
 
 interface Point {
   date: string;
@@ -47,8 +49,12 @@ export function BurnupChart({
   return (
     <div ref={ref} style={{ width: "100%", height }}>
       {!enough ? (
-        <div className="flex items-center justify-center text-[12px] text-white/30" style={{ height }}>
-          Not enough history yet — merges will fill this in.
+        <div className="flex h-full items-center justify-center">
+          <EmptyState
+            icon={<TrendingUp size={18} />}
+            message="Not enough history yet — merges will fill this in."
+            className="py-0"
+          />
         </div>
       ) : W === 0 ? null : (
         <BurnupSvg burnup={burnup} targetDate={targetDate} projectedFinish={projectedFinish} width={W} height={height} />

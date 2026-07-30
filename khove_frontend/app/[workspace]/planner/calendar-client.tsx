@@ -615,6 +615,13 @@ export function PlannerClient({ isFirstTime, isGoogleConnected, isSyncing, isDis
     const t = setTimeout(() => disconnectRouter.refresh(), 2500);
     return () => clearTimeout(t);
   }, [isDisconnecting, disconnectRouter]);
+  // While the background connect-sync runs, poll the server page (which reads the
+  // `cal-sync` status) until it flips out of "syncing" and the calendar renders.
+  useEffect(() => {
+    if (!isSyncing) return;
+    const t = setInterval(() => disconnectRouter.refresh(), 3000);
+    return () => clearInterval(t);
+  }, [isSyncing, disconnectRouter]);
   if (isDisconnecting) return <PlannerSyncingState label="Disconnecting Google Calendar…" sub="Clearing synced data." />;
   if (isSyncing) return <PlannerSyncingState />;
   if (isFirstTime) return <PlannerEmptyState planTier={planTier} canAdmin={canAdmin} workspaceId={workspaceId} />;

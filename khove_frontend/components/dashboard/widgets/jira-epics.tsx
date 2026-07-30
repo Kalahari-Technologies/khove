@@ -1,5 +1,6 @@
 "use client";
 
+import { Layers } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
 import { WLoading, WEmpty } from "./_kit";
@@ -11,7 +12,7 @@ export function JiraEpicsWidget(_props: WidgetProps) {
   if (isLoading) return <WLoading height={140} />;
 
   const epics = (data ?? []).slice(0, 6);
-  if (epics.length === 0) return <WEmpty>No epics found.</WEmpty>;
+  if (epics.length === 0) return <WEmpty icon={<Layers size={18} />}>No epics found.</WEmpty>;
 
   return (
     <div className="space-y-2.5">

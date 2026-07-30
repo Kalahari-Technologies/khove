@@ -1,19 +1,17 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Inbox } from "lucide-react";
+import { EmptyState } from "@/components/integrations/insight-ui";
 
 /** Subtle animated placeholder shown while a widget loads its data. */
 export function WLoading({ height = 120 }: { height?: number }) {
   return <div className="animate-pulse rounded-lg bg-white/[0.02]" style={{ height }} />;
 }
 
-/** Centered empty-state message for a widget body. */
-export function WEmpty({ children = "Nothing to show" }: { children?: ReactNode }) {
-  return (
-    <div className="flex min-h-[60px] items-center justify-center py-6 text-center text-[12px] text-white/30">
-      {children}
-    </div>
-  );
+/** Centered empty-state for a widget body — icon + message. */
+export function WEmpty({ children = "Nothing to show", icon }: { children?: ReactNode; icon?: ReactNode }) {
+  return <EmptyState icon={icon ?? <Inbox size={18} />} message={children} />;
 }
 
 /** A compact header stat line above a chart. */

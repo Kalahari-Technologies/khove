@@ -1,5 +1,6 @@
 "use client";
 
+import { PieChart } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Donut } from "@/components/integrations/metric-charts";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -28,7 +29,7 @@ export function JiraStatusDistributionWidget(_props: WidgetProps) {
     { name: "Done", value: buckets.done, color: "rgb(99,102,241)" },
   ].filter((d) => d.value > 0);
 
-  if (all.length === 0) return <WEmpty>No Jira issues.</WEmpty>;
+  if (all.length === 0) return <WEmpty icon={<PieChart size={18} />}>No Jira issues.</WEmpty>;
 
   return (
     <Donut

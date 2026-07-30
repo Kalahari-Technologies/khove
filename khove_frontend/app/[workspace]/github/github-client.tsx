@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useWorkspace } from "@/lib/workspace/workspace-context";
 import { useBackendFetch, useConnectIntegration } from "@/lib/trpc/api";
 import {
@@ -19,12 +19,14 @@ import {
   Users,
   FolderGit2,
   Sparkles,
+  Inbox,
 } from "lucide-react";
 import {
   StatTile,
   SectionCard,
   BreakdownList,
   Chip,
+  EmptyState,
   IntegrationSyncScreen,
   ago,
   daysSince,
@@ -148,6 +150,19 @@ export function GitHubClient({
   const [filter, setFilter] = useState<Bucket | null>(null);
   const [drill, setDrill] = useState<GhDrillTarget | null>(null);
   const [pollNonce, setPollNonce] = useState(0);
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  // Scope-first onboarding: right after connecting, the callback lands with
+  // ?setup=scope — open the repo picker immediately (its "save" runs the first
+  // scoped sync). Strip the param so a background refresh doesn't reopen it.
+  useEffect(() => {
+    if (searchParams.get("setup") === "scope") {
+      setScopeOpen(true);
+      router.replace(pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Tabbed dashboard state — persisted per-workspace, mirrored to ?tab=. Declared up
   // here with the other hooks (never after the sync/disconnect early-returns) so the
@@ -438,7 +453,7 @@ export function GitHubClient({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <SectionCard title="Open PR distribution" icon={<PieChart size={13} className="text-white/40" />} count={openPrs.length}>
                 {bucketSummary.length === 0 ? (
-                  <p className="text-[12px] text-white/30 py-4">No open pull requests. Everything&apos;s merged. 🎉</p>
+                  <EmptyState icon={<GitPullRequest size={18} />} message="No open pull requests. Everything's merged. 🎉" />
                 ) : (
                   <Donut
                     data={bucketSummary.map((d) => ({ name: d.name, value: d.value }))}
@@ -540,7 +555,7 @@ export function GitHubClient({
             {/* Issues */}
             <SectionCard title="Open issues" icon={<CircleDot size={13} className="text-white/40" />} count={issues.length}>
               {issues.length === 0 ? (
-                <p className="text-[12px] text-white/30 py-2">No open issues synced.</p>
+                <EmptyState icon={<CircleDot size={18} />} message="No open issues synced." />
               ) : (
                 <div className="space-y-0.5">
                   {issues.map((task) => (
@@ -553,7 +568,16 @@ export function GitHubClient({
         )}
       </div>
 
-      {scopeOpen && <GitHubScopeDialog workspaceId={workspaceId} onClose={() => setScopeOpen(false)} />}
+      {scopeOpen && (
+        <GitHubScopeDialog
+          workspaceId={workspaceId}
+          onClose={() => setScopeOpen(false)}
+          onSaved={() => {
+            setSyncing(true);
+            setPollNonce((n) => n + 1);
+          }}
+        />
+      )}
       {drill && <GhDrilldown workspaceSlug={workspace.slug} target={drill} onClose={() => setDrill(null)} />}
     </div>
   );
@@ -612,7 +636,7 @@ function GhDrilldown({ workspaceSlug, target, onClose }: { workspaceSlug: string
           {q.isLoading ? (
             <div className="flex items-center justify-center py-12 text-white/40"><Loader2 size={18} className="animate-spin" /></div>
           ) : items.length === 0 ? (
-            <p className="text-[12px] text-white/35 px-2 py-6 text-center">No open PRs or issues.</p>
+            <EmptyState icon={<Inbox size={18} />} message="No open PRs or issues." />
           ) : (
             items.map((i) => (
               <a key={i.id} href={`/${workspaceSlug}/tasks/${i.id}`} className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/[0.04] transition-colors">

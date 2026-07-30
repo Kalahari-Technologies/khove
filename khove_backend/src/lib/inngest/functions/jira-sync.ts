@@ -134,8 +134,13 @@ async function scopedJql(workspaceId: string, timeClause?: string | null): Promi
   const clauses: string[] = [];
   if (scope?.projects?.length) clauses.push(`project in (${scope.projects.join(",")})`);
   if (timeClause) clauses.push(timeClause);
+  // Atlassian's /rest/api/3/search/jql rejects "unbounded" queries (a bare ORDER BY
+  // with no restricting clause). When there's neither a project scope nor a time
+  // clause, fall back to a wide date bound so the query is always restricted — broad
+  // enough to still act as a full backfill.
+  if (clauses.length === 0) clauses.push("updated >= -365d");
   const where = clauses.join(" AND ");
-  return where ? `${where} ORDER BY updated DESC` : `ORDER BY updated DESC`;
+  return `${where} ORDER BY updated DESC`;
 }
 
 /** Get the site's custom-field ids, discovering + caching them in metadata once. */

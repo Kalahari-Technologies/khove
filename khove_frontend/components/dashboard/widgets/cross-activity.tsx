@@ -1,5 +1,6 @@
 "use client";
 
+import { Activity } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { ago } from "@/components/integrations/insight-ui";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
@@ -18,7 +19,7 @@ export function CrossActivityWidget(_props: WidgetProps) {
   if (isLoading) return <WLoading height={140} />;
 
   const rows = data ?? [];
-  if (rows.length === 0) return <WEmpty>No recent activity.</WEmpty>;
+  if (rows.length === 0) return <WEmpty icon={<Activity size={18} />}>No recent activity.</WEmpty>;
 
   return (
     <ul className="space-y-1.5">

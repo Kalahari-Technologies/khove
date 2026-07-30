@@ -14,7 +14,15 @@ interface ProjectOption {
  * Choose which Jira projects make up THIS workspace's product. The sync, metrics,
  * and dashboard only cover the selected projects; saving re-syncs.
  */
-export function JiraScopeDialog({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+export function JiraScopeDialog({
+  workspaceId,
+  onClose,
+  onSaved,
+}: {
+  workspaceId: string;
+  onClose: () => void;
+  onSaved?: () => void;
+}) {
   const backendFetch = useBackendFetch();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -60,6 +68,7 @@ export function JiraScopeDialog({ workspaceId, onClose }: { workspaceId: string;
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, projects: [...selected] }) },
         workspaceId,
       );
+      onSaved?.();
       onClose();
       setTimeout(() => router.refresh(), 3500);
     } catch {

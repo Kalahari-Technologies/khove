@@ -2,6 +2,7 @@
 
 import { Loader2, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
+import { EmptyState } from "@/components/integrations/insight-ui";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
 
 /** On-demand AI weekly status report. */
@@ -42,7 +43,7 @@ export function AiWeeklyReportWidget(_props: WidgetProps) {
       {report.isError ? (
         <p className="text-[11px] text-red-300/80">Couldn&apos;t generate a report. Try again.</p>
       ) : (
-        <p className="text-[12px] text-white/40">Summarise this week&apos;s delivery across your tools.</p>
+        <EmptyState icon={<Sparkles size={18} />} message="Summarise this week's delivery across your tools." />
       )}
       <button
         type="button"

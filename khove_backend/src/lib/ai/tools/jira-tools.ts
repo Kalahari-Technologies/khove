@@ -39,11 +39,18 @@ export function getJiraTools(workspaceId: string) {
       ),
       execute: async ({ jql, limit }) => {
         try {
+          // Atlassian's /search/jql rejects unbounded queries (empty, or a bare
+          // ORDER BY with no restricting clause). Add a wide default bound if so.
+          const trimmed = (jql ?? "").trim();
+          const boundedJql =
+            trimmed === "" || trimmed.toUpperCase().startsWith("ORDER BY")
+              ? `updated >= -365d ${trimmed}`.trim()
+              : trimmed;
           const data = await jiraFetch<{
             issues?: { key: string; fields: { summary?: string; status?: { name?: string }; issuetype?: { name?: string } } }[];
           }>(workspaceId, "/rest/api/3/search/jql", {
             method: "POST",
-            body: JSON.stringify({ jql, maxResults: Math.min(limit ?? 20, 50), fields: ["summary", "status", "issuetype"] }),
+            body: JSON.stringify({ jql: boundedJql, maxResults: Math.min(limit ?? 20, 50), fields: ["summary", "status", "issuetype"] }),
           });
           return {
             success: true,
