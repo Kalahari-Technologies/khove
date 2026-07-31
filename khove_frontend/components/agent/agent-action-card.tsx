@@ -15,7 +15,8 @@ export interface AgentActionView {
   error?: string | null;
 }
 
-const TYPE_ICON: Record<string, typeof Clock> = {
+/** Proposal type → glyph. Shared with the dashboard Agent Proposals widget. */
+export const AGENT_TYPE_ICON: Record<string, typeof Clock> = {
   BLOCK_FOCUS_TIME: Clock,
   RESCHEDULE_EVENT: CalendarClock,
   RSVP_NUDGE: Users,
@@ -30,7 +31,7 @@ const TYPE_ICON: Record<string, typeof Clock> = {
 };
 
 /** True for the GitHub PR Shepherd action types (emerald accent instead of teal). */
-const GITHUB_TYPES = new Set(["NUDGE_REVIEWER", "REQUEST_REVIEW", "FLAG_PR"]);
+export const AGENT_GITHUB_TYPES = new Set(["NUDGE_REVIEWER", "REQUEST_REVIEW", "FLAG_PR"]);
 
 /**
  * A single proposed agent action with Approve / Reject / Dismiss. Approve executes
@@ -39,8 +40,8 @@ const GITHUB_TYPES = new Set(["NUDGE_REVIEWER", "REQUEST_REVIEW", "FLAG_PR"]);
 export function AgentActionCard({ action, compact = false }: { action: AgentActionView; compact?: boolean }) {
   const router = useRouter();
   const [note, setNote] = useState<string | null>(action.error ?? null);
-  const Icon = TYPE_ICON[action.type] ?? Sparkles;
-  const isGithub = GITHUB_TYPES.has(action.type);
+  const Icon = AGENT_TYPE_ICON[action.type] ?? Sparkles;
+  const isGithub = AGENT_GITHUB_TYPES.has(action.type);
 
   const approve = trpc.agentAction.approve.useMutation({
     onSuccess: (data) => {
