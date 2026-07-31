@@ -154,6 +154,7 @@ export async function computeSprintBurndown(
   let endMs: number | null = em.endDate ? new Date(em.endDate as string).getTime() : null;
   const points = new Map<string, number>(); // entityKey → story points (0 if unestimated)
   const doneKeys = new Set<string>(); // issues currently in a DONE status
+  const resolvedAt = new Map<string, number>(); // entityKey → Jira resolution time (ms)
   let anyPoints = false;
   for (const t of tasks) {
     const j = (t.metadata as Record<string, unknown> | null)?.jira as Record<string, unknown> | undefined;
@@ -165,7 +166,12 @@ export async function computeSprintBurndown(
     const pts = typeof j?.storyPoints === "number" ? (j.storyPoints as number) : 0;
     if (typeof j?.storyPoints === "number" && pts > 0) anyPoints = true;
     points.set(t.externalId, pts);
-    if (j?.statusCategory === "DONE") doneKeys.add(t.externalId);
+    if (j?.statusCategory === "DONE") {
+      doneKeys.add(t.externalId);
+      const c = j?.completedAt as string | undefined;
+      const ms = c ? new Date(c).getTime() : NaN;
+      if (!Number.isNaN(ms)) resolvedAt.set(t.externalId, ms);
+    }
   }
 
   if (!startMs || !endMs || points.size === 0) return null;
@@ -186,6 +192,9 @@ export async function computeSprintBurndown(
   });
   const now = Date.now();
   const doneAt = new Map<string, number>();
+  // Prefer Jira's authoritative resolution date, then a WORK_MERGED signal, then
+  // "done as of today" — so the actual line drops on the day work really finished.
+  for (const [key, ms] of resolvedAt) doneAt.set(key, ms);
   for (const m of merges) if (!doneAt.has(m.entityKey)) doneAt.set(m.entityKey, m.occurredAt.getTime());
   for (const key of doneKeys) if (!doneAt.has(key)) doneAt.set(key, Math.min(now, endMs));
 
@@ -199,9 +208,12 @@ export async function computeSprintBurndown(
       const d = doneAt.get(key);
       if (d && d < cutoff) completed += weightOf(key);
     }
+    // The sprint starts full: day 0 is always the committed total, so the line
+    // anchors at the top and descends. (Work completed on the very first day is
+    // reflected from the next point on, instead of hiding the starting scope.)
     series.push({
       date: new Date(t).toISOString().slice(0, 10),
-      remaining: t <= now + DAY ? Math.max(0, committed - completed) : null,
+      remaining: t > now + DAY ? null : i === 0 ? committed : Math.max(0, committed - completed),
       ideal: Math.max(0, committed * (1 - i / days)),
     });
   }

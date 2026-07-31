@@ -537,6 +537,8 @@ export async function searchIssues(
     "issuetype",
     "created",
     "updated",
+    "resolutiondate",
+    "statuscategorychangedate",
     "duedate",
     "priority",
     "assignee",

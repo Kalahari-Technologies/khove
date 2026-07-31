@@ -63,7 +63,16 @@ async function upsertIssueTask(
   const dueDate = dueRaw ? new Date(dueRaw) : null;
   // Source-authoritative: created time + priority come from Jira, not Khove.
   const createdRaw = (f as Record<string, unknown>).created as string | null | undefined;
+  const updatedRaw = (f as Record<string, unknown>).updated as string | null | undefined;
   const jiraPriority = jiraPriorityToKhove(f.priority?.name);
+
+  // When the issue is actually completed, prefer Jira's authoritative resolution
+  // time (falling back to the status-category change / last-updated). This is what
+  // makes the sprint burndown descend on the real day work finished, instead of
+  // collapsing every completion onto "today". Null unless the issue is Done.
+  const resolutionRaw = (f as Record<string, unknown>).resolutiondate as string | null | undefined;
+  const statusChangedRaw = (f as Record<string, unknown>).statuscategorychangedate as string | null | undefined;
+  const completedAt = category === "DONE" ? resolutionRaw ?? statusChangedRaw ?? updatedRaw ?? null : null;
 
   // Rich issue context, including the assignee (display name + avatar) for workload.
   const storyPoints = fieldMap.storyPoints ? (f[fieldMap.storyPoints] as number | null) ?? null : null;
@@ -88,6 +97,7 @@ async function upsertIssueTask(
       url: externalUrl,
       priority: f.priority?.name ?? null,
       created: createdRaw ?? null,
+      completedAt,
       assignee: jiraAssignee(f),
       labels: Array.isArray(f.labels) ? f.labels : [],
       components: Array.isArray(f.components) ? f.components.map((c) => c.name).filter(Boolean) : [],
