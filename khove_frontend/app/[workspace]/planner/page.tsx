@@ -140,6 +140,7 @@ export default async function PlannerPage({
         rationale: a.rationale,
         confidence: a.confidence,
         error: a.error,
+        buttons: a.buttons,
       }))}
     />
   );
