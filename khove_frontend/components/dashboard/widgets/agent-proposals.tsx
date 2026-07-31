@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Bot } from "lucide-react";
+import { Bot, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Chip } from "@/components/integrations/insight-ui";
+import { AGENT_TYPE_ICON, AGENT_GITHUB_TYPES } from "@/components/agent/agent-action-card";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
 import { WLoading, WEmpty } from "./_kit";
 
@@ -27,8 +28,11 @@ export function AgentProposalsWidget({ slug }: WidgetProps) {
       <ul className="space-y-1">
         {pending.slice(0, 6).map((a) => {
           const conf = typeof a.confidence === "number" ? Math.round(a.confidence * 100) : null;
+          const Icon = AGENT_TYPE_ICON[a.type] ?? Sparkles;
+          const isGithub = AGENT_GITHUB_TYPES.has(a.type);
           return (
             <li key={a.id} className="flex items-center gap-2">
+              <Icon size={13} className={`shrink-0 ${isGithub ? "text-emerald-300/80" : "text-teal-300/80"}`} />
               <span className="min-w-0 flex-1 truncate text-[12px] text-white/80">{a.title}</span>
               {conf != null ? <Chip tone="neutral">{conf}%</Chip> : null}
             </li>
