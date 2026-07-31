@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Inbox } from "lucide-react";
+import { Inbox, Sparkles } from "lucide-react";
 import { EmptyState } from "@/components/integrations/insight-ui";
 
 /** Subtle animated placeholder shown while a widget loads its data. */
@@ -21,6 +21,21 @@ export function WStat({ value, label }: { value: ReactNode; label: ReactNode }) 
       <span className="text-[15px] font-semibold tabular-nums text-white/90">{value}</span>
       <span className="text-[11px] text-white/40">{label}</span>
     </div>
+  );
+}
+
+/**
+ * A subtle AI-generated caption under a chart — a plain-language reading of what the
+ * widget means and how it's tracking. The text is server-cached (regenerated only when
+ * the data changes), so this just renders it. Renders nothing until text is available.
+ */
+export function WNarrative({ text }: { text?: string | null }) {
+  if (!text) return null;
+  return (
+    <p className="mt-2.5 flex gap-1.5 text-[11px] leading-relaxed text-white/45">
+      <Sparkles size={11} className="mt-[3px] shrink-0 text-white/30" />
+      <span className="min-w-0">{text}</span>
+    </p>
   );
 }
 

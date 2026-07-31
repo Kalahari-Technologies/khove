@@ -28,6 +28,7 @@ export default async function AgentPage({
         rationale: a.rationale,
         confidence: a.confidence,
         error: a.error,
+        buttons: a.buttons,
       }))}
     />
   );

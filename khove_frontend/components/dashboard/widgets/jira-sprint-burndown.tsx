@@ -4,7 +4,7 @@ import { Activity } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { Burndown } from "@/components/integrations/metric-charts";
 import type { WidgetProps } from "@/components/dashboard/widget-types";
-import { WLoading, WEmpty } from "./_kit";
+import { WLoading, WEmpty, WNarrative } from "./_kit";
 
 /** Active-sprint burndown: remaining vs. ideal. */
 export function JiraSprintBurndownWidget(_props: WidgetProps) {
@@ -18,6 +18,12 @@ export function JiraSprintBurndownWidget(_props: WidgetProps) {
     { sprintName: sprintName ?? "" },
     { staleTime: 60_000, enabled: !!sprintName },
   );
+
+  // Server-cached AI reading (regenerated only when the sprint data changes).
+  const narrative = trpc.metrics.sprintBurndownNarrative.useQuery(undefined, {
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+  });
 
   if (sprints.isLoading) return <WLoading height={170} />;
   if (!active) return <WEmpty icon={<Activity size={18} />}>No active sprint.</WEmpty>;
@@ -38,6 +44,7 @@ export function JiraSprintBurndownWidget(_props: WidgetProps) {
       </div>
       <div className="mb-1 text-[10.5px] text-white/40">Remaining {unitLabel} vs ideal</div>
       <Burndown committed={burndown.data.committed} series={burndown.data.series} />
+      <WNarrative text={narrative.data?.text} />
     </div>
   );
 }

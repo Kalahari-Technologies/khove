@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { CalendarClock, Clock, Link2, Users, Check, X, Ban, Sparkles, UserPlus, AlertTriangle, TrendingDown } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 
+export interface ActionButtons {
+  approveLabel: string;
+  approveTone: "go" | "caution";
+  rejectLabel: string;
+}
+
 export interface AgentActionView {
   id: string;
   type: string;
@@ -13,7 +19,11 @@ export interface AgentActionView {
   rationale: string;
   confidence: number | null;
   error?: string | null;
+  /** Concrete, self-describing buttons the agent proposed for this action. */
+  buttons?: ActionButtons | null;
 }
+
+const DEFAULT_BUTTONS: ActionButtons = { approveLabel: "Approve", approveTone: "go", rejectLabel: "Reject" };
 
 /** Proposal type → glyph. Shared with the dashboard Agent Proposals widget. */
 export const AGENT_TYPE_ICON: Record<string, typeof Clock> = {
@@ -42,6 +52,7 @@ export function AgentActionCard({ action, compact = false }: { action: AgentActi
   const [note, setNote] = useState<string | null>(action.error ?? null);
   const Icon = AGENT_TYPE_ICON[action.type] ?? Sparkles;
   const isGithub = AGENT_GITHUB_TYPES.has(action.type);
+  const buttons = action.buttons ?? DEFAULT_BUTTONS;
 
   const approve = trpc.agentAction.approve.useMutation({
     onSuccess: (data) => {
@@ -85,16 +96,20 @@ export function AgentActionCard({ action, compact = false }: { action: AgentActi
             <button
               disabled={busy}
               onClick={() => approve.mutate({ id: action.id })}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-black text-[12px] font-medium hover:bg-white/90 transition-colors disabled:opacity-40"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors disabled:opacity-40 ${
+                buttons.approveTone === "caution"
+                  ? "bg-amber-400/90 text-black hover:bg-amber-400"
+                  : "bg-white text-black hover:bg-white/90"
+              }`}
             >
-              <Check size={13} /> {approve.isPending ? "Approving…" : "Approve"}
+              <Check size={13} /> {approve.isPending ? "Working…" : buttons.approveLabel}
             </button>
             <button
               disabled={busy}
               onClick={() => reject.mutate({ id: action.id })}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.1] text-white/60 text-[12px] hover:bg-white/[0.05] hover:text-white/80 transition-colors disabled:opacity-40"
             >
-              <X size={13} /> Reject
+              <X size={13} /> {buttons.rejectLabel}
             </button>
             <button
               disabled={busy}

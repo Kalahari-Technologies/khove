@@ -5,6 +5,7 @@ import { db } from "@backend/lib/db";
 import { hasFeature } from "@backend/lib/billing/plans";
 import { executeAgentAction } from "@backend/lib/agent/execute";
 import { scanWorkspace } from "@backend/lib/agent/engine";
+import { actionButtons } from "@backend/lib/agent/action-spec";
 import { writeAudit } from "@backend/lib/agent/audit";
 import { publishWorkspaceEvent } from "@backend/lib/realtime";
 
@@ -13,7 +14,7 @@ export const agentActionRouter = router({
   list: workspaceProcedure
     .input(z.object({ includeResolved: z.boolean().optional() }).optional())
     .query(async ({ ctx, input }) => {
-      return db.agentAction.findMany({
+      const rows = await db.agentAction.findMany({
         where: {
           workspaceId: ctx.workspace.id,
           ...(input?.includeResolved ? {} : { status: { in: ["PENDING", "FAILED"] } }),
@@ -21,6 +22,9 @@ export const agentActionRouter = router({
         orderBy: { createdAt: "desc" },
         take: 100,
       });
+      // Attach the self-describing action buttons (concrete verb + polarity) so the
+      // feed shows what approving does instead of a vague "Approve".
+      return rows.map((r) => ({ ...r, buttons: actionButtons(r.type) }));
     }),
 
   /** Count of open (PENDING) actions — powers the nav badge. */

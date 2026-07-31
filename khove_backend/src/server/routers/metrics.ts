@@ -5,6 +5,7 @@ import { computeFlowMetrics } from "@backend/lib/intelligence/flow";
 import { computeScopeIntegrity } from "@backend/lib/intelligence/correlate";
 import { generateStatusReport } from "@backend/lib/intelligence/status-report";
 import { computeSprints, computeSprintBurndown } from "@backend/lib/intelligence/jira-sprints";
+import { sprintBurndownNarrative, velocityNarrative } from "@backend/lib/intelligence/sprint-narrative";
 import { computeEpics, computeReleases, entityIssues } from "@backend/lib/intelligence/jira-entities";
 import {
   computeRepos,
@@ -78,6 +79,16 @@ export const metricsRouter = router({
     .query(async ({ ctx, input }) => {
       return computeSprintBurndown(ctx.workspace.id, input.sprintName);
     }),
+
+  /** Cached AI reading of the active-sprint burndown (regen only when data changes). */
+  sprintBurndownNarrative: workspaceProcedure.query(async ({ ctx }) => {
+    return sprintBurndownNarrative(ctx.workspace.id);
+  }),
+
+  /** Cached AI reading of the velocity widget (regen only when data changes). */
+  velocityNarrative: workspaceProcedure.query(async ({ ctx }) => {
+    return velocityNarrative(ctx.workspace.id);
+  }),
 
   /** Epic progress — % done + points, per epic. */
   epics: workspaceProcedure.query(async ({ ctx }) => {
