@@ -19,6 +19,7 @@ import {
   type TooltipProps,
 } from "recharts";
 import { LineChart as LineChartIcon } from "lucide-react";
+import { chartDateLabel, roundTip } from "@/lib/format";
 
 export interface Point {
   week: string;
@@ -42,13 +43,13 @@ function DarkTooltip({ active, payload, label, fmt }: TooltipProps<number, strin
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-md border border-white/10 bg-[#0d0d0f] px-2.5 py-1.5 shadow-xl">
-      <div className="mb-0.5 text-[10.5px] text-white/45">{label}</div>
+      <div className="mb-0.5 text-[10.5px] text-white/45">{chartDateLabel(label)}</div>
       {payload.map((p) => (
         <div key={p.name} className="flex items-center gap-1.5 text-[11.5px] text-white/85">
           <span className="h-2 w-2 rounded-[3px]" style={{ backgroundColor: p.color ?? "#fff" }} />
           {p.name ? <span className="text-white/50">{p.name}</span> : null}
           <span className="tabular-nums font-medium">
-            {p.value == null ? "—" : fmt ? fmt(Number(p.value)) : p.value}
+            {p.value == null ? "—" : fmt ? fmt(Number(p.value)) : roundTip(Number(p.value))}
           </span>
         </div>
       ))}
@@ -75,7 +76,7 @@ export function BarTrend({ points, color = "rgb(16,185,129)", height = 120 }: { 
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={points} margin={{ top: 6, right: 6, bottom: 0, left: -18 }} barCategoryGap="18%">
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="week" {...AXIS} interval="preserveStartEnd" minTickGap={16} />
+        <XAxis dataKey="week" {...AXIS} interval="preserveStartEnd" minTickGap={16} tickFormatter={chartDateLabel} />
         <YAxis {...AXIS} width={30} allowDecimals={false} />
         <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} content={<DarkTooltip />} />
         <Bar dataKey="value" fill={color} radius={[3, 3, 0, 0]} maxBarSize={34} isAnimationActive={false} />
@@ -103,7 +104,7 @@ export function LineTrend({
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="week" {...AXIS} interval="preserveStartEnd" minTickGap={16} />
+        <XAxis dataKey="week" {...AXIS} interval="preserveStartEnd" minTickGap={16} tickFormatter={chartDateLabel} />
         <YAxis {...AXIS} width={34} tickFormatter={(v) => format(Number(v))} />
         <Tooltip cursor={{ stroke: "rgba(255,255,255,0.12)" }} content={<DarkTooltip fmt={format} />} />
         <Line
@@ -135,7 +136,7 @@ export function Burndown({ committed, series, height = 150 }: { committed: numbe
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="date" {...AXIS} interval="preserveStartEnd" minTickGap={20} />
+        <XAxis dataKey="date" {...AXIS} interval="preserveStartEnd" minTickGap={20} tickFormatter={chartDateLabel} />
         <YAxis {...AXIS} width={30} domain={[0, committed]} allowDecimals={false} />
         <Tooltip cursor={{ stroke: "rgba(255,255,255,0.12)" }} content={<DarkTooltip />} />
         <ReferenceLine y={0} stroke="rgba(255,255,255,0.10)" />
@@ -162,7 +163,7 @@ export function AreaTrend({ points, color = "rgb(56,189,248)", height = 120 }: {
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey="week" {...AXIS} interval="preserveStartEnd" minTickGap={16} />
+        <XAxis dataKey="week" {...AXIS} interval="preserveStartEnd" minTickGap={16} tickFormatter={chartDateLabel} />
         <YAxis {...AXIS} width={30} allowDecimals={false} />
         <Tooltip cursor={{ stroke: "rgba(255,255,255,0.12)" }} content={<DarkTooltip />} />
         <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fill={`url(#${gid})`} connectNulls={false} isAnimationActive={false} />
@@ -195,7 +196,7 @@ export function StackedBar({
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: -18 }} barCategoryGap="22%">
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey={xKey} {...AXIS} interval="preserveStartEnd" minTickGap={12} />
+        <XAxis dataKey={xKey} {...AXIS} interval="preserveStartEnd" minTickGap={12} tickFormatter={chartDateLabel} />
         <YAxis {...AXIS} width={30} allowDecimals={false} />
         <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} content={<DarkTooltip />} />
         {keys.map((k, i) => (

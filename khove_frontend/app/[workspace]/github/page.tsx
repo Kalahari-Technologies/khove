@@ -47,6 +47,7 @@ export default async function GitHubPage({
       rationale: a.rationale,
       confidence: a.confidence,
       error: a.error,
+      buttons: a.buttons,
     }));
 
   return (
