@@ -24,6 +24,8 @@ export interface MemoryRecord {
   id: string;
   memory: string;
   score?: number;
+  /** ISO timestamp mem0 stored the memory — used to enforce per-tier retention. */
+  createdAt?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -89,6 +91,7 @@ function toRecords(res: any): MemoryRecord[] {
     id: r.id,
     memory: r.memory ?? r.text ?? "",
     score: r.score,
+    createdAt: r.created_at ?? r.createdAt ?? r.metadata?.created_at,
     metadata: r.metadata,
   }));
 }

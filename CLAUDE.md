@@ -180,8 +180,16 @@ Model IDs live **only** in `lib/ai/providers/` — never hardcode them elsewhere
 
 - Agentic loop caps at **5 steps** (`stopWhen: stepCountIs(5)`).
 - History pruned to the last **40** non-system messages (`lib/ai/context.ts`).
-- Memory summarised every 10 messages over the last 20, stored at Redis `memory:user:${userId}`,
-  2000-char cap, 90-day TTL.
+- **Memory = mem0 (self-hosted, wired).** `lib/ai/memory.ts` wraps `scopedMemory(workspaceId,
+  userId)` (`lib/ai/memory/scoped.ts`) over mem0-OSS (pgvector on the same Supabase + Gemini
+  embeddings). `prepareContext` **recalls** workspace + personal memory into the prompt (paid
+  tiers; FREE pruned to its 7-day retention on read); writes every 10 turns via `rememberConversation`.
+  The legacy Redis blob (`memory:user:${userId}`) is a **read-fallback only**. `clearWorkspaceMemory`
+  fires on workspace delete (erasure). Never call mem0 raw — always `scopedMemory` (throws w/o workspaceId).
+- **Context Builder.** Before the LLM call, `prepareContext` folds a cached (`ai:brief:${workspaceId}`,
+  10-min TTL) "state of the workspace" brief — at-risk initiatives + active-sprint pace — into the
+  system prompt (`lib/ai/context-brief.ts`), and the `intelligence-tools` expose the delivery
+  intelligence to the model. This is the Level-3↔6 bridge: SQL/graph facts + vector recall + tools.
 - Metering is two-track: pre-flight `checkAndIncrementUsage()` against Redis, plus a post-hoc
   `AiUsageLog` row (which stores the *tier* string, not the model ID, and no token counts).
 
@@ -194,9 +202,11 @@ Model IDs live **only** in `lib/ai/providers/` — never hardcode them elsewhere
 | `github-tools.ts` | listRepositories, listPullRequests, getPullRequest, listIssues, createGitHubIssue, getRepoActivity |
 | `jira-tools.ts` | listJiraProjects, listJiraIssues (JQL), getJiraIssue, createJiraIssue (ADF), commentJiraIssue (ADF), transitionJiraIssue (transitions API, keyed on StatusCategory) |
 | `thread-tools.ts` | listThreads, getThread, createThread (optionally attaches a meeting + auto-links) — loaded alongside task tools |
+| `intelligence-tools.ts` | getDeliveryRisk (initiative health + blockers), getFlowMetrics (DORA-lite), getCrossToolGaps (Jira↔GitHub), getScopeIntegrity (unplanned work), getSprintStatus — wrap `lib/intelligence/`; load when GitHub **or** Jira is connected |
 
 `getToolsForContext()` loads tools by **connection status, not tier** — all integrations are free
-on all tiers. Task tools always load. Jira tools load when JIRA is connected.
+on all tiers. Task tools always load. Jira tools load when JIRA is connected. The
+intelligence tools (the digital twin, surfaced to the LLM) load when GitHub or Jira is connected.
 
 ---
 
