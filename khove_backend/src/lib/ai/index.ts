@@ -5,10 +5,17 @@ import { checkAndIncrementUsage } from "@backend/lib/billing/enforcement";
 import { scoreComplexity, routeToModel } from "./router";
 import { assembleSystemPrompt, pruneConversationHistory } from "./context";
 import type { ChatMessage } from "./context";
-import { getUserMemory, updateUserMemory, shouldUpdateMemory } from "./memory";
+import {
+  getUserMemory,
+  shouldUpdateMemory,
+  recallMemory,
+  formatRecalledMemories,
+  rememberConversation,
+} from "./memory";
 import { getToolsForContext } from "./tools";
+import { getWorkspaceBrief } from "./context-brief";
 import { generateTitle } from "./title";
-import { hasFeature } from "@backend/lib/billing/plans";
+import { hasFeature, getPlan } from "@backend/lib/billing/plans";
 import { labelForTool } from "@backend/lib/ai/tool-labels";
 
 export interface RunAIConversationInput {
@@ -53,7 +60,7 @@ function toolCategory(name: string): string {
   if (/calendar|event|availability|conflict|focus|reschedule/i.test(name)) return "calendar";
   if (/jira/i.test(name)) return "jira"; // before github — Jira tool names contain "Issue"
   if (/repo|pull|issue|github/i.test(name)) return "github";
-  if (/thread/i.test(name)) return "threads";
+  if (/thread|delivery|flow|crosstool|scopeintegrity|sprintstatus/i.test(name)) return "threads";
   return "other";
 }
 
@@ -76,6 +83,52 @@ interface PreparedContext {
   model: ReturnType<typeof routeToModel>["model"];
   modelTier: string;
   tools: ReturnType<typeof getToolsForContext>;
+}
+
+/**
+ * Load the memory block for the system prompt. Primary source is workspace-scoped
+ * mem0 recall (semantic, tenant-safe — never crosses a workspace); falls back to the
+ * legacy Redis blob when mem0 isn't configured or returns nothing. Paid tiers only.
+ */
+async function loadMemorySummary(
+  planTier: PlanTier,
+  workspaceId: string,
+  userId: string,
+  query: string,
+): Promise<string | undefined> {
+  if (!hasFeature(planTier, "persistentMemory")) return undefined;
+  if (workspaceId) {
+    const recalled = await recallMemory(workspaceId, userId, query);
+    // Enforce per-tier retention (FREE = 7 days; paid = -1 unlimited). mem0 keeps
+    // memories indefinitely, so cap on read by dropping records past the window.
+    const retentionDays = getPlan(planTier).features.memoryRetentionDays;
+    const kept =
+      retentionDays > 0
+        ? recalled.filter((r) => {
+            if (!r.createdAt) return true; // no timestamp → keep (can't age it out)
+            const ageDays = (Date.now() - new Date(r.createdAt).getTime()) / 86_400_000;
+            return ageDays <= retentionDays;
+          })
+        : recalled;
+    const formatted = formatRecalledMemories(kept);
+    if (formatted) return formatted;
+  }
+  return (await getUserMemory(userId)) ?? undefined;
+}
+
+/** True when a delivery source is connected — gate the (non-trivial) workspace brief. */
+function hasDeliveryData(connectedIntegrations: string[]): boolean {
+  return connectedIntegrations.includes("GITHUB") || connectedIntegrations.includes("JIRA");
+}
+
+/**
+ * Persist recent turns to workspace-scoped mem0 (mem0 extracts + embeds internally).
+ * Fire-and-forget and non-throwing — a memory write must never affect the response.
+ */
+function persistMemory(workspaceId: string, userId: string, messages: ChatMessage[]): void {
+  if (!workspaceId) return;
+  const msgs = messages.map((m) => ({ role: m.role, content: m.content }));
+  rememberConversation(workspaceId, userId, msgs).catch(() => {});
 }
 
 /** Shared context assembly (history + integrations + memory + model + tools). */
@@ -103,15 +156,18 @@ async function prepareContext(input: RunAIConversationInput): Promise<PreparedCo
     : null;
   const workspaceSettings = workspace?.settings as Record<string, unknown> | undefined;
 
-  const userMemorySummary =
-    hasFeature(planTier, "persistentMemory") ? await getUserMemory(userId) : null;
+  const userMemorySummary = await loadMemorySummary(planTier, workspaceId, userId, newMessage);
+  const workspaceBrief = hasDeliveryData(connectedIntegrations)
+    ? await getWorkspaceBrief(workspaceId)
+    : undefined;
 
   const systemPrompt = assembleSystemPrompt({
     userName,
     planTier,
     connectedIntegrations,
     workspaceSettings,
-    userMemorySummary: userMemorySummary ?? undefined,
+    userMemorySummary,
+    workspaceBrief,
     currentDate: new Date().toISOString().split("T")[0],
   });
 
@@ -270,7 +326,7 @@ export async function streamAIConversation(
     data: { userId, workspaceId: workspaceId ?? null, model: modelTier, feature: "chat" },
   });
   if (hasFeature(planTier, "persistentMemory") && shouldUpdateMemory(updatedMessages.length)) {
-    updateMemoryAsync(userId, updatedMessages, systemPrompt, model).catch(() => {});
+    persistMemory(workspaceId, userId, updatedMessages);
   }
 
   write({ t: "done", model: modelTier });
@@ -325,16 +381,20 @@ export async function runAIConversation(
     : null;
   const workspaceSettings = workspace?.settings as Record<string, unknown> | undefined;
 
-  // Load user memory (paid tiers only)
-  const userMemorySummary =
-    hasFeature(planTier, "persistentMemory") ? await getUserMemory(userId) : null;
+  // Load memory (paid tiers only): workspace-scoped mem0 recall, Redis fallback.
+  const userMemorySummary = await loadMemorySummary(planTier, workspaceId, userId, newMessage);
+  // Pre-fetched delivery brief (cached) so the AI starts grounded.
+  const workspaceBrief = hasDeliveryData(connectedIntegrations)
+    ? await getWorkspaceBrief(workspaceId)
+    : undefined;
 
   const systemPrompt = assembleSystemPrompt({
     userName,
     planTier,
     connectedIntegrations,
     workspaceSettings,
-    userMemorySummary: userMemorySummary ?? undefined,
+    userMemorySummary,
+    workspaceBrief,
     currentDate: new Date().toISOString().split("T")[0],
   });
 
@@ -409,15 +469,12 @@ export async function runAIConversation(
     },
   });
 
-  // Update memory every 10 messages on paid tiers
+  // Persist to workspace-scoped mem0 every 10 messages on paid tiers (non-blocking)
   if (
     hasFeature(planTier, "persistentMemory") &&
     shouldUpdateMemory(updatedMessages.length)
   ) {
-    // Fire-and-forget memory update (non-blocking)
-    updateMemoryAsync(userId, updatedMessages, systemPrompt, model).catch(() => {
-      // Memory update failures are silent — not critical
-    });
+    persistMemory(workspaceId, userId, updatedMessages);
   }
 
   return {
@@ -426,29 +483,4 @@ export async function runAIConversation(
     conversationId: savedConversation.id,
     model: modelTier,
   };
-}
-
-/**
- * Async memory update — generates a summary of recent conversation patterns.
- * Non-blocking, called after the response has been returned.
- */
-async function updateMemoryAsync(
-  userId: string,
-  messages: ChatMessage[],
-  _systemPrompt: string,
-  model: Parameters<typeof generateText>[0]["model"]
-): Promise<void> {
-  const recentMessages = messages.slice(-20);
-  const conversation = recentMessages
-    .map((m) => `${m.role}: ${m.content}`)
-    .join("\n");
-
-  const { text: summary } = await generateText({
-    model,
-    system:
-      "You are a memory system. Summarize key facts about the user from this conversation: their work style, preferences, recurring projects, team context, and anything worth remembering for future conversations. Be concise (max 200 words). Do not include specific task IDs or dates.",
-    messages: [{ role: "user", content: conversation }],
-  });
-
-  await updateUserMemory(userId, summary);
 }

@@ -29,6 +29,8 @@ interface SystemPromptOptions {
   connectedIntegrations: string[];
   workspaceSettings?: Record<string, unknown>;
   userMemorySummary?: string;
+  /** Cached "state of the workspace" brief (at-risk initiatives, sprint pace). */
+  workspaceBrief?: string;
   currentDate: string;
 }
 
@@ -43,6 +45,7 @@ export function assembleSystemPrompt(opts: SystemPromptOptions): string {
     connectedIntegrations,
     workspaceSettings,
     userMemorySummary,
+    workspaceBrief,
     currentDate,
   } = opts;
 
@@ -68,6 +71,10 @@ export function assembleSystemPrompt(opts: SystemPromptOptions): string {
 
   const memorySection = userMemorySummary
     ? `\n## What I Know About You\n${userMemorySummary}\n`
+    : "";
+
+  const briefSection = workspaceBrief
+    ? `\n## Current Workspace State (as of now)\nGrounding facts from the delivery data — cite these, and call the intelligence tools (getDeliveryRisk, getFlowMetrics, getSprintStatus, getCrossToolGaps) for detail before answering delivery questions:\n${workspaceBrief}\n`
     : "";
 
   const customSection = aiInstructions
@@ -113,5 +120,5 @@ ${integrationList}
 - **After calling tools and getting results, you MUST always provide a brief text response summarizing what was done.** Never respond with only tool calls — always end with a human-readable message.
 - If asked to do something your current plan doesn't support, explain the limitation and what plan unlocks it.
 - Current plan: ${planTier}
-${memorySection}${customSection}`.trim();
+${briefSection}${memorySection}${customSection}`.trim();
 }
