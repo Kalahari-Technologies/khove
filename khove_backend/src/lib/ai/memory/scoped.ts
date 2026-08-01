@@ -15,7 +15,7 @@
  *   3. Verify the provider/config keys against the installed mem0ai version.
  */
 
-const EMBED_DIM = 768; // gemini text-embedding-004
+const EMBED_DIM = 768; // gemini-embedding-001 truncated to 768 via outputDimensionality
 // Non-literal specifier — kept out of static analysis so the optional,
 // draft-stage dependency is not required at module load.
 const MEM0_MODULE = "mem0ai/oss";
@@ -67,8 +67,11 @@ function client(): Promise<any> {
           config: {
             connectionString: process.env.DATABASE_URL,
             collectionName: "khove_memories",
-            // mem0's PGVector reads `embeddingModelDims` (NOT `dimension`) — with the
-            // wrong key it builds `vector(NaN)` and init throws 22P02 "nan".
+            // Two mem0 layers read the dimension under DIFFERENT keys — set both:
+            //  • `dimension` → Memory._autoInitialize; unset ⇒ it probes the embedder,
+            //    which 404'd. Setting it skips the probe.
+            //  • `embeddingModelDims` → PGVector.createCol; unset ⇒ builds vector(NaN).
+            dimension: EMBED_DIM,
             embeddingModelDims: EMBED_DIM,
           },
         },
@@ -76,7 +79,10 @@ function client(): Promise<any> {
           provider: "google",
           config: {
             apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-            model: "text-embedding-004",
+            // `text-embedding-004` 404s on @google/genai's embedContent — use the GA
+            // embedding model and truncate to 768 dims (MRL) via outputDimensionality.
+            model: "gemini-embedding-001",
+            embeddingDims: EMBED_DIM,
           },
         },
         llm: {
@@ -142,12 +148,17 @@ export function scopedMemory(workspaceId: string, userId: string) {
 
     /** Recall work content for THIS workspace (optionally a thread/agent). */
     async recall(query: string, opts: RecallOptions = {}): Promise<MemoryRecord[]> {
+      // mem0 `search()` rejects top-level entity params — they go inside `filters`
+      // as snake_case (that's how `add()` persists them: metadata.user_id/run_id/agent_id).
       const res = await (await client()).search(query, {
-        userId,
-        runId: opts.threadId,
-        agentId: opts.agentId,
         limit: opts.limit ?? 8,
-        filters: { workspaceId, scope: "workspace" },
+        filters: {
+          user_id: userId,
+          ...(opts.threadId ? { run_id: opts.threadId } : {}),
+          ...(opts.agentId ? { agent_id: opts.agentId } : {}),
+          workspaceId,
+          scope: "workspace",
+        },
       });
       return toRecords(res);
     },
@@ -155,9 +166,8 @@ export function scopedMemory(workspaceId: string, userId: string) {
     /** Recall the user's cross-workspace preferences (content-free). */
     async recallPreferences(query: string, limit = 4): Promise<MemoryRecord[]> {
       const res = await (await client()).search(query, {
-        userId,
         limit,
-        filters: { scope: "personal" },
+        filters: { user_id: userId, scope: "personal" },
       });
       return toRecords(res);
     },
