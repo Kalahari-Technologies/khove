@@ -34,6 +34,12 @@ export const TOOL_LABELS: Record<string, string> = {
   listThreads: "Listed threads",
   getThread: "Opened a thread",
   createThread: "Created a thread",
+  // Delivery intelligence
+  getDeliveryRisk: "Assessed delivery risk",
+  getFlowMetrics: "Measured delivery flow",
+  getCrossToolGaps: "Cross-checked Jira vs GitHub",
+  getScopeIntegrity: "Checked for unplanned work",
+  getSprintStatus: "Checked sprint status",
 };
 
 /** Label for a tool name, humanizing unknown names as a fallback. */

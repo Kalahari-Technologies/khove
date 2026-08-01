@@ -9,6 +9,7 @@ import {
 import { publishEvent } from "@backend/lib/realtime";
 import { db } from "@backend/lib/db";
 import { generateUniqueSlug } from "@backend/lib/workspace/slug";
+import { clearWorkspaceMemory } from "@backend/lib/ai/memory";
 import {
   canManageWorkspace,
 } from "@backend/lib/workspace/authorization";
@@ -183,6 +184,9 @@ export const workspaceRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot delete personal workspace" });
       }
 
+      // Purge the workspace's mem0 memory (erasure path) before the row is gone.
+      // Non-throwing — a memory-store failure must not block the deletion.
+      await clearWorkspaceMemory(ctx.workspace.id, ctx.user.id);
       await db.workspace.delete({ where: { id: ctx.workspace.id } });
       return { success: true };
     }),

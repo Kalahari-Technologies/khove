@@ -1,11 +1,16 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  // pgvector powers the mem0 self-hosted memory store (collection `khove_memories`,
+  // managed by mem0 over the same Postgres). Declared here so `db push` enables the
+  // extension — no manual Supabase dashboard step. See lib/ai/memory/scoped.ts.
+  extensions = [vector]
 }
 
 // ─────────────────────────────────────────────

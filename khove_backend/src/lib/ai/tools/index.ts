@@ -4,6 +4,7 @@ import { getCalendarTools } from "./calendar-tools";
 import { getGitHubTools } from "./github-tools";
 import { getJiraTools } from "./jira-tools";
 import { getThreadTools } from "./thread-tools";
+import { getIntelligenceTools } from "./intelligence-tools";
 import { getAvailableToolCategories } from "@backend/lib/billing/enforcement";
 
 /**
@@ -40,6 +41,12 @@ export function getToolsForContext(
 
   if (categories.includes("jira")) {
     Object.assign(tools, getJiraTools(workspaceId));
+  }
+
+  // Delivery-intelligence tools (the Level-6 digital twin: delivery risk, flow,
+  // cross-tool gaps, sprint status) — load when there's a delivery source to fold.
+  if (categories.includes("github") || categories.includes("jira")) {
+    Object.assign(tools, getIntelligenceTools(workspaceId));
   }
 
   return tools;
