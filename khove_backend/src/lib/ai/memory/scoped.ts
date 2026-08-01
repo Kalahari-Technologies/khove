@@ -47,39 +47,49 @@ type Msg = { role: string; content: string };
 // Lazy singleton client (self-hosted: pgvector + Gemini embeddings/LLM)
 // ---------------------------------------------------------------------------
 
+// Single-flight: cache the PROMISE, not the resolved client, so concurrent first
+// calls create exactly ONE Memory instance. The Memory constructor kicks off a
+// fire-and-forget pgvector `initialize()` (CREATE TABLE memory_migrations + the
+// collection); two instances racing that init collide on the SERIAL sequence
+// (`memory_migrations_id_seq` duplicate-key). One instance ⇒ one init ⇒ no race.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _client: any | null = null;
+let _clientPromise: Promise<any> | null = null;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function client(): Promise<any> {
-  if (_client) return _client;
-  const { Memory } = await import(MEM0_MODULE);
-  _client = new Memory({
-    version: "v1.1",
-    vectorStore: {
-      provider: "pgvector",
-      config: {
-        connectionString: process.env.DATABASE_URL,
-        collectionName: "khove_memories",
-        dimension: EMBED_DIM,
-      },
-    },
-    embedder: {
-      provider: "google",
-      config: {
-        apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-        model: "text-embedding-004",
-      },
-    },
-    llm: {
-      provider: "google",
-      config: {
-        apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-        model: "gemini-2.5-flash-lite",
-      },
-    },
-  });
-  return _client;
+function client(): Promise<any> {
+  if (!_clientPromise) {
+    _clientPromise = (async () => {
+      const { Memory } = await import(MEM0_MODULE);
+      return new Memory({
+        version: "v1.1",
+        vectorStore: {
+          provider: "pgvector",
+          config: {
+            connectionString: process.env.DATABASE_URL,
+            collectionName: "khove_memories",
+            // mem0's PGVector reads `embeddingModelDims` (NOT `dimension`) — with the
+            // wrong key it builds `vector(NaN)` and init throws 22P02 "nan".
+            embeddingModelDims: EMBED_DIM,
+          },
+        },
+        embedder: {
+          provider: "google",
+          config: {
+            apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+            model: "text-embedding-004",
+          },
+        },
+        llm: {
+          provider: "google",
+          config: {
+            apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+            model: "gemini-2.5-flash-lite",
+          },
+        },
+      });
+    })();
+  }
+  return _clientPromise;
 }
 
 // mem0 versions return either an array or `{ results: [...] }` — handle both.
