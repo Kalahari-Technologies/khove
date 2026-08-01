@@ -179,6 +179,11 @@ Model IDs live **only** in `lib/ai/providers/` — never hardcode them elsewhere
 → `{ blocked, response?, conversationId?, model?, error? }`
 
 - Agentic loop caps at **5 steps** (`stopWhen: stepCountIs(5)`).
+- **Model fallback (key-aware, in `index.ts` — `router.ts` stays read-only).** `resolveModel()`
+  wraps `routeToModel`: if it picks a Claude tier but `ANTHROPIC_API_KEY` is unset, it downgrades to
+  Gemini Flash. On top of that, a Claude call that *fails* (bad key / 401 / rate limit / outage)
+  **retries once with Flash** before erroring — both the streaming and non-streaming paths. The
+  `AiUsageLog`/`done` event report the tier actually used.
 - History pruned to the last **40** non-system messages (`lib/ai/context.ts`).
 - **Memory = mem0 (self-hosted, wired).** `lib/ai/memory.ts` wraps `scopedMemory(workspaceId,
   userId)` (`lib/ai/memory/scoped.ts`) over mem0-OSS (pgvector on the same Supabase + Gemini
