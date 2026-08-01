@@ -3,6 +3,8 @@ import type { PlanTier, Prisma } from "@prisma/client";
 import { db } from "@backend/lib/db";
 import { checkAndIncrementUsage } from "@backend/lib/billing/enforcement";
 import { scoreComplexity, routeToModel } from "./router";
+import { getFlashModel } from "./providers/google";
+import type { ProviderConfig } from "./providers/base";
 import { assembleSystemPrompt, pruneConversationHistory } from "./context";
 import type { ChatMessage } from "./context";
 import {
@@ -121,6 +123,21 @@ function hasDeliveryData(connectedIntegrations: string[]): boolean {
   return connectedIntegrations.includes("GITHUB") || connectedIntegrations.includes("JIRA");
 }
 
+const isClaudeTier = (tier: string) => tier === "haiku" || tier === "sonnet";
+
+/**
+ * routeToModel + graceful key-aware fallback (a): if the router picks a Claude tier
+ * but no ANTHROPIC_API_KEY is configured, use Gemini Flash instead of 401-ing.
+ * `router.ts` is read-only, so this guard lives here.
+ */
+function resolveModel(complexityScore: number, planTier: PlanTier): ProviderConfig {
+  const chosen = routeToModel(complexityScore, planTier);
+  if (isClaudeTier(chosen.tier) && !process.env.ANTHROPIC_API_KEY) {
+    return getFlashModel();
+  }
+  return chosen;
+}
+
 /**
  * Persist recent turns to workspace-scoped mem0 (mem0 extracts + embeds internally).
  * Fire-and-forget and non-throwing — a memory write must never affect the response.
@@ -172,7 +189,7 @@ async function prepareContext(input: RunAIConversationInput): Promise<PreparedCo
   });
 
   const complexityScore = scoreComplexity(newMessage);
-  const { model, tier: modelTier } = routeToModel(complexityScore, planTier);
+  const { model, tier: modelTier } = resolveModel(complexityScore, planTier);
   const tools = getToolsForContext(userId, workspaceId, planTier, connectedIntegrations);
 
   return { conversation, history, systemPrompt, model, modelTier, tools };
@@ -218,10 +235,13 @@ export async function streamAIConversation(
   let finalText = "";
   let stepText = ""; // text produced within the current step (narration until proven answer)
   let reasoningBuf = "";
+  let usedTier = modelTier;
 
-  try {
+  // Consume one streamText run into finalText/process (emitting stream events).
+  // Throws on a model error so the caller can decide whether to retry with Flash.
+  const consume = async (useModel: typeof model) => {
     const result = streamText({
-      model,
+      model: useModel,
       system: systemPrompt,
       messages,
       tools: tools as Parameters<typeof streamText>[0]["tools"],
@@ -283,16 +303,40 @@ export async function streamAIConversation(
         }
       }
     }
+  };
 
-    if (!finalText.trim()) {
-      finalText = "Done! Let me know if there's anything else you need.";
-      write({ t: "text", delta: finalText });
-    }
-  } catch (error) {
+  const streamFailed = (error: unknown) => {
     console.error("[AI] streamText failed:", error);
     write({ t: "error", message: "I hit an error processing that. Please try again." });
-    write({ t: "done", model: modelTier });
-    return;
+    write({ t: "done", model: usedTier });
+  };
+
+  try {
+    await consume(model);
+  } catch (error) {
+    // (b) If a Claude call failed before anything streamed (bad/missing key, rate
+    // limit, outage), retry ONCE with Gemini Flash so the chat degrades gracefully.
+    if (isClaudeTier(modelTier) && !finalText.trim() && process.length === 0) {
+      console.error("[AI] Claude stream failed, retrying with Flash:", error);
+      try {
+        const flash = getFlashModel();
+        usedTier = flash.tier;
+        stepText = "";
+        reasoningBuf = "";
+        await consume(flash.model);
+      } catch (err2) {
+        streamFailed(err2);
+        return;
+      }
+    } else {
+      streamFailed(error);
+      return;
+    }
+  }
+
+  if (!finalText.trim()) {
+    finalText = "Done! Let me know if there's anything else you need.";
+    write({ t: "text", delta: finalText });
   }
 
   // Finalize: persist messages (with the process trail), meter, update memory.
@@ -323,13 +367,13 @@ export async function streamAIConversation(
     },
   });
   await db.aiUsageLog.create({
-    data: { userId, workspaceId: workspaceId ?? null, model: modelTier, feature: "chat" },
+    data: { userId, workspaceId: workspaceId ?? null, model: usedTier, feature: "chat" },
   });
   if (hasFeature(planTier, "persistentMemory") && shouldUpdateMemory(updatedMessages.length)) {
     persistMemory(workspaceId, userId, updatedMessages);
   }
 
-  write({ t: "done", model: modelTier });
+  write({ t: "done", model: usedTier });
 }
 
 /**
@@ -400,7 +444,7 @@ export async function runAIConversation(
 
   // ─── Step 3: Complexity scoring → model ───────────────────────────────
   const complexityScore = scoreComplexity(newMessage);
-  const { model, tier: modelTier } = routeToModel(complexityScore, planTier);
+  const { model, tier: modelTier } = resolveModel(complexityScore, planTier);
 
   // ─── Step 4: Tool loading ──────────────────────────────────────────────
   const tools = getToolsForContext(userId, workspaceId, planTier, connectedIntegrations);
@@ -411,28 +455,49 @@ export async function runAIConversation(
     { role: "user" as const, content: newMessage },
   ];
 
+  // `result.text` is empty when the model only called tools without a follow-up.
+  // Fall back to the last step that has text, then a generic confirmation.
+  const textFrom = (result: Awaited<ReturnType<typeof generateText>>) =>
+    result.text?.trim() ||
+    result.steps?.findLast((s) => s.text?.trim())?.text?.trim() ||
+    "Done! Let me know if there's anything else you need.";
+
+  const genArgs = {
+    system: systemPrompt,
+    messages,
+    tools: tools as Parameters<typeof generateText>[0]["tools"],
+    stopWhen: stepCountIs(5),
+  };
+
   let responseText: string;
+  let usedTier = modelTier;
   try {
-    const result = await generateText({
-      model,
-      system: systemPrompt,
-      messages,
-      tools: tools as Parameters<typeof generateText>[0]["tools"],
-      stopWhen: stepCountIs(5),
-    });
-    // `result.text` is empty when the model only called tools without a follow-up.
-    // Fall back to the last step that has text, then a generic confirmation.
-    responseText =
-      result.text?.trim() ||
-      result.steps?.findLast((s) => s.text?.trim())?.text?.trim() ||
-      "Done! Let me know if there's anything else you need.";
+    responseText = textFrom(await generateText({ model, ...genArgs }));
   } catch (error) {
-    console.error("[AI] generateText failed:", error);
-    return {
-      blocked: false,
-      error: `AI request failed: ${String(error)}`,
-      response: "I encountered an error processing your request. Please try again.",
-    };
+    // (b) On a Claude failure (bad/missing key, rate limit, outage), retry ONCE
+    // with Gemini Flash before giving up, so the chat degrades instead of erroring.
+    if (isClaudeTier(modelTier)) {
+      console.error("[AI] Claude call failed, retrying with Flash:", error);
+      try {
+        const flash = getFlashModel();
+        usedTier = flash.tier;
+        responseText = textFrom(await generateText({ model: flash.model, ...genArgs }));
+      } catch (err2) {
+        console.error("[AI] Flash fallback also failed:", err2);
+        return {
+          blocked: false,
+          error: `AI request failed: ${String(err2)}`,
+          response: "I encountered an error processing your request. Please try again.",
+        };
+      }
+    } else {
+      console.error("[AI] generateText failed:", error);
+      return {
+        blocked: false,
+        error: `AI request failed: ${String(error)}`,
+        response: "I encountered an error processing your request. Please try again.",
+      };
+    }
   }
 
   // ─── Step 7: Save conversation ─────────────────────────────────────────
@@ -464,7 +529,7 @@ export async function runAIConversation(
     data: {
       userId,
       workspaceId: workspaceId ?? null,
-      model: modelTier,
+      model: usedTier,
       feature: "chat",
     },
   });
@@ -481,6 +546,6 @@ export async function runAIConversation(
     blocked: false,
     response: responseText,
     conversationId: savedConversation.id,
-    model: modelTier,
+    model: usedTier,
   };
 }
