@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Children, isValidElement, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Paperclip, Send, ChevronRight, Sparkles, Check, Brain, Wrench, ListTodo, Calendar, GitBranch, Link2, SquareKanban } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
@@ -440,11 +440,37 @@ function MessageBubble({ message }: { message: ClientChatMessage }) {
 
 // ─── Message Content (markdown) ───────────────────────────────────────────────
 
+/**
+ * Auto-emphasise a leading "Label: explanation" in a bullet so the topic word is
+ * always bold, regardless of whether the model wrote `- **Label:** ...` or plain
+ * `- Label: ...`. Kept deterministic (renderer-side) so the look is consistent
+ * across models. Conservative: only fires on a short, punctuation-free label
+ * followed by ": " and more text, and never double-styles a model-bolded lead-in.
+ */
+function autoLabelBullet(children: ReactNode): ReactNode {
+  const nodes = Children.toArray(children);
+  if (nodes.length === 0) return children;
+  const first = nodes[0];
+  // Model already emphasised the lead-in (e.g. **Label:**) — leave it untouched.
+  if (isValidElement(first)) return children;
+  if (typeof first !== "string") return children;
+  const m = first.match(/^([^:\n]{1,40}):[ \t]+(.+)$/);
+  if (!m) return children;
+  const [, label, rest] = m;
+  // Skip false positives: sentence-y prefixes, URLs, or an empty remainder.
+  if (/[.!?]$/.test(label.trim()) || /https?$/i.test(label) || !rest) return children;
+  return [
+    <strong key="__lbl" className="font-semibold text-white">{label}:</strong>,
+    ` ${rest}`,
+    ...nodes.slice(1),
+  ];
+}
+
 const MARKDOWN_COMPONENTS: Components = {
-  p: ({ children }) => <p className="mb-3 last:mb-0 leading-7">{children}</p>,
-  ul: ({ children }) => <ul className="list-disc pl-6 space-y-1.5 mb-3 marker:text-white/30">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal pl-6 space-y-1.5 mb-3 marker:text-white/40">{children}</ol>,
-  li: ({ children }) => <li className="leading-7 pl-1">{children}</li>,
+  p: ({ children }) => <p className="mb-3.5 last:mb-0 leading-7">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc pl-6 space-y-2 mb-4 last:mb-0 marker:text-white/30">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-6 space-y-2 mb-4 last:mb-0 marker:text-white/40">{children}</ol>,
+  li: ({ children }) => <li className="leading-7 pl-1">{autoLabelBullet(children)}</li>,
   strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
   em: ({ children }) => <em className="italic text-white/90">{children}</em>,
   a: ({ href, children }) => (
@@ -452,11 +478,14 @@ const MARKDOWN_COMPONENTS: Components = {
       {children}
     </a>
   ),
-  h1: ({ children }) => <h1 className="font-semibold text-white text-[19px] leading-snug mt-5 mb-2 first:mt-0 pb-1.5 border-b border-white/[0.08]">{children}</h1>,
-  h2: ({ children }) => <h2 className="font-semibold text-white text-[16.5px] leading-snug mt-4 mb-2 first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="font-semibold text-white/95 text-[14.5px] mt-3 mb-1.5 first:mt-0">{children}</h3>,
-  blockquote: ({ children }) => <blockquote className="border-l-2 border-violet-400/40 pl-3.5 text-white/70 my-3 italic">{children}</blockquote>,
-  hr: () => <hr className="border-white/[0.08] my-4" />,
+  // Clear, well-spaced heading hierarchy — each level is visibly larger than the
+  // 15px body and than the level below it, with generous top margin so sections breathe.
+  h1: ({ children }) => <h1 className="font-bold text-white text-[24px] leading-tight mt-7 mb-3.5 first:mt-0 pb-2 border-b border-white/[0.1]">{children}</h1>,
+  h2: ({ children }) => <h2 className="font-semibold text-white text-[19.5px] leading-snug mt-7 mb-3 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="font-semibold text-white text-[16.5px] leading-snug mt-5 mb-2 first:mt-0">{children}</h3>,
+  h4: ({ children }) => <h4 className="font-semibold text-white/60 text-[12.5px] uppercase tracking-wider mt-4 mb-1.5 first:mt-0">{children}</h4>,
+  blockquote: ({ children }) => <blockquote className="border-l-2 border-violet-400/40 pl-3.5 text-white/70 my-3.5 italic">{children}</blockquote>,
+  hr: () => <hr className="border-white/[0.08] my-5" />,
   code: ({ className, children }) =>
     className ? (
       <code className={`${className} text-[13px]`}>{children}</code>
